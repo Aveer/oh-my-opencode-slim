@@ -16,6 +16,8 @@ import {
   ORCHESTRATOR_WAKE_TEXT,
   ORCHESTRATOR_WAKE_UNCHANGED_CAP,
   resolveWakeMode,
+  STOPPED_RECOVERY_QUEUE_CAP,
+  STOPPED_RECOVERY_WAKE_CHUNK,
 } from './index';
 import {
   getWakeProgress,
@@ -452,6 +454,115 @@ describe('orchestrator wake scheduler', () => {
     });
     await clock.advance(0);
     expect(promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test('caps queued stop deltas per parent and drops the oldest', async () => {
+    const promptAsync = mock(async () => ({}));
+    let waiting = true;
+    const { scheduler } = createScheduler({
+      hasInputWait: () => waiting,
+      sessionClient: makeClient({
+        todos: [],
+        promptAsync,
+        childrenData: [{ id: 'child-2' }],
+        statusData: { 'child-2': { type: 'busy' } },
+      }),
+    });
+
+    for (let i = 0; i < STOPPED_RECOVERY_QUEUE_CAP + 1; i++) {
+      scheduler.triggerStoppedJobRecovery(
+        'p1',
+        formatStoppedJobDelta({
+          alias: `a${i}`,
+          taskID: `ses_${i}`,
+          generation: 1,
+          state: 'stopped',
+          reason: 'stopped without a terminal result',
+        }),
+        `ses_${i}:1`,
+      );
+    }
+    expect(promptAsync).not.toHaveBeenCalled();
+
+    waiting = false;
+    await scheduler.event({
+      event: { type: 'session.idle', properties: { sessionID: 'p1' } },
+    });
+    await clock.advance(0);
+
+    expect(promptAsync).toHaveBeenCalledTimes(1);
+    const text =
+      (
+        promptAsync.mock.calls as unknown as Array<
+          [{ body: { parts: Array<{ text: string }> } }]
+        >
+      )[0]?.[0]?.body.parts[0]?.text ?? '';
+    expect(text).not.toContain('task: ses_0\n');
+    expect(text).toContain('task: ses_1\n');
+    expect(text).not.toContain(`task: ses_${STOPPED_RECOVERY_QUEUE_CAP}\n`);
+    expect(text.match(/<stopped-job>/g)?.length).toBe(
+      STOPPED_RECOVERY_WAKE_CHUNK,
+    );
+  });
+
+  test('delivers overflow stop deltas on a later recovery wake', async () => {
+    const promptAsync = mock(async () => ({}));
+    let waiting = true;
+    const { scheduler } = createScheduler({
+      hasInputWait: () => waiting,
+      sessionClient: makeClient({
+        todos: [],
+        promptAsync,
+        childrenData: [{ id: 'child-2' }],
+        statusData: { 'child-2': { type: 'busy' } },
+      }),
+    });
+
+    for (let i = 0; i < STOPPED_RECOVERY_WAKE_CHUNK + 1; i++) {
+      scheduler.triggerStoppedJobRecovery(
+        'p1',
+        formatStoppedJobDelta({
+          alias: `a${i}`,
+          taskID: `ses_${i}`,
+          generation: 1,
+          state: 'stopped',
+          reason: 'stopped without a terminal result',
+        }),
+        `ses_${i}:1`,
+      );
+    }
+
+    waiting = false;
+    await scheduler.event({
+      event: { type: 'session.idle', properties: { sessionID: 'p1' } },
+    });
+    await clock.advance(0);
+    expect(promptAsync).toHaveBeenCalledTimes(1);
+    const first =
+      (
+        promptAsync.mock.calls as unknown as Array<
+          [{ body: { parts: Array<{ text: string }> } }]
+        >
+      )[0]?.[0]?.body.parts[0]?.text ?? '';
+    expect(first.match(/<stopped-job>/g)?.length).toBe(
+      STOPPED_RECOVERY_WAKE_CHUNK,
+    );
+    expect(first).toContain('task: ses_0\n');
+    expect(first).not.toContain(`task: ses_${STOPPED_RECOVERY_WAKE_CHUNK}\n`);
+
+    await scheduler.event({
+      event: { type: 'session.idle', properties: { sessionID: 'p1' } },
+    });
+    await clock.advance(0);
+    expect(promptAsync).toHaveBeenCalledTimes(2);
+    const second =
+      (
+        promptAsync.mock.calls as unknown as Array<
+          [{ body: { parts: Array<{ text: string }> } }]
+        >
+      )[1]?.[0]?.body.parts[0]?.text ?? '';
+    expect(second).toContain(`task: ses_${STOPPED_RECOVERY_WAKE_CHUNK}\n`);
+    expect(second).not.toContain('task: ses_0\n');
   });
 
   test('does not recover-wake when disabled, waiting for input, busy, or disposed', async () => {

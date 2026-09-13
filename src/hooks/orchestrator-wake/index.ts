@@ -80,6 +80,15 @@ export const ORCHESTRATOR_CHILDREN_WAKE_TEXT =
 /** After this many successful wakes with an unchanged fingerprint, stop. */
 export const ORCHESTRATOR_WAKE_UNCHANGED_CAP = 2;
 
+/** Max stopped-job deltas queued per parent. Oldest entries are dropped
+ * when a new distinct stop would exceed the cap, so a busy/waiting parent
+ * cannot grow an unbounded recovery prompt. */
+export const STOPPED_RECOVERY_QUEUE_CAP = 32;
+
+/** Max deltas appended to one recovery wake. Remaining entries stay queued
+ * for the next wake so a failed oversized join cannot wedge the batch. */
+export const STOPPED_RECOVERY_WAKE_CHUNK = 8;
+
 /**
  * Children-driven mode: a child with `outcome === undefined` counts as
  * inactive once its newest update evidence (host `time.updated` or a
@@ -496,9 +505,10 @@ export function createOrchestratorWakeScheduler(
   /** Sessions with a stopped job awaiting a recovery wake, carrying the
    * self-contained terminal deltas of the triggering stops (see
    * `formatStoppedJobDelta`), deduplicated per execution by
-   * `(taskID, generation)`. Deltas that arrive while a recovery wake is in
-   * flight must survive its confirmation: only the batch actually sent is
-   * retired on delivery. */
+   * `(taskID, generation)`. Bounded per parent (`STOPPED_RECOVERY_QUEUE_CAP`);
+   * each wake sends at most `STOPPED_RECOVERY_WAKE_CHUNK` entries. Deltas
+   * that arrive while a recovery wake is in flight must survive its
+   * confirmation: only the keys actually sent are retired on delivery. */
   const pendingStoppedRecoveries = new Map<string, Map<string, string>>();
 
   /** Queue a stop delta for the session's next recovery wake. */
@@ -512,7 +522,17 @@ export function createOrchestratorWakeScheduler(
       batch = new Map();
       pendingStoppedRecoveries.set(sessionID, batch);
     }
-    batch.set(dedupeKey ?? delta, delta);
+    const key = dedupeKey ?? delta;
+    if (batch.has(key)) {
+      batch.set(key, delta);
+      return;
+    }
+    while (batch.size >= STOPPED_RECOVERY_QUEUE_CAP) {
+      const oldest = batch.keys().next().value;
+      if (oldest === undefined) break;
+      batch.delete(oldest);
+    }
+    batch.set(key, delta);
   };
   /** Event-tracked session statuses (busy-set + parent race guard). */
   const lastStatusBySession = new Map<string, TrackedSessionStatus>();
@@ -1196,10 +1216,13 @@ export function createOrchestratorWakeScheduler(
       const recoveryBatch = recoveryWake
         ? pendingStoppedRecoveries.get(sessionID)
         : undefined;
-      const sentKeys = recoveryBatch ? [...recoveryBatch.keys()] : [];
-      const recoveryDelta = recoveryBatch
-        ? [...recoveryBatch.values()].join('\n')
-        : '';
+      const sentKeys = recoveryBatch
+        ? [...recoveryBatch.keys()].slice(0, STOPPED_RECOVERY_WAKE_CHUNK)
+        : [];
+      const recoveryDelta = sentKeys
+        .map((key) => recoveryBatch?.get(key))
+        .filter((text): text is string => typeof text === 'string')
+        .join('\n');
       const body = {
         agent: 'orchestrator',
         ...(modelSelection ? { model: modelSelection.model } : {}),
