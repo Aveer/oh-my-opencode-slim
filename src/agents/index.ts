@@ -32,6 +32,7 @@ import {
 } from './orchestrator';
 import { appendTaskRejectionInstruction } from './task-rejection';
 
+export { ensureCouncilCompactionException } from './council';
 export type { AgentDefinition } from './orchestrator';
 
 type AgentFactory = (

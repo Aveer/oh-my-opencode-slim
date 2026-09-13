@@ -7,9 +7,9 @@ import { createSynthesisOnlyPermission } from './permissions';
 export const COUNCIL_COMPACTION_EXCEPTION =
   'Exception: if the host asks you to produce a session checkpoint or compaction summary in a specific template, follow that template exactly and do not use the council report format.';
 
-/** Idempotent: production `createAgents` re-resolves prompts after the
- * factory and can drop the exception. Re-apply it to the final council
- * prompt without duplicating or imposing the synthesis reinforcement. */
+/** Idempotent: `createAgents` and the later host-agent merge can drop
+ * the exception. Re-apply it to the effective council prompt without
+ * duplicating or imposing the synthesis reinforcement. */
 export function ensureCouncilCompactionException(prompt: string): string {
   if (prompt.includes(COUNCIL_COMPACTION_EXCEPTION)) return prompt;
   return `${prompt}\n\n${COUNCIL_COMPACTION_EXCEPTION}`;
