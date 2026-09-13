@@ -213,6 +213,12 @@ export function createTaskSessionManagerHook(
       agentType: string,
       parentSessionID?: string,
     ) => string | undefined;
+    /** Current "provider/model" for a session. Feeds same-provider
+     *  background conversion. */
+    getSessionModel?: (sessionID: string) => string | undefined;
+    /** Opt-in provider → "foreground" map for same-provider background
+     *  conversion. */
+    sameProviderPolicy?: Record<string, 'foreground'>;
     shouldManageSession: (sessionID: string) => boolean;
     /** Register a session as orchestrator when the transform hook detects
      *  an orchestrator message but the session isn't in the agent map yet. */
@@ -519,6 +525,8 @@ export function createTaskSessionManagerHook(
         backgroundJobSupervisor: options.backgroundJobSupervisor,
         backgroundTaskConcurrency: options.backgroundTaskConcurrency,
         getModelForAgent: options.getModelForAgent,
+        getSessionModel: options.getSessionModel,
+        sameProviderPolicy: options.sameProviderPolicy,
         pendingCallTracker,
         taskContextTracker,
         getLifecycleEpoch: () => rehydrateState.nextEpoch,
