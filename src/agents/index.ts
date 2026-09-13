@@ -13,7 +13,10 @@ import { getAgentMcpList } from '../config/agent-mcps';
 import type { RuntimeConfig } from '../config/runtime';
 import { escapeRegExp, normalizeAgentName } from '../utils/agent-variant';
 
-import { createCouncilAgent } from './council';
+import {
+  createCouncilAgent,
+  ensureCouncilCompactionException,
+} from './council';
 import { buildCouncillorAgents, getCouncillorSeatName } from './council-agents';
 import { createCouncillorAgent } from './councillor';
 import { createDesignerAgent } from './designer';
@@ -501,6 +504,11 @@ export function createAgents(
         defaultPrompt,
         customPrompts.appendPrompt,
       );
+      if (name === 'council') {
+        agent.config.prompt = ensureCouncilCompactionException(
+          agent.config.prompt ?? '',
+        );
+      }
 
       return agent;
     });
