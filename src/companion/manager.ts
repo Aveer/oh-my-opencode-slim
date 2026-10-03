@@ -253,6 +253,7 @@ export class CompanionManager {
     { model?: string; variant?: string }
   >();
   private orchestratorSessionId: string | undefined;
+  private orchestratorBusy = false;
   private readonly config?: CompanionConfig;
   private companionProcess: ChildProcess | null = null;
   private wasSpawner = false;
@@ -330,16 +331,19 @@ export class CompanionManager {
       // Specialist failures must never turn the whole project red while other
       // work is still active.
       if (status === 'busy') {
+        this.orchestratorBusy = true;
         // A pending input request is cleared only by its explicit reply/reject
         // event, not by lifecycle noise from the same session.
         if (this.status !== 'waiting-input') this.status = 'busy';
       } else if (status === 'idle') {
+        this.orchestratorBusy = false;
         // Confirmed terminal errors and pending input stay visible until their
         // own recovery/resolution signal. Raw session.error is never fed here.
         if (this.status !== 'error' && this.status !== 'waiting-input') {
           this.status = 'idle';
         }
       } else if (status === 'error' || status === 'failed') {
+        this.orchestratorBusy = false;
         this.status = 'error';
       }
       this.flush();
@@ -411,6 +415,7 @@ export class CompanionManager {
     const wasOrchestrator = this.orchestratorSessionId === sessionId;
     if (wasOrchestrator) {
       this.orchestratorSessionId = undefined;
+      this.orchestratorBusy = false;
     }
     if (removed || wasOrchestrator) {
       this.flush();
@@ -427,7 +432,10 @@ export class CompanionManager {
 
   onInputResolved(): void {
     if (this.config?.enabled !== true) return;
-    this.status = this.busyAgentSessions.size > 0 ? 'busy' : 'idle';
+    this.status =
+      this.busyAgentSessions.size > 0 || this.orchestratorBusy
+        ? 'busy'
+        : 'idle';
     this.flush();
   }
 
