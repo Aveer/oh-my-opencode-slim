@@ -193,6 +193,104 @@ describe('CompanionManager', () => {
     );
   });
 
+  it('keeps per-project overrides isolated while global preset refreshes inheriting projects', () => {
+    const projectLocal = path.join(TEST_DIR, 'project-local');
+    const projectInherited = path.join(TEST_DIR, 'project-inherited');
+    mkdirSync(path.join(projectLocal, '.opencode'), { recursive: true });
+    mkdirSync(projectInherited, { recursive: true });
+    writeFileSync(
+      path.join(projectLocal, '.opencode', 'oh-my-opencode-slim.jsonc'),
+      JSON.stringify({ preset: 'local' }),
+    );
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        preset: 'global-a',
+        presets: {
+          local: { orchestrator: { model: 'local-model' } },
+          'global-a': { orchestrator: { model: 'global-a-model' } },
+          'global-b': { orchestrator: { model: 'global-b-model' } },
+        },
+      }),
+    );
+
+    const local = make('local-session', projectLocal);
+    const inherited = make('inherited-session', projectInherited);
+    local.onLoad();
+    inherited.onLoad();
+
+    let state = readState();
+    const localEntry = state.sessions.find(
+      (session: { session_id: string }) => session.session_id === 'local-session',
+    );
+    const inheritedEntry = state.sessions.find(
+      (session: { session_id: string }) =>
+        session.session_id === 'inherited-session',
+    );
+    expect(localEntry.preset).toMatchObject({
+      effective: 'local',
+      project: 'local',
+      global: 'global-a',
+      global_available: ['global-a', 'global-b', 'local'],
+    });
+    expect(inheritedEntry.preset).toMatchObject({
+      effective: 'global-a',
+      global: 'global-a',
+    });
+    expect(inheritedEntry.preset.project).toBeUndefined();
+
+    state.preset_requests = [
+      {
+        request_id: 'req-global',
+        session_id: 'inherited-session',
+        scope: 'global',
+        preset: 'global-b',
+        inherit: false,
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      inherited as unknown as {
+        consumePresetRequest: () => boolean;
+      }
+    ).consumePresetRequest();
+
+    for (let i = 0; i < 4; i++) {
+      (
+        local as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    state = readState();
+    const localAfter = state.sessions.find(
+      (session: { session_id: string }) => session.session_id === 'local-session',
+    );
+    const inheritedAfter = state.sessions.find(
+      (session: { session_id: string }) =>
+        session.session_id === 'inherited-session',
+    );
+    expect(localAfter.preset).toMatchObject({
+      effective: 'local',
+      project: 'local',
+      global: 'global-b',
+    });
+    expect(inheritedAfter.preset).toMatchObject({
+      effective: 'global-b',
+      global: 'global-b',
+      last_scope: 'global',
+      result_ok: true,
+    });
+  });
+
   it('refreshes published preset state after an external config edit', () => {
     const projectDir = path.join(TEST_DIR, 'refresh-project');
     const projectConfigDir = path.join(projectDir, '.opencode');
