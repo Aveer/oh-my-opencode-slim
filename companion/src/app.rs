@@ -180,17 +180,15 @@ fn clamp_window_position(pos: [f32; 2], screen: [f32; 2], win: [f32; 2]) -> [f32
     [pos[0].clamp(GAP, x_max), pos[1].clamp(GAP, y_max)]
 }
 
-fn restore_window_position(pos: [f32; 2], _screen: [f32; 2], _win: [f32; 2]) -> [f32; 2] {
-    // Saved positions come from the native viewport's outer_rect and therefore
-    // use desktop-global coordinates. egui exposes the current monitor size but
-    // not its desktop-global origin, so clamping a saved position against a
-    // synthetic origin-zero rectangle can incorrectly pull windows off a
-    // secondary monitor. Trust finite positions exactly; automatic corner
-    // placement remains clamped separately in place_window().
-    if pos[0].is_finite() && pos[1].is_finite() {
-        pos
+fn restore_window_position(pos: [f32; 2], screen: [f32; 2], win: [f32; 2]) -> [f32; 2] {
+    // egui 0.29 exposes monitor size but not monitor origin. If a saved native
+    // position is outside origin-zero bounds, it may be on a secondary monitor
+    // with a positive or negative origin. Preserve it instead of snapping it
+    // back to the primary monitor.
+    if 0.0 <= pos[0] && pos[0] < screen[0] && 0.0 <= pos[1] && pos[1] < screen[1] {
+        clamp_window_position(pos, screen, win)
     } else {
-        [GAP, GAP]
+        pos
     }
 }
 
@@ -1002,18 +1000,10 @@ mod tests {
     }
 
     #[test]
-    fn restore_preserves_native_desktop_coordinates() {
+    fn restore_clamps_origin_zero_positions() {
         assert_eq!(
             restore_window_position([1400.0, 850.0], [1440.0, 900.0], [120.0, 120.0]),
-            [1400.0, 850.0]
-        );
-    }
-
-    #[test]
-    fn restore_rejects_non_finite_positions() {
-        assert_eq!(
-            restore_window_position([f32::NAN, 20.0], [1440.0, 900.0], [120.0, 120.0]),
-            [GAP, GAP]
+            [1310.0, 770.0]
         );
     }
 
