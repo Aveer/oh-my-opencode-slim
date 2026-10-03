@@ -5,6 +5,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 const MAX_WINDOW_POSITIONS: usize = 100;
+const MAX_PRESET_REQUESTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanionConfigState {
@@ -41,9 +42,7 @@ pub struct CompanionState {
     #[serde(default)]
     pub window_positions: BTreeMap<String, WindowPositionState>,
     #[serde(default)]
-    pub preset_request: Option<CompanionPresetRequest>,
-    #[serde(default)]
-    pub preset_result: Option<CompanionPresetResult>,
+    pub preset_requests: Vec<CompanionPresetRequest>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -60,6 +59,10 @@ pub struct CompanionPresetState {
     pub available: Vec<String>,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub last_request_id: Option<String>,
+    #[serde(default)]
+    pub result_ok: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,15 +70,6 @@ pub struct CompanionPresetRequest {
     pub request_id: String,
     pub session_id: String,
     pub preset: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompanionPresetResult {
-    pub request_id: String,
-    pub session_id: String,
-    pub preset: String,
-    pub ok: bool,
-    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,8 +130,29 @@ pub fn write_preset_request(
 
     let _lock = StateWriteLock::acquire(path)?;
     let mut state = read_state(path);
-    state.preset_request = Some(request);
-    state.preset_result = None;
+
+    // Drop orphaned requests whose target manager no longer has a published
+    // session entry, then append without overwriting requests from other
+    // Companion windows/processes.
+    let live_sessions: std::collections::BTreeSet<&str> =
+        state.sessions.iter().map(|session| session.session_id.as_str()).collect();
+    state
+        .preset_requests
+        .retain(|pending| live_sessions.contains(pending.session_id.as_str()));
+    if state
+        .preset_requests
+        .iter()
+        .any(|pending| pending.request_id == request.request_id)
+    {
+        return Ok(());
+    }
+    if state.preset_requests.len() >= MAX_PRESET_REQUESTS {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "companion preset request queue is full",
+        ));
+    }
+    state.preset_requests.push(request);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
