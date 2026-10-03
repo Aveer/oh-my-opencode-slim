@@ -31,6 +31,27 @@ fn default_speed() -> f32 {
     1.0
 }
 
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CompanionUiPreferencesState {
+    #[serde(default = "default_true")]
+    pub always_on_top: bool,
+    #[serde(default)]
+    pub dim_when_idle: bool,
+}
+
+impl Default for CompanionUiPreferencesState {
+    fn default() -> Self {
+        Self {
+            always_on_top: true,
+            dim_when_idle: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CompanionState {
     pub version: u32,
@@ -40,6 +61,8 @@ pub struct CompanionState {
     pub config: Option<CompanionConfigState>,
     #[serde(default)]
     pub window_positions: BTreeMap<String, WindowPositionState>,
+    #[serde(default)]
+    pub ui_preferences: CompanionUiPreferencesState,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -86,6 +109,24 @@ pub fn read_state(path: &std::path::Path) -> CompanionState {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+pub fn write_ui_preferences(
+    path: &std::path::Path,
+    preferences: CompanionUiPreferencesState,
+) -> std::io::Result<()> {
+    let _lock = StateWriteLock::acquire(path)?;
+    let mut state = read_state(path);
+    state.ui_preferences = preferences;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let json = serde_json::to_string(&state).map_err(std::io::Error::other)?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
 }
 
 pub fn write_project_window_position(
