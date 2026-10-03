@@ -20,7 +20,7 @@ const GAP: f32 = 10.0;
 
 const SIZE_PRESETS: &[(&str, f32)] = &[("S", 80.0), ("M", 120.0), ("L", 160.0), ("XL", 200.0)];
 
-const MENU_W: f32 = 112.0;
+const MENU_W: f32 = 76.0;
 const MENU_H: f32 = 104.0;
 const MENU_PAD: f32 = 2.0;
 const SURFACE_INSET: f32 = 1.0;
@@ -806,34 +806,36 @@ fn render_companion_menu(
                         ui.set_min_width(MENU_W - MENU_PAD * 2.0);
                         ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
                         let top_label = if *always_on_top {
-                            "[x] Always on top"
+                            "[x] Topmost"
                         } else {
-                            "[ ] Always on top"
+                            "[ ] Topmost"
                         };
                         if ui
                             .add_sized(
                                 [MENU_W - MENU_PAD * 2.0, 18.0],
-                                egui::Button::new(egui::RichText::new(top_label).size(10.0))
+                                egui::Button::new(egui::RichText::new(top_label).size(9.0))
                                     .fill(egui::Color32::from_rgb(30, 30, 32))
                                     .stroke(egui::Stroke::NONE),
                             )
+                            .on_hover_text("Keep the Companion above normal windows")
                             .clicked()
                         {
                             *always_on_top = !*always_on_top;
                         }
 
                         let dim_label = if *dim_when_idle {
-                            "[x] Dim when idle"
+                            "[x] Dim idle"
                         } else {
-                            "[ ] Dim when idle"
+                            "[ ] Dim idle"
                         };
                         if ui
                             .add_sized(
                                 [MENU_W - MENU_PAD * 2.0, 18.0],
-                                egui::Button::new(egui::RichText::new(dim_label).size(10.0))
+                                egui::Button::new(egui::RichText::new(dim_label).size(9.0))
                                     .fill(egui::Color32::from_rgb(30, 30, 32))
                                     .stroke(egui::Stroke::NONE),
                             )
+                            .on_hover_text("Dim the animation while the session is idle")
                             .clicked()
                         {
                             *dim_when_idle = !*dim_when_idle;
