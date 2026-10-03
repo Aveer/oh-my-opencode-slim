@@ -192,7 +192,10 @@ describe('switchPresetOnDisk', () => {
       'opencode',
       'oh-my-opencode-slim.json',
     );
-    fs.writeFileSync(userConfigPath, JSON.stringify({ preset: 'user-default' }));
+    fs.writeFileSync(
+      userConfigPath,
+      JSON.stringify({ preset: 'user-default' }),
+    );
 
     const config: PluginConfig = {
       presets: {
@@ -209,9 +212,9 @@ describe('switchPresetOnDisk', () => {
     const projectText = fs.readFileSync(projectConfigPath, 'utf-8');
     expect(projectText).toContain('// Companion should preserve');
     expect((parse(projectText) as { preset?: string }).preset).toBe('cheap');
-    expect(
-      JSON.parse(fs.readFileSync(userConfigPath, 'utf-8')).preset,
-    ).toBe('user-default');
+    expect(JSON.parse(fs.readFileSync(userConfigPath, 'utf-8')).preset).toBe(
+      'user-default',
+    );
   });
 
   test('switching preserves activation directives and allows activation-only presets', () => {
