@@ -295,6 +295,16 @@ fn adjacent_preset(state: &CompanionPresetState, direction: isize) -> Option<Str
     state.available.get(next).cloned()
 }
 
+fn preset_request_completed(sessions: &[SessionInfo], request_id: &str) -> bool {
+    sessions.iter().any(|session| {
+        session
+            .preset
+            .as_ref()
+            .and_then(|preset| preset.last_request_id.as_deref())
+            == Some(request_id)
+    })
+}
+
 fn choose_owned_session(sessions: &[SessionInfo], owner_session_id: Option<&str>) -> Option<usize> {
     if let Some(owner_session_id) = owner_session_id {
         if let Some(index) = sessions
@@ -401,19 +411,7 @@ impl CompanionApp {
             while self.rx.try_recv().is_ok() {}
             let state = read_state(&self.state_path);
             if let Some(pending_request_id) = self.pending_preset_request_id.as_deref() {
-                let completed = self
-                    .owner_session_id
-                    .as_deref()
-                    .and_then(|owner| {
-                        state
-                            .sessions
-                            .iter()
-                            .find(|session| session.session_id == owner)
-                    })
-                    .and_then(|session| session.preset.as_ref())
-                    .and_then(|preset| preset.last_request_id.as_deref())
-                    == Some(pending_request_id);
-                if completed {
+                if preset_request_completed(&state.sessions, pending_request_id) {
                     self.pending_preset_request_id = None;
                 }
             }
@@ -1005,8 +1003,8 @@ fn is_pid_alive(_pid: u32) -> bool {
 mod tests {
     use super::{
         adjacent_preset, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
-        handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
-        ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        handle_drag_start, place_window, preset_request_completed, restore_window_position,
+        size_from_config, window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionConfigState, CompanionPresetState};
 
@@ -1075,6 +1073,32 @@ mod tests {
             session("active", "busy", &["fixer"]),
         ];
         assert_eq!(choose_owned_session(&sessions, Some("gone")), Some(1));
+    }
+
+    #[test]
+    fn preset_completion_can_arrive_on_a_non_owner_session() {
+        let mut owner = session("owner", "idle", &["intro"]);
+        owner.preset = Some(CompanionPresetState {
+            current: Some("one".into()),
+            available: vec!["one".into(), "two".into()],
+            message: None,
+            last_request_id: None,
+            result_ok: None,
+        });
+        let mut displayed = session("displayed", "idle", &["intro"]);
+        displayed.preset = Some(CompanionPresetState {
+            current: Some("two".into()),
+            available: vec!["one".into(), "two".into()],
+            message: None,
+            last_request_id: Some("req-7".into()),
+            result_ok: Some(true),
+        });
+
+        assert!(preset_request_completed(&[owner, displayed], "req-7"));
+        assert!(!preset_request_completed(
+            &[session("other", "idle", &["intro"])],
+            "req-7"
+        ));
     }
 
     #[test]
