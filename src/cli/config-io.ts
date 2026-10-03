@@ -1,11 +1,16 @@
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
@@ -583,13 +588,35 @@ function hasSameJsonValue(left: unknown, right: unknown): boolean {
   );
 }
 
+function writeBackupAtomic(backupPath: string, content: string): void {
+  const parent = dirname(backupPath);
+  mkdirSync(parent, { recursive: true });
+  const temporaryPath = `${backupPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const fd = openSync(temporaryPath, 'wx');
+    try {
+      writeFileSync(fd, content, 'utf8');
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporaryPath, backupPath);
+  } finally {
+    try {
+      if (existsSync(temporaryPath)) rmSync(temporaryPath, { force: true });
+    } catch {
+      // Failed backup-temp cleanup must not mask the original write error.
+    }
+  }
+}
+
 function publishConfig(
   configPath: string,
   config: OpenCodeConfig,
   currentText?: string,
 ): void {
   const bakPath = `${configPath}.bak`;
-  if (currentText !== undefined) writeAtomic(bakPath, currentText);
+  if (currentText !== undefined) writeBackupAtomic(bakPath, currentText);
 
   const bom = currentText?.startsWith('\uFEFF') ? '\uFEFF' : '';
   const content =
@@ -653,7 +680,7 @@ export function publishPreparedJsonConfig(
   if (!prepared.changed) return;
 
   if (prepared.originalText !== undefined) {
-    writeAtomic(`${prepared.configPath}.bak`, prepared.originalText);
+    writeBackupAtomic(`${prepared.configPath}.bak`, prepared.originalText);
   }
   writeAtomic(prepared.configPath, prepared.content);
 }
