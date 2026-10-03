@@ -11,8 +11,8 @@ use crate::gifs::{AnimationFrame, Gifs};
 use crate::niri;
 use crate::screen::primary_size;
 use crate::state::{
-    read_state, start_watcher, write_project_window_position, CompanionConfigState, SessionInfo,
-    WindowPositionState,
+    read_state, start_watcher, write_project_window_position, write_ui_preferences,
+    CompanionConfigState, CompanionUiPreferencesState, SessionInfo, WindowPositionState,
 };
 
 const DEFAULT_SIZE: f32 = 120.0;
@@ -20,8 +20,8 @@ const GAP: f32 = 10.0;
 
 const SIZE_PRESETS: &[(&str, f32)] = &[("S", 80.0), ("M", 120.0), ("L", 160.0), ("XL", 200.0)];
 
-const MENU_W: f32 = 76.0;
-const MENU_H: f32 = 58.0;
+const MENU_W: f32 = 112.0;
+const MENU_H: f32 = 104.0;
 const MENU_PAD: f32 = 2.0;
 const SURFACE_INSET: f32 = 1.0;
 
@@ -141,6 +141,14 @@ fn apply_config(
         *gif_pack = "default".to_string();
         *loop_style = "classic".to_string();
         *speed = normalized_speed(f32::NAN);
+    }
+}
+
+fn animation_tint(status: &str, dim_when_idle: bool) -> egui::Color32 {
+    if dim_when_idle && status == "idle" {
+        egui::Color32::from_white_alpha(110)
+    } else {
+        egui::Color32::WHITE
     }
 }
 
@@ -304,6 +312,9 @@ pub struct CompanionApp {
     window_positions: std::collections::BTreeMap<String, WindowPositionState>,
     project_keys: std::collections::BTreeMap<String, String>,
     drag_project_key: Option<String>,
+    always_on_top: bool,
+    dim_when_idle: bool,
+    applied_always_on_top: Option<bool>,
     niri_generation: Arc<AtomicU64>,
 }
 
@@ -319,6 +330,7 @@ impl CompanionApp {
             owner_session_id,
             state.sessions.len()
         ));
+        let ui_preferences = state.ui_preferences;
         let sessions = state.sessions;
         let window_positions = state.window_positions;
 
@@ -364,6 +376,9 @@ impl CompanionApp {
             window_positions,
             project_keys: std::collections::BTreeMap::new(),
             drag_project_key: None,
+            always_on_top: ui_preferences.always_on_top,
+            dim_when_idle: ui_preferences.dim_when_idle,
+            applied_always_on_top: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -386,6 +401,8 @@ impl CompanionApp {
                 owned_config
             ));
             self.window_positions = state.window_positions;
+            self.always_on_top = state.ui_preferences.always_on_top;
+            self.dim_when_idle = state.ui_preferences.dim_when_idle;
             self.project_keys
                 .retain(|cwd, _| self.sessions.iter().any(|session| &session.cwd == cwd));
             self.has_modern_config = state.config.is_some();
@@ -441,6 +458,17 @@ impl eframe::App for CompanionApp {
         if quit || (self.registered && self.sessions.is_empty()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+
+        if self.applied_always_on_top != Some(self.always_on_top) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                if self.always_on_top {
+                    egui::WindowLevel::AlwaysOnTop
+                } else {
+                    egui::WindowLevel::Normal
+                },
+            ));
+            self.applied_always_on_top = Some(self.always_on_top);
         }
 
         if !self.registered {
@@ -611,10 +639,38 @@ impl eframe::App for CompanionApp {
             )
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
+                render_session(
+                    ui,
+                    ctx,
+                    &session,
+                    &agent_frames,
+                    self.size,
+                    win_w,
+                    win_h,
+                    self.dim_when_idle,
+                );
             });
 
-        render_size_picker(ctx, win_w, win_h);
+        let previous_preferences = CompanionUiPreferencesState {
+            always_on_top: self.always_on_top,
+            dim_when_idle: self.dim_when_idle,
+        };
+        render_companion_menu(
+            ctx,
+            win_w,
+            win_h,
+            &mut self.always_on_top,
+            &mut self.dim_when_idle,
+        );
+        let current_preferences = CompanionUiPreferencesState {
+            always_on_top: self.always_on_top,
+            dim_when_idle: self.dim_when_idle,
+        };
+        if current_preferences != previous_preferences {
+            if let Err(err) = write_ui_preferences(&self.state_path, current_preferences) {
+                crate::log::debug(format!("ui preference write failed: {err}"));
+            }
+        }
         ctx.request_repaint_after(Duration::from_millis(16));
     }
 }
@@ -659,6 +715,7 @@ fn render_session(
     current_size: f32,
     win_w: f32,
     win_h: f32,
+    dim_when_idle: bool,
 ) {
     let cwd = &session.cwd;
 
@@ -678,13 +735,14 @@ fn render_session(
     );
     ui.painter().rect_filled(surface, 0.0, egui::Color32::BLACK);
 
+    let tint = animation_tint(&session.status, dim_when_idle);
     for (i, frame) in agent_frames.iter().enumerate() {
         if let Some(&cell) = rects.get(i) {
             ui.painter().image(
                 frame.texture_id,
                 cell.shrink(SURFACE_INSET),
                 frame.uv,
-                egui::Color32::WHITE,
+                tint,
             );
         }
     }
@@ -710,7 +768,13 @@ fn render_session(
     );
 }
 
-fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
+fn render_companion_menu(
+    ctx: &egui::Context,
+    win_w: f32,
+    win_h: f32,
+    always_on_top: &mut bool,
+    dim_when_idle: &mut bool,
+) {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
         return;
@@ -730,7 +794,7 @@ fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
 
     let response =
-        egui::Area::new(egui::Id::new("size_picker"))
+        egui::Area::new(egui::Id::new("companion_menu"))
             .fixed_pos(egui::pos2(x, y))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -741,6 +805,41 @@ fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
                     .show(ui, |ui| {
                         ui.set_min_width(MENU_W - MENU_PAD * 2.0);
                         ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
+                        let top_label = if *always_on_top {
+                            "[x] Always on top"
+                        } else {
+                            "[ ] Always on top"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(top_label).size(10.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .clicked()
+                        {
+                            *always_on_top = !*always_on_top;
+                        }
+
+                        let dim_label = if *dim_when_idle {
+                            "[x] Dim when idle"
+                        } else {
+                            "[ ] Dim when idle"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(dim_label).size(10.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .clicked()
+                        {
+                            *dim_when_idle = !*dim_when_idle;
+                        }
+
+                        ui.add_space(1.0);
                         ui.label(
                             egui::RichText::new("Size")
                                 .size(9.0)
