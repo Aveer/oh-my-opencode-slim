@@ -2673,6 +2673,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
             sessionId: input.sessionID,
             model,
             ...(liveVariant ? { variant: liveVariant } : {}),
+            variantObserved: true,
           });
         }
         backgroundTaskConcurrency.migrateTask(input.sessionID, model);
