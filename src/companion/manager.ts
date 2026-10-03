@@ -10,7 +10,12 @@ import {
 } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { loadPluginConfig } from '../config/loader';
 import type { CompanionConfig } from '../config/schema';
+import {
+  getAllConfiguredPresets,
+  switchPresetOnDisk,
+} from '../tools/preset-switch';
 import { log } from '../utils/logger';
 
 // Only one companion `process.on('exit')` listener should be live per process.
@@ -23,6 +28,23 @@ import { log } from '../utils/logger';
 let activeExitListener: (() => void) | null = null;
 const activeManagers = new Set<CompanionManager>();
 
+interface CompanionPresetState {
+  current?: string;
+  available: string[];
+  message?: string;
+}
+
+interface CompanionPresetRequest {
+  request_id: string;
+  session_id: string;
+  preset: string;
+}
+
+interface CompanionPresetResult extends CompanionPresetRequest {
+  ok: boolean;
+  message: string;
+}
+
 interface CompanionSession {
   session_id: string;
   cwd: string;
@@ -30,12 +52,15 @@ interface CompanionSession {
   status: string;
   pid: number;
   config?: CompanionState['config'];
+  preset?: CompanionPresetState;
 }
 
 interface CompanionState {
   version: 1;
   sessions: CompanionSession[];
   window_positions?: Record<string, { x: number; y: number }>;
+  preset_request?: CompanionPresetRequest;
+  preset_result?: CompanionPresetResult;
   config?: {
     enabled: boolean;
     position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
@@ -244,11 +269,61 @@ export class CompanionManager {
   private companionProcess: ChildProcess | null = null;
   private wasSpawner = false;
   private spawnedCompanionPid: number | null = null;
+  private presetPoller: NodeJS.Timeout | null = null;
+  private currentPreset: string | undefined;
+  private availablePresets: string[] = [];
+  private presetMessage: string | undefined;
 
   constructor(sessionId: string, cwd: string, config?: CompanionConfig) {
     this.id = sessionId;
     this.cwd = cwd;
     this.config = config;
+  }
+
+  private refreshPresetState(): void {
+    const config = loadPluginConfig(this.cwd, { silent: true });
+    this.currentPreset =
+      typeof config.preset === 'string' && config.preset.trim()
+        ? config.preset.trim()
+        : undefined;
+    const names = new Set(Object.keys(getAllConfiguredPresets(this.cwd)));
+    for (const name of Object.keys(config.presets ?? {})) names.add(name);
+    this.availablePresets = [...names].sort((a, b) => a.localeCompare(b));
+  }
+
+  private startPresetPoller(): void {
+    if (this.presetPoller) return;
+    this.presetPoller = setInterval(() => this.consumePresetRequest(), 250);
+    this.presetPoller.unref();
+  }
+
+  private consumePresetRequest(): void {
+    if (this.config?.enabled !== true) return;
+    const request = readState().preset_request;
+    if (!request || request.session_id !== this.id) return;
+
+    const config = loadPluginConfig(this.cwd, { silent: true });
+    const result = switchPresetOnDisk(
+      this.cwd,
+      request.preset,
+      config,
+      { scope: 'effective' },
+    );
+    this.presetMessage = result.message;
+    if (result.ok) this.currentPreset = result.presetName;
+    this.refreshPresetState();
+
+    writeState((state) => {
+      if (state.preset_request?.request_id === request.request_id) {
+        delete state.preset_request;
+      }
+      state.preset_result = {
+        ...request,
+        ok: result.ok,
+        message: result.message,
+      };
+    });
+    this.flush();
   }
 
   onLoad(): void {
@@ -267,7 +342,9 @@ export class CompanionManager {
       return;
     }
     this.registerActiveManager();
+    this.refreshPresetState();
     this.flush();
+    this.startPresetPoller();
     this.spawnIfAvailable();
   }
 
@@ -354,6 +431,10 @@ export class CompanionManager {
   }
 
   onExit(): void {
+    if (this.presetPoller) {
+      clearInterval(this.presetPoller);
+      this.presetPoller = null;
+    }
     activeManagers.delete(this);
     if (activeManagers.size === 0 && activeExitListener) {
       try {
@@ -431,6 +512,11 @@ export class CompanionManager {
               debug: this.config.debug ?? false,
             }
           : undefined,
+        preset: {
+          current: this.currentPreset,
+          available: this.availablePresets,
+          message: this.presetMessage,
+        },
       };
       writeState((state) => {
         const idx = state.sessions.findIndex((s) => s.session_id === this.id);
