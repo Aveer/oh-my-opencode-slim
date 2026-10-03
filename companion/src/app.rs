@@ -11,8 +11,8 @@ use crate::gifs::{AnimationFrame, Gifs};
 use crate::niri;
 use crate::screen::primary_size;
 use crate::state::{
-    read_state, start_watcher, write_project_window_position, CompanionConfigState, SessionInfo,
-    WindowPositionState,
+    read_state, start_watcher, write_project_window_position, CompanionAgentDetail,
+    CompanionConfigState, SessionInfo, WindowPositionState,
 };
 
 const DEFAULT_SIZE: f32 = 120.0;
@@ -215,6 +215,38 @@ fn canonical_project_key(cwd: &str) -> String {
         .ok()
         .and_then(|path| path.to_str().map(str::to_string))
         .unwrap_or_else(|| cwd.to_string())
+}
+
+fn agent_detail_tooltip(detail: &CompanionAgentDetail) -> String {
+    let mut lines = vec![detail.agent.clone()];
+    if let Some(model) = detail.model.as_deref() {
+        lines.push(format!("Model: {model}"));
+    }
+    if let Some(variant) = detail.variant.as_deref() {
+        lines.push(format!("Variant: {variant}"));
+    }
+    lines.join("\n")
+}
+
+fn attention_stroke(status: &str) -> Option<egui::Stroke> {
+    match status {
+        "waiting-input" => Some(egui::Stroke::new(
+            2.0,
+            egui::Color32::from_rgb(245, 190, 75),
+        )),
+        "error" | "failed" => Some(egui::Stroke::new(
+            2.0,
+            egui::Color32::from_rgb(235, 80, 80),
+        )),
+        _ => None,
+    }
+}
+
+fn paint_outline(painter: &egui::Painter, rect: egui::Rect, stroke: egui::Stroke) {
+    painter.line_segment([rect.left_top(), rect.right_top()], stroke);
+    painter.line_segment([rect.right_top(), rect.right_bottom()], stroke);
+    painter.line_segment([rect.right_bottom(), rect.left_bottom()], stroke);
+    painter.line_segment([rect.left_bottom(), rect.left_top()], stroke);
 }
 
 fn cell_rects(agents: usize, cols: usize, rows: usize, cell: f32) -> Vec<egui::Rect> {
@@ -497,34 +529,39 @@ impl eframe::App for CompanionApp {
         let project_key = self.project_key_for(&session.cwd);
         let saved_position = self.window_positions.get(&project_key).copied();
         let time_seconds = ctx.input(|input| input.time);
-        let agent_frames: Vec<AnimationFrame> = if session.active_agents.is_empty() {
-            self.gifs
-                .frame(
-                    ctx,
-                    "intro",
-                    &self.gif_pack,
-                    self.speed,
-                    &self.loop_style,
-                    time_seconds,
-                )
-                .into_iter()
-                .collect()
-        } else {
-            session
-                .active_agents
-                .iter()
-                .filter_map(|agent| {
-                    self.gifs.frame(
+        let agent_frames: Vec<(usize, AnimationFrame)> =
+            if session.active_agents.is_empty() {
+                self.gifs
+                    .frame(
                         ctx,
-                        agent,
+                        "intro",
                         &self.gif_pack,
                         self.speed,
                         &self.loop_style,
                         time_seconds,
                     )
-                })
-                .collect()
-        };
+                    .into_iter()
+                    .map(|frame| (usize::MAX, frame))
+                    .collect()
+            } else {
+                session
+                    .active_agents
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(source_index, agent)| {
+                        self.gifs
+                            .frame(
+                                ctx,
+                                agent,
+                                &self.gif_pack,
+                                self.speed,
+                                &self.loop_style,
+                                time_seconds,
+                            )
+                            .map(|frame| (source_index, frame))
+                    })
+                    .collect()
+            };
         let n = agent_frames.len().max(1);
         let (cols, rows) = grid_dims(n);
         let [win_w, win_h] = window_size(self.size, cols, rows);
@@ -655,7 +692,7 @@ fn render_session(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     session: &SessionInfo,
-    agent_frames: &[AnimationFrame],
+    agent_frames: &[(usize, AnimationFrame)],
     current_size: f32,
     win_w: f32,
     win_h: f32,
@@ -678,7 +715,7 @@ fn render_session(
     );
     ui.painter().rect_filled(surface, 0.0, egui::Color32::BLACK);
 
-    for (i, frame) in agent_frames.iter().enumerate() {
+    for (i, (source_index, frame)) in agent_frames.iter().enumerate() {
         if let Some(&cell) = rects.get(i) {
             ui.painter().image(
                 frame.texture_id,
@@ -686,7 +723,20 @@ fn render_session(
                 frame.uv,
                 egui::Color32::WHITE,
             );
+
+            if let Some(detail) = session.active_agent_details.get(*source_index) {
+                ui.interact(
+                    cell,
+                    egui::Id::new(("companion-agent-detail", &session.session_id, source_index)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(agent_detail_tooltip(detail));
+            }
         }
+    }
+
+    if let Some(stroke) = attention_stroke(&session.status) {
+        paint_outline(ui.painter(), surface.shrink(1.0), stroke);
     }
 
     let label_h = (current_size * 0.15).clamp(13.0, 30.0);
