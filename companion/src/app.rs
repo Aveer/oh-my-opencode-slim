@@ -234,7 +234,6 @@ fn attention_stroke(status: &str) -> Option<egui::Stroke> {
             2.0,
             egui::Color32::from_rgb(245, 190, 75),
         )),
-        "error" | "failed" => Some(egui::Stroke::new(2.0, egui::Color32::from_rgb(235, 80, 80))),
         _ => None,
     }
 }
@@ -1000,10 +999,10 @@ mod tests {
     }
 
     #[test]
-    fn attention_outline_is_reserved_for_actionable_states() {
+    fn attention_outline_is_reserved_for_waiting_input() {
         assert!(attention_stroke("waiting-input").is_some());
-        assert!(attention_stroke("error").is_some());
-        assert!(attention_stroke("failed").is_some());
+        assert!(attention_stroke("error").is_none());
+        assert!(attention_stroke("failed").is_none());
         assert!(attention_stroke("busy").is_none());
         assert!(attention_stroke("idle").is_none());
     }
