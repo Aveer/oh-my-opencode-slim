@@ -228,7 +228,8 @@ describe('CompanionManager', () => {
 
     let state = readState();
     const localEntry = state.sessions.find(
-      (session: { session_id: string }) => session.session_id === 'local-session',
+      (session: { session_id: string }) =>
+        session.session_id === 'local-session',
     );
     const inheritedEntry = state.sessions.find(
       (session: { session_id: string }) =>
@@ -272,7 +273,8 @@ describe('CompanionManager', () => {
 
     state = readState();
     const localAfter = state.sessions.find(
-      (session: { session_id: string }) => session.session_id === 'local-session',
+      (session: { session_id: string }) =>
+        session.session_id === 'local-session',
     );
     const inheritedAfter = state.sessions.find(
       (session: { session_id: string }) =>
