@@ -640,9 +640,7 @@ impl eframe::App for CompanionApp {
                 render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
             });
 
-        if let Some(preset) =
-            render_companion_menu(ctx, win_w, win_h, session.preset.as_ref())
-        {
+        if let Some(preset) = render_companion_menu(ctx, win_w, win_h, session.preset.as_ref()) {
             self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
             let request = CompanionPresetRequest {
                 request_id: format!("{}-{}", std::process::id(), self.preset_request_seq),
@@ -960,9 +958,9 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        adjacent_preset, apply_config, choose_owned_session, choose_session, config_key,
-        grid_dims, handle_drag_start, place_window, restore_window_position, size_from_config,
-        window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        adjacent_preset, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
+        handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
+        ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionConfigState, CompanionPresetState};
 
