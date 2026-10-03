@@ -40,12 +40,42 @@ pub struct CompanionState {
     pub config: Option<CompanionConfigState>,
     #[serde(default)]
     pub window_positions: BTreeMap<String, WindowPositionState>,
+    #[serde(default)]
+    pub preset_request: Option<CompanionPresetRequest>,
+    #[serde(default)]
+    pub preset_result: Option<CompanionPresetResult>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct WindowPositionState {
     pub x: f32,
     pub y: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionPresetState {
+    #[serde(default)]
+    pub current: Option<String>,
+    #[serde(default)]
+    pub available: Vec<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionPresetRequest {
+    pub request_id: String,
+    pub session_id: String,
+    pub preset: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionPresetResult {
+    pub request_id: String,
+    pub session_id: String,
+    pub preset: String,
+    pub ok: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +92,8 @@ pub struct SessionInfo {
     pub pid: Option<u32>,
     #[serde(default)]
     pub config: Option<CompanionConfigState>,
+    #[serde(default)]
+    pub preset: Option<CompanionPresetState>,
 }
 
 pub fn state_file_path() -> PathBuf {
@@ -86,6 +118,35 @@ pub fn read_state(path: &std::path::Path) -> CompanionState {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+pub fn write_preset_request(
+    path: &std::path::Path,
+    request: CompanionPresetRequest,
+) -> std::io::Result<()> {
+    if request.request_id.trim().is_empty()
+        || request.session_id.trim().is_empty()
+        || request.preset.trim().is_empty()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid companion preset request",
+        ));
+    }
+
+    let _lock = StateWriteLock::acquire(path)?;
+    let mut state = read_state(path);
+    state.preset_request = Some(request);
+    state.preset_result = None;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let json = serde_json::to_string(&state).map_err(std::io::Error::other)?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
 }
 
 pub fn write_project_window_position(
