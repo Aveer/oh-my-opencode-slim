@@ -965,9 +965,9 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_config, choose_owned_session, choose_session, config_key, grid_dims,
-        handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
-        ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        animation_tint, apply_config, choose_owned_session, choose_session, config_key,
+        grid_dims, handle_drag_start, place_window, restore_window_position, size_from_config,
+        window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::CompanionConfigState;
 
@@ -1035,6 +1035,20 @@ mod tests {
             session("active", "busy", &["fixer"]),
         ];
         assert_eq!(choose_owned_session(&sessions, Some("gone")), Some(1));
+    }
+
+    #[test]
+    fn idle_dimming_is_opt_in() {
+        assert_eq!(
+            animation_tint("idle", true),
+            egui::Color32::from_white_alpha(110)
+        );
+        assert_eq!(animation_tint("idle", false), egui::Color32::WHITE);
+        assert_eq!(animation_tint("busy", true), egui::Color32::WHITE);
+        assert_eq!(
+            animation_tint("waiting-input", true),
+            egui::Color32::WHITE
+        );
     }
 
     #[test]
