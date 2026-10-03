@@ -10,12 +10,12 @@ import {
 } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { loadPluginConfig } from '../config/loader';
-import type { CompanionConfig } from '../config/schema';
 import {
-  getAllConfiguredPresets,
-  switchPresetOnDisk,
-} from '../tools/preset-switch';
+  type ConfigLoadWarningKind,
+  loadPluginConfig,
+} from '../config/loader';
+import type { CompanionConfig } from '../config/schema';
+import { switchPresetOnDisk } from '../tools/preset-switch';
 import { log } from '../utils/logger';
 
 // Only one companion `process.on('exit')` listener should be live per process.
@@ -27,11 +27,17 @@ import { log } from '../utils/logger';
 // re-evaluated.
 let activeExitListener: (() => void) | null = null;
 const activeManagers = new Set<CompanionManager>();
+const MAX_PRESET_REQUESTS = 64;
+const PRESET_REFRESH_EVERY_TICKS = 4;
+const HARD_PRESET_REFRESH_WARNING_KINDS: ReadonlySet<ConfigLoadWarningKind> =
+  new Set(['invalid-json', 'invalid-schema', 'read-error']);
 
 interface CompanionPresetState {
   current?: string;
   available: string[];
   message?: string;
+  last_request_id?: string;
+  result_ok?: boolean;
 }
 
 interface CompanionPresetRequest {
@@ -59,8 +65,7 @@ interface CompanionState {
   version: 1;
   sessions: CompanionSession[];
   window_positions?: Record<string, { x: number; y: number }>;
-  preset_request?: CompanionPresetRequest;
-  preset_result?: CompanionPresetResult;
+  preset_requests?: CompanionPresetRequest[];
   config?: {
     enabled: boolean;
     position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
@@ -270,9 +275,12 @@ export class CompanionManager {
   private wasSpawner = false;
   private spawnedCompanionPid: number | null = null;
   private presetPoller: NodeJS.Timeout | null = null;
+  private presetRefreshTick = 0;
   private currentPreset: string | undefined;
   private availablePresets: string[] = [];
   private presetMessage: string | undefined;
+  private presetLastRequestId: string | undefined;
+  private presetResultOk: boolean | undefined;
 
   constructor(sessionId: string, cwd: string, config?: CompanionConfig) {
     this.id = sessionId;
@@ -280,47 +288,95 @@ export class CompanionManager {
     this.config = config;
   }
 
-  private refreshPresetState(): void {
-    const config = loadPluginConfig(this.cwd, { silent: true });
-    this.currentPreset =
+  private refreshPresetState(): boolean {
+    let hardWarning = false;
+    const config = loadPluginConfig(this.cwd, {
+      silent: true,
+      onWarning: (warning) => {
+        if (HARD_PRESET_REFRESH_WARNING_KINDS.has(warning.kind)) {
+          hardWarning = true;
+        }
+      },
+    });
+    if (hardWarning) return false;
+
+    const nextPreset =
       typeof config.preset === 'string' && config.preset.trim()
         ? config.preset.trim()
         : undefined;
-    const names = new Set(Object.keys(getAllConfiguredPresets(this.cwd)));
-    for (const name of Object.keys(config.presets ?? {})) names.add(name);
-    this.availablePresets = [...names].sort((a, b) => a.localeCompare(b));
+    const nextPresets = Object.keys(config.presets ?? {}).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const changed =
+      this.currentPreset !== nextPreset ||
+      this.availablePresets.length !== nextPresets.length ||
+      this.availablePresets.some((name, index) => name !== nextPresets[index]);
+
+    if (!changed) return false;
+    this.currentPreset = nextPreset;
+    this.availablePresets = nextPresets;
+    return true;
+  }
+
+  private pollPresetState(): void {
+    if (this.config?.enabled !== true) return;
+    if (this.consumePresetRequest()) {
+      this.presetRefreshTick = 0;
+      return;
+    }
+
+    this.presetRefreshTick += 1;
+    if (this.presetRefreshTick < PRESET_REFRESH_EVERY_TICKS) return;
+    this.presetRefreshTick = 0;
+
+    if (this.refreshPresetState()) {
+      // An external /preset or manual config edit supersedes feedback from an
+      // older Companion request.
+      this.presetMessage = undefined;
+      this.presetLastRequestId = undefined;
+      this.presetResultOk = undefined;
+      this.flush();
+    }
   }
 
   private startPresetPoller(): void {
     if (this.presetPoller) return;
-    this.presetPoller = setInterval(() => this.consumePresetRequest(), 250);
+    this.presetPoller = setInterval(() => this.pollPresetState(), 250);
     this.presetPoller.unref();
   }
 
-  private consumePresetRequest(): void {
-    if (this.config?.enabled !== true) return;
-    const request = readState().preset_request;
-    if (!request || request.session_id !== this.id) return;
+  private consumePresetRequest(): boolean {
+    if (this.config?.enabled !== true) return false;
+    const request = readState().preset_requests?.find(
+      (candidate) => candidate.session_id === this.id,
+    );
+    if (!request) return false;
 
     const config = loadPluginConfig(this.cwd, { silent: true });
     const result = switchPresetOnDisk(this.cwd, request.preset, config, {
       scope: 'effective',
     });
-    this.presetMessage = result.message;
-    if (result.ok) this.currentPreset = result.presetName;
     this.refreshPresetState();
+    this.presetMessage = result.message;
+    this.presetLastRequestId = request.request_id;
+    this.presetResultOk = result.ok;
 
     writeState((state) => {
-      if (state.preset_request?.request_id === request.request_id) {
-        delete state.preset_request;
+      state.preset_requests = (state.preset_requests ?? []).filter(
+        (candidate) => candidate.request_id !== request.request_id,
+      );
+      if (state.preset_requests.length === 0) {
+        delete state.preset_requests;
+      } else if (state.preset_requests.length > MAX_PRESET_REQUESTS) {
+        // Defense-in-depth for state written by an older/custom binary. The
+        // native writer refuses to exceed this bound.
+        state.preset_requests = state.preset_requests.slice(
+          -MAX_PRESET_REQUESTS,
+        );
       }
-      state.preset_result = {
-        ...request,
-        ok: result.ok,
-        message: result.message,
-      };
     });
     this.flush();
+    return true;
   }
 
   onLoad(): void {
@@ -444,6 +500,10 @@ export class CompanionManager {
     if (this.config?.enabled !== true) return;
     writeState((state) => {
       state.sessions = state.sessions.filter((s) => s.session_id !== this.id);
+      state.preset_requests = (state.preset_requests ?? []).filter(
+        (request) => request.session_id !== this.id,
+      );
+      if (state.preset_requests.length === 0) delete state.preset_requests;
     });
     if (this.wasSpawner && this.removeOwnedPidFileIfNoSessionsRemain()) {
       if (this.companionProcess) {
@@ -513,6 +573,8 @@ export class CompanionManager {
           current: this.currentPreset,
           available: this.availablePresets,
           message: this.presetMessage,
+          last_request_id: this.presetLastRequestId,
+          result_ok: this.presetResultOk,
         },
       };
       writeState((state) => {
