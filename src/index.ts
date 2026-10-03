@@ -2114,6 +2114,10 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
               isInternalAdmission(info.sessionID, info.parentID));
           if (!internalAdmission) {
             sessionMetadata.setModel(info.sessionID, model);
+            companionManager.onSessionModelChanged({
+              sessionId: info.sessionID,
+              model,
+            });
           }
           // Managed background-task sessions are identified by their session
           // ID. If the model serving one changed (fallback re-prompt, runtime
@@ -2681,6 +2685,16 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         const model = `${messageModel.providerID}/${messageModel.modelID}`;
         if (!internalAdmission) {
           sessionMetadata.setModel(input.sessionID, model);
+          const liveVariant =
+            routedChild?.entry.variant ??
+            input.variant ??
+            output?.message?.model?.variant;
+          companionManager.onSessionModelChanged({
+            sessionId: input.sessionID,
+            model,
+            ...(liveVariant ? { variant: liveVariant } : {}),
+            variantObserved: true,
+          });
         }
         backgroundTaskConcurrency.migrateTask(input.sessionID, model);
       }
