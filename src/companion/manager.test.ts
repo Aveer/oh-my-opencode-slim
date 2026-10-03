@@ -178,6 +178,122 @@ describe('CompanionManager', () => {
     ]);
   });
 
+  it('preserves an observed live variant across same-model telemetry and clears it on model change', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'busy',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+      variant: 'high',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+    });
+
+    let detail = readState().sessions[0].active_agent_details[0];
+    expect(detail).toMatchObject({
+      model: 'provider/model-a',
+      variant: 'high',
+    });
+
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-b',
+    });
+    detail = readState().sessions[0].active_agent_details[0];
+    expect(detail.model).toBe('provider/model-b');
+    expect(detail.variant).toBeUndefined();
+  });
+
+  it('does not flush when model metadata is unchanged', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'busy',
+    });
+
+    const internal = m as unknown as {
+      flush: () => void;
+    };
+    let flushes = 0;
+    internal.flush = () => {
+      flushes += 1;
+    };
+
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+      variant: 'high',
+    });
+    expect(flushes).toBe(1);
+
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+      variant: 'high',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+    });
+    expect(flushes).toBe(1);
+  });
+
+  it('specialist failures never replace the project-wide status', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'busy',
+    });
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'failed',
+    });
+
+    const state = readState().sessions[0];
+    expect(state.status).toBe('busy');
+    expect(state.active_agents).toEqual(['orchestrator']);
+  });
+
+  it('confirmed orchestrator failure survives trailing idle until the next busy turn', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'failed',
+    });
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'idle',
+    });
+    expect(readState().sessions[0].status).toBe('error');
+
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    expect(readState().sessions[0].status).toBe('busy');
+  });
+
   it('shows all concurrently busy specialists', () => {
     const m = make();
     m.onLoad();
@@ -309,11 +425,22 @@ describe('CompanionManager', () => {
     expect(readState().sessions[0].status).toBe('idle');
   });
 
-  it('shows input gif while waiting for user input', () => {
+  it('shows input gif while waiting for user input without borrowing orchestrator metadata', () => {
     const m = make();
     m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_orch',
+      model: 'provider/orchestrator',
+      variant: 'high',
+    });
     m.onWaitingInput();
     expect(readState().sessions[0].active_agents).toEqual(['input']);
+    expect(readState().sessions[0].active_agent_details).toEqual([]);
     expect(readState().sessions[0].status).toBe('waiting-input');
     m.onInputResolved();
     expect(readState().sessions[0].status).toBe('idle');
