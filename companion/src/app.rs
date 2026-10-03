@@ -975,6 +975,7 @@ mod tests {
             pid: Some(1),
             active_agent: None,
             config: None,
+            preset: None,
         }
     }
 
