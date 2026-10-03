@@ -2,6 +2,14 @@
 
 The desktop companion app provides a floating status overlay showing running and active agents.
 
+Right-click the Companion to open its compact control menu. In addition to the
+existing size controls, the menu shows the current preset and previous/next
+preset buttons. Preset changes are sent back to the plugin over the Companion
+state channel; the native binary never edits OMO configuration files directly.
+If the current project already has a project-local `.opencode` preset override,
+the Companion updates that controlling project layer. Otherwise it preserves the
+existing `/preset` behavior and writes the user-level preset.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
