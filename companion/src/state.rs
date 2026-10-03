@@ -260,3 +260,88 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
         std::thread::sleep(Duration::from_millis(250));
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{read_state, write_preset_request, CompanionPresetRequest};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_state_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!(
+                "omos-companion-preset-state-{}-{label}-{nonce}",
+                std::process::id()
+            ))
+            .join("companion-state.json")
+    }
+
+    #[test]
+    fn preset_request_writer_preserves_other_session_requests() {
+        let path = temp_state_path("queue");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"a","cwd":"/a"},{"session_id":"b","cwd":"/b"}]}"#,
+        )
+        .unwrap();
+
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "req-a".into(),
+                session_id: "a".into(),
+                preset: "one".into(),
+            },
+        )
+        .unwrap();
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "req-b".into(),
+                session_id: "b".into(),
+                preset: "two".into(),
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 2);
+        assert_eq!(state.preset_requests[0].request_id, "req-a");
+        assert_eq!(state.preset_requests[1].request_id, "req-b");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn preset_request_writer_prunes_orphaned_requests() {
+        let path = temp_state_path("orphan");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"live","cwd":"/live"}],"preset_requests":[{"request_id":"old","session_id":"gone","preset":"one"}]}"#,
+        )
+        .unwrap();
+
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "new".into(),
+                session_id: "live".into(),
+                preset: "two".into(),
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 1);
+        assert_eq!(state.preset_requests[0].request_id, "new");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+}
