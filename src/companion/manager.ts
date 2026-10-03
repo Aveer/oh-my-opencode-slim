@@ -330,11 +330,15 @@ export class CompanionManager {
       // Specialist failures must never turn the whole project red while other
       // work is still active.
       if (status === 'busy') {
-        this.status = 'busy';
+        // A pending input request is cleared only by its explicit reply/reject
+        // event, not by lifecycle noise from the same session.
+        if (this.status !== 'waiting-input') this.status = 'busy';
       } else if (status === 'idle') {
-        // A confirmed terminal error stays visible until the next real busy
-        // turn. Raw session.error events are intentionally not fed here.
-        if (this.status !== 'error') this.status = 'idle';
+        // Confirmed terminal errors and pending input stay visible until their
+        // own recovery/resolution signal. Raw session.error is never fed here.
+        if (this.status !== 'error' && this.status !== 'waiting-input') {
+          this.status = 'idle';
+        }
       } else if (status === 'error' || status === 'failed') {
         this.status = 'error';
       }
@@ -366,9 +370,10 @@ export class CompanionManager {
     sessionId?: string;
     model?: string;
     variant?: string;
+    variantObserved?: boolean;
   }): void {
     if (this.config?.enabled !== true) return;
-    const { sessionId, model, variant } = input;
+    const { sessionId, model, variant, variantObserved = false } = input;
     if (!sessionId || (!model && !variant)) return;
 
     const previous = this.sessionDetails.get(sessionId);
@@ -376,11 +381,12 @@ export class CompanionManager {
     // A model change without an observed live variant must clear the previous
     // variant. For the same model, a model-only telemetry update preserves the
     // exact variant captured earlier from chat.message.
-    const nextVariant =
-      variant ??
-      (model && previous?.model && model !== previous.model
-        ? undefined
-        : previous?.variant);
+    const nextVariant = variantObserved
+      ? variant
+      : (variant ??
+        (model && previous?.model && model !== previous.model
+          ? undefined
+          : previous?.variant));
     if (previous?.model === nextModel && previous?.variant === nextVariant) {
       return;
     }
