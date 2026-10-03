@@ -1182,7 +1182,8 @@ mod tests {
     use super::{
         adjacent_preset, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
         handle_drag_start, place_window, preset_request_completed, restore_window_position,
-        size_from_config, window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        size_from_config, window_size, ConfigKey, PresetMenuAction, PresetScope, SessionInfo,
+        WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionConfigState, CompanionPresetState};
 
@@ -1196,6 +1197,34 @@ mod tests {
             active_agent: None,
             config: None,
             preset: None,
+        }
+    }
+
+    fn preset_state(
+        effective: Option<&str>,
+        project: Option<&str>,
+        global: Option<&str>,
+        project_available: &[&str],
+        global_available: &[&str],
+    ) -> CompanionPresetState {
+        CompanionPresetState {
+            current: effective.map(str::to_string),
+            available: project_available.iter().map(|v| (*v).to_string()).collect(),
+            effective: effective.map(str::to_string),
+            project: project.map(str::to_string),
+            global: global.map(str::to_string),
+            project_available: project_available
+                .iter()
+                .map(|v| (*v).to_string())
+                .collect(),
+            global_available: global_available
+                .iter()
+                .map(|v| (*v).to_string())
+                .collect(),
+            message: None,
+            last_request_id: None,
+            result_ok: None,
+            last_scope: None,
         }
     }
 
@@ -1256,21 +1285,24 @@ mod tests {
     #[test]
     fn preset_completion_can_arrive_on_a_non_owner_session() {
         let mut owner = session("owner", "idle", &["intro"]);
-        owner.preset = Some(CompanionPresetState {
-            current: Some("one".into()),
-            available: vec!["one".into(), "two".into()],
-            message: None,
-            last_request_id: None,
-            result_ok: None,
-        });
+        owner.preset = Some(preset_state(
+            Some("one"),
+            Some("one"),
+            Some("one"),
+            &["one", "two"],
+            &["one", "two"],
+        ));
         let mut displayed = session("displayed", "idle", &["intro"]);
-        displayed.preset = Some(CompanionPresetState {
-            current: Some("two".into()),
-            available: vec!["one".into(), "two".into()],
-            message: None,
-            last_request_id: Some("req-7".into()),
-            result_ok: Some(true),
-        });
+        let mut displayed_preset = preset_state(
+            Some("two"),
+            Some("two"),
+            Some("one"),
+            &["one", "two"],
+            &["one", "two"],
+        );
+        displayed_preset.last_request_id = Some("req-7".into());
+        displayed_preset.result_ok = Some(true);
+        displayed.preset = Some(displayed_preset);
 
         assert!(preset_request_completed(&[owner, displayed], "req-7"));
         assert!(!preset_request_completed(
@@ -1280,37 +1312,82 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_preset_wraps_in_both_directions() {
-        let state = CompanionPresetState {
-            current: Some("balanced".into()),
-            available: vec!["cheap".into(), "balanced".into(), "deep".into()],
-            message: None,
-            last_request_id: None,
-            result_ok: None,
-        };
-        assert_eq!(adjacent_preset(&state, 1), Some("deep".into()));
-        assert_eq!(adjacent_preset(&state, -1), Some("cheap".into()));
+    fn project_scope_cycles_through_inherit_and_project_catalog() {
+        let state = preset_state(
+            Some("balanced"),
+            Some("balanced"),
+            Some("cheap"),
+            &["cheap", "balanced", "deep"],
+            &["cheap", "deep"],
+        );
 
-        let edge = CompanionPresetState {
-            current: Some("deep".into()),
-            available: state.available.clone(),
-            message: None,
-            last_request_id: None,
-            result_ok: None,
-        };
-        assert_eq!(adjacent_preset(&edge, 1), Some("cheap".into()));
+        assert_eq!(
+            adjacent_preset(&state, PresetScope::Project, 1),
+            Some(PresetMenuAction {
+                scope: PresetScope::Project,
+                preset: Some("deep".into()),
+                inherit: false,
+            })
+        );
+        assert_eq!(
+            adjacent_preset(&state, PresetScope::Project, -1),
+            Some(PresetMenuAction {
+                scope: PresetScope::Project,
+                preset: Some("cheap".into()),
+                inherit: false,
+            })
+        );
+
+        let inherited = preset_state(
+            Some("cheap"),
+            None,
+            Some("cheap"),
+            &["cheap", "deep"],
+            &["cheap", "deep"],
+        );
+        assert_eq!(
+            adjacent_preset(&inherited, PresetScope::Project, -1),
+            Some(PresetMenuAction {
+                scope: PresetScope::Project,
+                preset: Some("deep".into()),
+                inherit: false,
+            })
+        );
+
+        let first_override = preset_state(
+            Some("cheap"),
+            Some("cheap"),
+            Some("deep"),
+            &["cheap", "deep"],
+            &["cheap", "deep"],
+        );
+        assert_eq!(
+            adjacent_preset(&first_override, PresetScope::Project, -1),
+            Some(PresetMenuAction {
+                scope: PresetScope::Project,
+                preset: None,
+                inherit: true,
+            })
+        );
     }
 
     #[test]
-    fn adjacent_preset_falls_back_to_first_when_current_is_unknown() {
-        let state = CompanionPresetState {
-            current: Some("removed".into()),
-            available: vec!["cheap".into(), "deep".into()],
-            message: None,
-            last_request_id: None,
-            result_ok: None,
-        };
-        assert_eq!(adjacent_preset(&state, 1), Some("cheap".into()));
+    fn global_scope_uses_only_global_catalog() {
+        let state = preset_state(
+            Some("local"),
+            Some("local"),
+            Some("global-a"),
+            &["global-a", "local"],
+            &["global-a", "global-b"],
+        );
+        assert_eq!(
+            adjacent_preset(&state, PresetScope::Global, 1),
+            Some(PresetMenuAction {
+                scope: PresetScope::Global,
+                preset: Some("global-b".into()),
+                inherit: false,
+            })
+        );
     }
 
     #[test]
