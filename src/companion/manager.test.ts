@@ -153,32 +153,130 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].preset.current).toBe('old');
     expect(state.sessions[0].preset.available).toEqual(['cheap', 'old']);
 
-    state.preset_request = {
-      request_id: 'req-1',
-      session_id: 'preset-session',
-      preset: 'cheap',
-    };
+    state.preset_requests = [
+      {
+        request_id: 'req-1',
+        session_id: 'preset-session',
+        preset: 'cheap',
+      },
+      {
+        request_id: 'req-other',
+        session_id: 'other-session',
+        preset: 'old',
+      },
+    ];
     writeFileSync(stateFilePath(), JSON.stringify(state));
     (
       m as unknown as {
-        consumePresetRequest: () => void;
+        consumePresetRequest: () => boolean;
       }
     ).consumePresetRequest();
 
     state = readState();
-    expect(state.preset_request).toBeUndefined();
-    expect(state.preset_result).toMatchObject({
-      request_id: 'req-1',
-      preset: 'cheap',
-      ok: true,
+    expect(state.preset_requests).toEqual([
+      {
+        request_id: 'req-other',
+        session_id: 'other-session',
+        preset: 'old',
+      },
+    ]);
+    expect(state.sessions[0].preset).toMatchObject({
+      current: 'cheap',
+      last_request_id: 'req-1',
+      result_ok: true,
     });
-    expect(state.sessions[0].preset.current).toBe('cheap');
     expect(readFileSync(projectConfigPath, 'utf8')).toContain(
       '// Project-local preset should remain',
     );
     expect(readFileSync(projectConfigPath, 'utf8')).toContain(
       '"preset": "cheap"',
     );
+  });
+
+  it('refreshes published preset state after an external config edit', () => {
+    const projectDir = path.join(TEST_DIR, 'refresh-project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const m = make('refresh-session', projectDir);
+    m.onLoad();
+    expect(readState().sessions[0].preset.current).toBe('old');
+
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'cheap' }));
+    for (let i = 0; i < 4; i++) {
+      (
+        m as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    expect(readState().sessions[0].preset).toMatchObject({
+      current: 'cheap',
+      available: ['cheap', 'old'],
+    });
+  });
+
+  it('keeps the last-known preset state when an external edit is malformed', () => {
+    const projectDir = path.join(TEST_DIR, 'malformed-project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+        },
+      }),
+    );
+
+    const m = make('malformed-session', projectDir);
+    m.onLoad();
+    expect(readState().sessions[0].preset.current).toBe('old');
+
+    writeFileSync(projectConfigPath, '{ invalid json');
+    for (let i = 0; i < 4; i++) {
+      (
+        m as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    expect(readState().sessions[0].preset.current).toBe('old');
   });
 
   it('shows orchestrator while orchestrator is busy with no specialists', () => {
