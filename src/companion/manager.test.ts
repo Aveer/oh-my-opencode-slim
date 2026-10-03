@@ -496,6 +496,22 @@ describe('CompanionManager', () => {
     expect(readState().sessions[0].status).toBe('idle');
   });
 
+  it('restores orchestrator busy state after input resolves', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    m.onWaitingInput();
+    expect(readState().sessions[0].status).toBe('waiting-input');
+
+    m.onInputResolved();
+    expect(readState().sessions[0].status).toBe('busy');
+    expect(readState().sessions[0].active_agents).toEqual(['orchestrator']);
+  });
+
   it('keeps showing busy specialists over the input gif after input resolves', () => {
     const m = make();
     m.onLoad();
