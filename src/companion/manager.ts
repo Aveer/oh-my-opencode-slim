@@ -58,11 +58,6 @@ interface CompanionPresetRequest {
   inherit?: boolean;
 }
 
-interface CompanionPresetResult extends CompanionPresetRequest {
-  ok: boolean;
-  message: string;
-}
-
 interface CompanionSession {
   session_id: string;
   cwd: string;
