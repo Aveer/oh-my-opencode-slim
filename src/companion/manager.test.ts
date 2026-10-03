@@ -81,6 +81,30 @@ function companionPidFile(): string {
 }
 
 describe('CompanionManager', () => {
+  it('preserves native-only companion state fields across plugin writes', () => {
+    const statePath = stateFilePath();
+    mkdirSync(path.dirname(statePath), { recursive: true });
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        ui_preferences: {
+          always_on_top: false,
+          dim_when_idle: true,
+        },
+      }),
+    );
+
+    const m = make();
+    m.onLoad();
+
+    expect(readState().ui_preferences).toEqual({
+      always_on_top: false,
+      dim_when_idle: true,
+    });
+  });
+
   it('writes an intro entry on load', () => {
     const m = make();
     m.onLoad();
