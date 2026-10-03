@@ -226,7 +226,6 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -242,7 +241,10 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir()
-            .join(format!("omos-companion-state-{}-{label}-{nonce}", std::process::id()))
+            .join(format!(
+                "omos-companion-state-{}-{label}-{nonce}",
+                std::process::id()
+            ))
             .join("companion-state.json")
     }
 
