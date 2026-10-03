@@ -501,7 +501,7 @@ describe('CompanionManager', () => {
     expect(readState().sessions[0].status).toBe('waiting-input');
 
     m.onInputResolved();
-    expect(readState().sessions[0].status).toBe('idle');
+    expect(readState().sessions[0].status).toBe('busy');
   });
 
   it('restores orchestrator busy state after input resolves', () => {
