@@ -234,10 +234,7 @@ fn attention_stroke(status: &str) -> Option<egui::Stroke> {
             2.0,
             egui::Color32::from_rgb(245, 190, 75),
         )),
-        "error" | "failed" => Some(egui::Stroke::new(
-            2.0,
-            egui::Color32::from_rgb(235, 80, 80),
-        )),
+        "error" | "failed" => Some(egui::Stroke::new(2.0, egui::Color32::from_rgb(235, 80, 80))),
         _ => None,
     }
 }
@@ -529,39 +526,38 @@ impl eframe::App for CompanionApp {
         let project_key = self.project_key_for(&session.cwd);
         let saved_position = self.window_positions.get(&project_key).copied();
         let time_seconds = ctx.input(|input| input.time);
-        let agent_frames: Vec<(usize, AnimationFrame)> =
-            if session.active_agents.is_empty() {
-                self.gifs
-                    .frame(
-                        ctx,
-                        "intro",
-                        &self.gif_pack,
-                        self.speed,
-                        &self.loop_style,
-                        time_seconds,
-                    )
-                    .into_iter()
-                    .map(|frame| (usize::MAX, frame))
-                    .collect()
-            } else {
-                session
-                    .active_agents
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(source_index, agent)| {
-                        self.gifs
-                            .frame(
-                                ctx,
-                                agent,
-                                &self.gif_pack,
-                                self.speed,
-                                &self.loop_style,
-                                time_seconds,
-                            )
-                            .map(|frame| (source_index, frame))
-                    })
-                    .collect()
-            };
+        let agent_frames: Vec<(usize, AnimationFrame)> = if session.active_agents.is_empty() {
+            self.gifs
+                .frame(
+                    ctx,
+                    "intro",
+                    &self.gif_pack,
+                    self.speed,
+                    &self.loop_style,
+                    time_seconds,
+                )
+                .into_iter()
+                .map(|frame| (usize::MAX, frame))
+                .collect()
+        } else {
+            session
+                .active_agents
+                .iter()
+                .enumerate()
+                .filter_map(|(source_index, agent)| {
+                    self.gifs
+                        .frame(
+                            ctx,
+                            agent,
+                            &self.gif_pack,
+                            self.speed,
+                            &self.loop_style,
+                            time_seconds,
+                        )
+                        .map(|frame| (source_index, frame))
+                })
+                .collect()
+        };
         let n = agent_frames.len().max(1);
         let (cols, rows) = grid_dims(n);
         let [win_w, win_h] = window_size(self.size, cols, rows);
@@ -916,10 +912,9 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_detail_tooltip, apply_config, attention_stroke, choose_owned_session,
-        choose_session, config_key, grid_dims, handle_drag_start, place_window,
-        restore_window_position, size_from_config, window_size, ConfigKey, SessionInfo,
-        WindowGeometryKey, GAP,
+        agent_detail_tooltip, apply_config, attention_stroke, choose_owned_session, choose_session,
+        config_key, grid_dims, handle_drag_start, place_window, restore_window_position,
+        size_from_config, window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionAgentDetail, CompanionConfigState};
 
