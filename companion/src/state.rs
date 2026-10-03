@@ -317,6 +317,25 @@ mod tests {
     }
 
     #[test]
+    fn old_preset_requests_default_to_effective_scope() {
+        let path = temp_state_path("legacy-scope");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"live","cwd":"/live"}],"preset_requests":[{"request_id":"old","session_id":"live","preset":"one"}]}"#,
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 1);
+        assert_eq!(state.preset_requests[0].scope, "effective");
+        assert_eq!(state.preset_requests[0].preset.as_deref(), Some("one"));
+        assert!(!state.preset_requests[0].inherit);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn preset_request_writer_accepts_project_inherit_action() {
         let path = temp_state_path("inherit");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
