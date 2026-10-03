@@ -309,21 +309,14 @@ function removeTopLevelPresetPreservingJsonc(configPath: string): void {
         source.slice(property.offset + property.length);
     } else if (index < properties.length - 1) {
       const next = properties[index + 1];
-      const separator = source.indexOf(
-        ',',
-        property.offset + property.length,
-      );
+      const separator = source.indexOf(',', property.offset + property.length);
       if (separator < 0 || separator >= next.offset) {
         throw new Error('Could not locate JSONC property separator');
       }
-      updated =
-        source.slice(0, property.offset) + source.slice(separator + 1);
+      updated = source.slice(0, property.offset) + source.slice(separator + 1);
     } else {
       const previous = properties[index - 1];
-      const separator = source.indexOf(
-        ',',
-        previous.offset + previous.length,
-      );
+      const separator = source.indexOf(',', previous.offset + previous.length);
       if (separator < 0 || separator >= property.offset) {
         throw new Error('Could not locate JSONC property separator');
       }
