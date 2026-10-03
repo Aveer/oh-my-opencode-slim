@@ -17,6 +17,8 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
+  lstatSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -142,6 +144,23 @@ describe('config-io', () => {
     expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual({ new: true });
     expect(JSON.parse(readFileSync(`${path}.bak`, 'utf-8'))).toEqual({
       old: true,
+    });
+  });
+
+  test('mutateJsonFile backup replaces a symlink instead of overwriting its target', () => {
+    const path = join(tmpDir, 'symlink-safe.jsonc');
+    const victim = join(tmpDir, 'victim.txt');
+    const backup = `${path}.bak`;
+    writeFileSync(path, '{"preset":"old"}');
+    writeFileSync(victim, 'do-not-touch');
+    symlinkSync(victim, backup);
+
+    mutateJsonFile(path, (current) => ({ ...current, preset: 'new' }));
+
+    expect(readFileSync(victim, 'utf8')).toBe('do-not-touch');
+    expect(lstatSync(backup).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(readFileSync(backup, 'utf8'))).toEqual({
+      preset: 'old',
     });
   });
 
