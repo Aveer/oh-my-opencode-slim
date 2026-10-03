@@ -65,8 +65,9 @@ the last dragged position per project and restores it the next time that project
 opens. If no custom position is saved for a project, the configured
 `companion.position` corner is used.
 
-Saved positions are clamped to the current screen so the companion stays visible
-after monitor or resolution changes.
+Saved positions use native desktop-global coordinates and are restored exactly,
+including positions on secondary monitors with positive or negative origins.
+Automatic corner placement still uses the active monitor size.
 
 ---
 
