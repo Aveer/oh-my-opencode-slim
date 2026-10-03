@@ -211,6 +211,31 @@ describe('CompanionManager', () => {
     expect(detail.variant).toBeUndefined();
   });
 
+  it('clears a previous variant when chat selection authoritatively omits it', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'busy',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+      variant: 'high',
+      variantObserved: true,
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-a',
+      variantObserved: true,
+    });
+
+    const detail = readState().sessions[0].active_agent_details[0];
+    expect(detail.model).toBe('provider/model-a');
+    expect(detail.variant).toBeUndefined();
+  });
+
   it('does not flush when model metadata is unchanged', () => {
     const m = make();
     m.onLoad();
@@ -442,6 +467,31 @@ describe('CompanionManager', () => {
     expect(readState().sessions[0].active_agents).toEqual(['input']);
     expect(readState().sessions[0].active_agent_details).toEqual([]);
     expect(readState().sessions[0].status).toBe('waiting-input');
+    m.onInputResolved();
+    expect(readState().sessions[0].status).toBe('idle');
+  });
+
+  it('keeps waiting-input sticky across busy and idle lifecycle noise', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    m.onWaitingInput();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'idle',
+    });
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+    expect(readState().sessions[0].status).toBe('waiting-input');
+
     m.onInputResolved();
     expect(readState().sessions[0].status).toBe('idle');
   });
