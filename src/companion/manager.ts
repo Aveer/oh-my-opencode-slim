@@ -490,16 +490,8 @@ export class CompanionManager {
       .map(([sessionId, agent]) => this.detailFor(sessionId, agent));
     if (details.length > 0) return details;
 
-    if (
-      (this.status === 'busy' || this.status === 'waiting-input') &&
-      this.orchestratorSessionId
-    ) {
-      return [
-        this.detailFor(
-          this.orchestratorSessionId,
-          this.status === 'waiting-input' ? 'input' : 'orchestrator',
-        ),
-      ];
+    if (this.status === 'busy' && this.orchestratorSessionId) {
+      return [this.detailFor(this.orchestratorSessionId, 'orchestrator')];
     }
 
     return [];
