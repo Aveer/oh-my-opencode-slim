@@ -225,3 +225,70 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
         std::thread::sleep(Duration::from_millis(250));
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        read_state, write_ui_preferences, CompanionUiPreferencesState, WindowPositionState,
+    };
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_state_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("omos-companion-state-{}-{label}-{nonce}", std::process::id()))
+            .join("companion-state.json")
+    }
+
+    #[test]
+    fn ui_preferences_default_to_existing_behavior() {
+        let path = temp_state_path("defaults");
+        let state = read_state(&path);
+        assert!(state.ui_preferences.always_on_top);
+        assert!(!state.ui_preferences.dim_when_idle);
+    }
+
+    #[test]
+    fn ui_preference_write_preserves_other_state() {
+        let path = temp_state_path("preserve");
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+
+        let mut positions = BTreeMap::new();
+        positions.insert(
+            "project".to_string(),
+            WindowPositionState { x: 42.0, y: 84.0 },
+        );
+        let initial = serde_json::json!({
+            "version": 1,
+            "sessions": [],
+            "window_positions": positions,
+        });
+        std::fs::write(&path, serde_json::to_vec(&initial).unwrap()).unwrap();
+
+        write_ui_preferences(
+            &path,
+            CompanionUiPreferencesState {
+                always_on_top: false,
+                dim_when_idle: true,
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert!(!state.ui_preferences.always_on_top);
+        assert!(state.ui_preferences.dim_when_idle);
+        assert_eq!(
+            state.window_positions.get("project"),
+            Some(&WindowPositionState { x: 42.0, y: 84.0 })
+        );
+
+        let _ = std::fs::remove_dir_all(parent);
+    }
+}
