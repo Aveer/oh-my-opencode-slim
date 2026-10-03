@@ -8,12 +8,12 @@ session. A variant is shown only when it was observed on the live
 the agent configuration. The Companion therefore avoids presenting a configured
 default as if it were the user's current runtime choice.
 
-Actionable states are surfaced conservatively: waiting-for-input always receives
-an attention outline, while an error outline is reserved for an explicit
-terminal `session.status` error/failed state. Raw `session.error` events are
-not treated as terminal because foreground/model fallback may still recover the
-turn. Specialist failures remove only that specialist tile and never mark the
-whole project as failed.
+Attention in this PR is intentionally limited to waiting-for-input. A pending
+question or permission receives an outline that stays visible until the explicit
+reply/reject path resolves it. Error attention is deliberately deferred: raw
+`session.error` is not reliable terminal evidence because foreground/model
+fallback can still recover the turn, and the Companion should not duplicate the
+fallback subsystem's terminalization state machine.
 
 ## How to Enable in Configuration
 
