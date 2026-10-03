@@ -170,6 +170,53 @@ describe('switchPresetOnDisk', () => {
     });
   });
 
+  test('effective scope updates an existing project-local preset override', () => {
+    const projectDir = path.join(tempDir, 'project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    fs.writeFileSync(
+      projectConfigPath,
+      `{
+        // Companion should preserve this project-local layer.
+        "preset": "old",
+      }`,
+    );
+
+    const userConfigPath = path.join(
+      tempDir,
+      'xdg-config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    fs.writeFileSync(
+      userConfigPath,
+      JSON.stringify({ preset: 'user-default' }),
+    );
+
+    const config: PluginConfig = {
+      presets: {
+        old: { orchestrator: { model: 'old-model' } },
+        cheap: { orchestrator: { model: 'cheap-model' } },
+      },
+    };
+
+    const result = switchPresetOnDisk(projectDir, 'cheap', config, {
+      scope: 'effective',
+    });
+
+    expect(result.ok).toBe(true);
+    const projectText = fs.readFileSync(projectConfigPath, 'utf-8');
+    expect(projectText).toContain('// Companion should preserve');
+    expect((parse(projectText) as { preset?: string }).preset).toBe('cheap');
+    expect(JSON.parse(fs.readFileSync(userConfigPath, 'utf-8')).preset).toBe(
+      'user-default',
+    );
+  });
+
   test('switching preserves activation directives and allows activation-only presets', () => {
     const configDir = path.join(tempDir, 'opencode-config');
     fs.mkdirSync(configDir, { recursive: true });

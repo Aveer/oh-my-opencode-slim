@@ -11,7 +11,8 @@ use crate::gifs::{AnimationFrame, Gifs};
 use crate::niri;
 use crate::screen::primary_size;
 use crate::state::{
-    read_state, start_watcher, write_project_window_position, CompanionConfigState, SessionInfo,
+    read_state, start_watcher, write_preset_request, write_project_window_position,
+    CompanionConfigState, CompanionPresetRequest, CompanionPresetState, SessionInfo,
     WindowPositionState,
 };
 
@@ -21,7 +22,7 @@ const GAP: f32 = 10.0;
 const SIZE_PRESETS: &[(&str, f32)] = &[("S", 80.0), ("M", 120.0), ("L", 160.0), ("XL", 200.0)];
 
 const MENU_W: f32 = 76.0;
-const MENU_H: f32 = 58.0;
+const MENU_H: f32 = 78.0;
 const MENU_PAD: f32 = 2.0;
 const SURFACE_INSET: f32 = 1.0;
 
@@ -271,6 +272,29 @@ fn choose_session(sessions: &[SessionInfo]) -> Option<usize> {
         .or_else(|| sessions.last().map(|_| sessions.len() - 1))
 }
 
+fn compact_preset_label(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 6 {
+        return value.to_string();
+    }
+    format!("{}…", chars[..5].iter().collect::<String>())
+}
+
+fn adjacent_preset(state: &CompanionPresetState, direction: isize) -> Option<String> {
+    if state.available.is_empty() {
+        return None;
+    }
+    let Some(current) = state.current.as_deref() else {
+        return state.available.first().cloned();
+    };
+    let Some(index) = state.available.iter().position(|name| name == current) else {
+        return state.available.first().cloned();
+    };
+    let len = state.available.len() as isize;
+    let next = (index as isize + direction).rem_euclid(len) as usize;
+    state.available.get(next).cloned()
+}
+
 fn choose_owned_session(sessions: &[SessionInfo], owner_session_id: Option<&str>) -> Option<usize> {
     if let Some(owner_session_id) = owner_session_id {
         if let Some(index) = sessions
@@ -304,6 +328,8 @@ pub struct CompanionApp {
     window_positions: std::collections::BTreeMap<String, WindowPositionState>,
     project_keys: std::collections::BTreeMap<String, String>,
     drag_project_key: Option<String>,
+    preset_request_seq: u64,
+    pending_preset_request_id: Option<String>,
     niri_generation: Arc<AtomicU64>,
 }
 
@@ -364,6 +390,8 @@ impl CompanionApp {
             window_positions,
             project_keys: std::collections::BTreeMap::new(),
             drag_project_key: None,
+            preset_request_seq: 0,
+            pending_preset_request_id: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -372,6 +400,23 @@ impl CompanionApp {
         if self.rx.try_recv().is_ok() {
             while self.rx.try_recv().is_ok() {}
             let state = read_state(&self.state_path);
+            if let Some(pending_request_id) = self.pending_preset_request_id.as_deref() {
+                let completed = self
+                    .owner_session_id
+                    .as_deref()
+                    .and_then(|owner| {
+                        state
+                            .sessions
+                            .iter()
+                            .find(|session| session.session_id == owner)
+                    })
+                    .and_then(|session| session.preset.as_ref())
+                    .and_then(|preset| preset.last_request_id.as_deref())
+                    == Some(pending_request_id);
+                if completed {
+                    self.pending_preset_request_id = None;
+                }
+            }
             self.sessions = state.sessions;
             let owned_config = config_for_owner(
                 &self.sessions,
@@ -614,7 +659,29 @@ impl eframe::App for CompanionApp {
                 render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
             });
 
-        render_size_picker(ctx, win_w, win_h);
+        if let Some(preset) = render_companion_menu(
+            ctx,
+            win_w,
+            win_h,
+            session.preset.as_ref(),
+            self.pending_preset_request_id.is_some(),
+        ) {
+            self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
+            let request_id = format!("{}-{}", std::process::id(), self.preset_request_seq);
+            let request = CompanionPresetRequest {
+                request_id: request_id.clone(),
+                session_id: session.session_id.clone(),
+                preset,
+            };
+            match write_preset_request(&self.state_path, request) {
+                Ok(()) => {
+                    self.pending_preset_request_id = Some(request_id);
+                }
+                Err(err) => {
+                    crate::log::debug(format!("preset request write failed: {err}"));
+                }
+            }
+        }
         ctx.request_repaint_after(Duration::from_millis(16));
     }
 }
@@ -710,15 +777,21 @@ fn render_session(
     );
 }
 
-fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
+fn render_companion_menu(
+    ctx: &egui::Context,
+    win_w: f32,
+    win_h: f32,
+    preset_state: Option<&CompanionPresetState>,
+    preset_pending: bool,
+) -> Option<String> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
-        return;
+        return None;
     }
 
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         ctx.data_mut(|d| d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false));
-        return;
+        return None;
     }
 
     let pos: [f32; 2] = ctx.data(|d| {
@@ -728,79 +801,142 @@ fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
     let size: f32 = ctx.data(|d| d.get_temp(egui::Id::new(SIZE_KEY)).unwrap_or(DEFAULT_SIZE));
     let x = pos[0].clamp(MENU_PAD, (win_w - MENU_W - MENU_PAD).max(MENU_PAD));
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
+    let mut selected_preset: Option<String> = None;
 
-    let response =
-        egui::Area::new(egui::Id::new("size_picker"))
-            .fixed_pos(egui::pos2(x, y))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(20, 20, 22))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
-                    .inner_margin(egui::Margin::symmetric(4.0, 4.0))
-                    .show(ui, |ui| {
-                        ui.set_min_width(MENU_W - MENU_PAD * 2.0);
-                        ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
-                        ui.label(
-                            egui::RichText::new("Size")
-                                .size(9.0)
-                                .color(egui::Color32::from_rgb(165, 165, 170)),
-                        );
+    let response = egui::Area::new(egui::Id::new("companion_menu"))
+        .fixed_pos(egui::pos2(x, y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(20, 20, 22))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
+                .inner_margin(egui::Margin::symmetric(4.0, 4.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(MENU_W - MENU_PAD * 2.0);
+                    ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
 
+                    if let Some(preset_state) = preset_state {
+                        let current = preset_state.current.as_deref().unwrap_or("none");
+                        let previous = adjacent_preset(preset_state, -1);
+                        let next = adjacent_preset(preset_state, 1);
                         ui.horizontal(|ui| {
-                            for (label, preset) in SIZE_PRESETS {
-                                let active = (size - preset).abs() < 0.5;
-                                let fill = if active {
-                                    egui::Color32::from_rgb(58, 72, 102)
-                                } else {
-                                    egui::Color32::from_rgb(30, 30, 32)
-                                };
-                                let text = egui::RichText::new(*label).size(11.0).strong().color(
-                                    if active {
+                            if ui
+                                .add_enabled(
+                                    !preset_pending && previous.is_some(),
+                                    egui::Button::new("‹").min_size(egui::vec2(16.0, 18.0)),
+                                )
+                                .clicked()
+                            {
+                                selected_preset = previous;
+                            }
+
+                            let hover = match preset_state.message.as_deref() {
+                                Some(message) => format!("Preset: {current}\n{message}"),
+                                None if preset_pending => {
+                                    format!("Preset: {current}\nApplying preset…")
+                                }
+                                None => format!("Preset: {current}"),
+                            };
+                            let (display, color) = if preset_pending {
+                                ("…".to_string(), egui::Color32::from_rgb(200, 200, 204))
+                            } else {
+                                match preset_state.result_ok {
+                                    Some(true) => (
+                                        compact_preset_label(current),
+                                        egui::Color32::from_rgb(120, 220, 150),
+                                    ),
+                                    Some(false) => (
+                                        format!("!{}", compact_preset_label(current)),
+                                        egui::Color32::from_rgb(240, 110, 110),
+                                    ),
+                                    None => (compact_preset_label(current), egui::Color32::WHITE),
+                                }
+                            };
+                            ui.add_sized(
+                                [34.0, 18.0],
+                                egui::Label::new(
+                                    egui::RichText::new(display)
+                                        .size(10.0)
+                                        .strong()
+                                        .color(color),
+                                ),
+                            )
+                            .on_hover_text(hover);
+
+                            if ui
+                                .add_enabled(
+                                    !preset_pending && next.is_some(),
+                                    egui::Button::new("›").min_size(egui::vec2(16.0, 18.0)),
+                                )
+                                .clicked()
+                            {
+                                selected_preset = next;
+                            }
+                        });
+                    }
+
+                    ui.label(
+                        egui::RichText::new("Size")
+                            .size(9.0)
+                            .color(egui::Color32::from_rgb(165, 165, 170)),
+                    );
+
+                    ui.horizontal(|ui| {
+                        for (label, preset) in SIZE_PRESETS {
+                            let active = (size - preset).abs() < 0.5;
+                            let fill = if active {
+                                egui::Color32::from_rgb(58, 72, 102)
+                            } else {
+                                egui::Color32::from_rgb(30, 30, 32)
+                            };
+                            let text =
+                                egui::RichText::new(*label)
+                                    .size(11.0)
+                                    .strong()
+                                    .color(if active {
                                         egui::Color32::WHITE
                                     } else {
                                         egui::Color32::from_rgb(200, 200, 204)
-                                    },
-                                );
-                                if ui
-                                    .add_sized(
-                                        [17.0, 18.0],
-                                        egui::Button::new(text)
-                                            .fill(fill)
-                                            .stroke(egui::Stroke::NONE),
-                                    )
-                                    .clicked()
-                                {
-                                    ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(SIZE_KEY), *preset);
-                                        d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
                                     });
-                                }
-                            }
-                        });
-
-                        ui.add_space(1.0);
-
-                        if ui
-                            .add_sized(
-                                [MENU_W - MENU_PAD * 2.0, 17.0],
-                                egui::Button::new(
-                                    egui::RichText::new("Close")
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(240, 110, 110)),
+                            if ui
+                                .add_sized(
+                                    [17.0, 18.0],
+                                    egui::Button::new(text)
+                                        .fill(fill)
+                                        .stroke(egui::Stroke::NONE),
                                 )
-                                .fill(egui::Color32::from_rgb(38, 24, 26))
-                                .stroke(egui::Stroke::NONE),
-                            )
-                            .clicked()
-                        {
-                            ctx.data_mut(|d| {
-                                d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                d.insert_temp(egui::Id::new("companion_quit"), true);
-                            });
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(SIZE_KEY), *preset);
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                });
+                            }
                         }
                     });
-            });
+
+                    ui.add_space(1.0);
+
+                    if ui
+                        .add_sized(
+                            [MENU_W - MENU_PAD * 2.0, 17.0],
+                            egui::Button::new(
+                                egui::RichText::new("Close")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(240, 110, 110)),
+                            )
+                            .fill(egui::Color32::from_rgb(38, 24, 26))
+                            .stroke(egui::Stroke::NONE),
+                        )
+                        .clicked()
+                    {
+                        ctx.data_mut(|d| {
+                            d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                            d.insert_temp(egui::Id::new("companion_quit"), true);
+                        });
+                    }
+                });
+        });
 
     let just_opened = ctx.data_mut(|d| {
         let id = egui::Id::new(MENU_JUST_OPENED_KEY);
@@ -811,6 +947,8 @@ fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
     if !just_opened && clicked_outside_menu(ctx, response.response.rect) {
         ctx.data_mut(|d| d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false));
     }
+
+    selected_preset
 }
 
 fn clicked_outside_menu(ctx: &egui::Context, menu_rect: egui::Rect) -> bool {
@@ -866,11 +1004,11 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_config, choose_owned_session, choose_session, config_key, grid_dims,
+        adjacent_preset, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
         handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
         ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
-    use crate::state::CompanionConfigState;
+    use crate::state::{CompanionConfigState, CompanionPresetState};
 
     fn session(id: &str, status: &str, agents: &[&str]) -> SessionInfo {
         SessionInfo {
@@ -881,6 +1019,7 @@ mod tests {
             pid: Some(1),
             active_agent: None,
             config: None,
+            preset: None,
         }
     }
 
@@ -936,6 +1075,40 @@ mod tests {
             session("active", "busy", &["fixer"]),
         ];
         assert_eq!(choose_owned_session(&sessions, Some("gone")), Some(1));
+    }
+
+    #[test]
+    fn adjacent_preset_wraps_in_both_directions() {
+        let state = CompanionPresetState {
+            current: Some("balanced".into()),
+            available: vec!["cheap".into(), "balanced".into(), "deep".into()],
+            message: None,
+            last_request_id: None,
+            result_ok: None,
+        };
+        assert_eq!(adjacent_preset(&state, 1), Some("deep".into()));
+        assert_eq!(adjacent_preset(&state, -1), Some("cheap".into()));
+
+        let edge = CompanionPresetState {
+            current: Some("deep".into()),
+            available: state.available.clone(),
+            message: None,
+            last_request_id: None,
+            result_ok: None,
+        };
+        assert_eq!(adjacent_preset(&edge, 1), Some("cheap".into()));
+    }
+
+    #[test]
+    fn adjacent_preset_falls_back_to_first_when_current_is_unknown() {
+        let state = CompanionPresetState {
+            current: Some("removed".into()),
+            available: vec!["cheap".into(), "deep".into()],
+            message: None,
+            last_request_id: None,
+            result_ok: None,
+        };
+        assert_eq!(adjacent_preset(&state, 1), Some("cheap".into()));
     }
 
     #[test]

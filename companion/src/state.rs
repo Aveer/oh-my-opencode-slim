@@ -5,6 +5,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 const MAX_WINDOW_POSITIONS: usize = 100;
+const MAX_PRESET_REQUESTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanionConfigState {
@@ -40,12 +41,35 @@ pub struct CompanionState {
     pub config: Option<CompanionConfigState>,
     #[serde(default)]
     pub window_positions: BTreeMap<String, WindowPositionState>,
+    #[serde(default)]
+    pub preset_requests: Vec<CompanionPresetRequest>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct WindowPositionState {
     pub x: f32,
     pub y: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionPresetState {
+    #[serde(default)]
+    pub current: Option<String>,
+    #[serde(default)]
+    pub available: Vec<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub last_request_id: Option<String>,
+    #[serde(default)]
+    pub result_ok: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanionPresetRequest {
+    pub request_id: String,
+    pub session_id: String,
+    pub preset: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +86,8 @@ pub struct SessionInfo {
     pub pid: Option<u32>,
     #[serde(default)]
     pub config: Option<CompanionConfigState>,
+    #[serde(default)]
+    pub preset: Option<CompanionPresetState>,
 }
 
 pub fn state_file_path() -> PathBuf {
@@ -86,6 +112,59 @@ pub fn read_state(path: &std::path::Path) -> CompanionState {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+pub fn write_preset_request(
+    path: &std::path::Path,
+    request: CompanionPresetRequest,
+) -> std::io::Result<()> {
+    if request.request_id.trim().is_empty()
+        || request.session_id.trim().is_empty()
+        || request.preset.trim().is_empty()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid companion preset request",
+        ));
+    }
+
+    let _lock = StateWriteLock::acquire(path)?;
+    let mut state = read_state(path);
+
+    // Drop orphaned requests whose target manager no longer has a published
+    // session entry, then append without overwriting requests from other
+    // Companion windows/processes.
+    let live_sessions: std::collections::BTreeSet<&str> = state
+        .sessions
+        .iter()
+        .map(|session| session.session_id.as_str())
+        .collect();
+    state
+        .preset_requests
+        .retain(|pending| live_sessions.contains(pending.session_id.as_str()));
+    if state
+        .preset_requests
+        .iter()
+        .any(|pending| pending.request_id == request.request_id)
+    {
+        return Ok(());
+    }
+    if state.preset_requests.len() >= MAX_PRESET_REQUESTS {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "companion preset request queue is full",
+        ));
+    }
+    state.preset_requests.push(request);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let json = serde_json::to_string(&state).map_err(std::io::Error::other)?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
 }
 
 pub fn write_project_window_position(
@@ -182,5 +261,89 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
             }
         }
         std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_state, write_preset_request, CompanionPresetRequest};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_state_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!(
+                "omos-companion-preset-state-{}-{label}-{nonce}",
+                std::process::id()
+            ))
+            .join("companion-state.json")
+    }
+
+    #[test]
+    fn preset_request_writer_preserves_other_session_requests() {
+        let path = temp_state_path("queue");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"a","cwd":"/a"},{"session_id":"b","cwd":"/b"}]}"#,
+        )
+        .unwrap();
+
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "req-a".into(),
+                session_id: "a".into(),
+                preset: "one".into(),
+            },
+        )
+        .unwrap();
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "req-b".into(),
+                session_id: "b".into(),
+                preset: "two".into(),
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 2);
+        assert_eq!(state.preset_requests[0].request_id, "req-a");
+        assert_eq!(state.preset_requests[1].request_id, "req-b");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn preset_request_writer_prunes_orphaned_requests() {
+        let path = temp_state_path("orphan");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"live","cwd":"/live"}],"preset_requests":[{"request_id":"old","session_id":"gone","preset":"one"}]}"#,
+        )
+        .unwrap();
+
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "new".into(),
+                session_id: "live".into(),
+                preset: "two".into(),
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 1);
+        assert_eq!(state.preset_requests[0].request_id, "new");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

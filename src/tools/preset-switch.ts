@@ -54,6 +54,18 @@ export interface PresetSwitchResult {
   summary: string[];
 }
 
+export interface PresetSwitchOptions {
+  /**
+   * "user" preserves the historical /preset behavior: persist to the user
+   * config and refuse when a project-local preset override controls reload.
+   *
+   * "effective" updates that project-local override when one already exists;
+   * otherwise it falls back to the user config. This is intended for
+   * project-scoped surfaces such as the desktop Companion.
+   */
+  scope?: 'user' | 'effective';
+}
+
 type PersistPresetResult = { ok: true } | { ok: false; message: string };
 
 /** A flattened, SDK-shaped agent override derived from a preset entry. */
@@ -110,6 +122,7 @@ export function switchPresetOnDisk(
   directory: string,
   presetName: string,
   config: PluginConfig,
+  options: PresetSwitchOptions = {},
 ): PresetSwitchResult {
   const configuredPresets = getAllConfiguredPresets(directory);
   const presets: PresetMap = {
@@ -165,7 +178,11 @@ export function switchPresetOnDisk(
       ? projectConfig.preset.trim()
       : undefined;
 
-  if (projectPreset && projectPreset !== presetName) {
+  if (
+    options.scope !== 'effective' &&
+    projectPreset &&
+    projectPreset !== presetName
+  ) {
     return {
       ok: false,
       presetName,
@@ -185,7 +202,10 @@ export function switchPresetOnDisk(
   }
 
   const agentUpdates = buildAgentUpdates(effectivePreset);
-  const persistence = persistPresetName(directory, presetName);
+  const persistence =
+    options.scope === 'effective' && projectPreset
+      ? persistProjectPresetName(directory, presetName)
+      : persistPresetName(directory, presetName);
   if (!persistence.ok) {
     return {
       ok: false,
@@ -400,6 +420,50 @@ function persistPresetName(
       message: isReadError
         ? `Could not read or parse the user config file: ${message}.`
         : `Could not write the user config file: ${message}.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function persistProjectPresetName(
+  directory: string,
+  presetName: string,
+): PersistPresetResult {
+  let projectConfigPath: string | null;
+  try {
+    projectConfigPath = findPluginConfigPaths(directory).projectConfigPath;
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Could not locate the project config file: ${describeError(error)}.`,
+    };
+  }
+
+  if (!projectConfigPath) {
+    return {
+      ok: false,
+      message:
+        'No project config file was found for the active project preset override.',
+    };
+  }
+
+  try {
+    mutateJsonFile(projectConfigPath, (current) => ({
+      ...current,
+      preset: presetName,
+    }));
+  } catch (error) {
+    const message = describeError(error);
+    const isReadError =
+      message.includes('Config file must contain') ||
+      message.toLowerCase().includes('parse') ||
+      message.toLowerCase().includes('json');
+    return {
+      ok: false,
+      message: isReadError
+        ? `Could not read or parse the project config file: ${message}.`
+        : `Could not write the project config file: ${message}.`,
     };
   }
 

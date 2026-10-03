@@ -25,10 +25,19 @@ function readState() {
 }
 
 const previousXdg = process.env.XDG_DATA_HOME;
+const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+const previousOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+const previousPresetEnv = process.env.OH_MY_OPENCODE_SLIM_PRESET;
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   process.env.XDG_DATA_HOME = XDG_DIR;
+  process.env.XDG_CONFIG_HOME = path.join(TEST_DIR, 'config');
+  delete process.env.OPENCODE_CONFIG_DIR;
+  delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  const configDir = path.join(process.env.XDG_CONFIG_HOME, 'opencode');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(path.join(configDir, 'oh-my-opencode-slim.json'), '{}');
 });
 
 afterEach(() => {
@@ -38,6 +47,18 @@ afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
   if (previousXdg === undefined) delete process.env.XDG_DATA_HOME;
   else process.env.XDG_DATA_HOME = previousXdg;
+  if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+  if (previousOpenCodeConfigDir === undefined) {
+    delete process.env.OPENCODE_CONFIG_DIR;
+  } else {
+    process.env.OPENCODE_CONFIG_DIR = previousOpenCodeConfigDir;
+  }
+  if (previousPresetEnv === undefined) {
+    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  } else {
+    process.env.OH_MY_OPENCODE_SLIM_PRESET = previousPresetEnv;
+  }
 });
 
 function make(
@@ -92,6 +113,170 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].active_agents).toEqual(['intro']);
     expect(state.sessions[0].status).toBe('idle');
     expect(state.sessions[0].pid).toBe(process.pid);
+  });
+
+  it('publishes presets and applies a project-local preset request', () => {
+    const projectDir = path.join(TEST_DIR, 'project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(
+      projectConfigPath,
+      `{
+        // Project-local preset should remain the controlling layer.
+        "preset": "old",
+      }`,
+    );
+
+    const userConfigPath = path.join(
+      path.join(TEST_DIR, 'config'),
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        preset: 'cheap',
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const m = make('preset-session', projectDir);
+    m.onLoad();
+    let state = readState();
+    expect(state.sessions[0].preset.current).toBe('old');
+    expect(state.sessions[0].preset.available).toEqual(['cheap', 'old']);
+
+    state.preset_requests = [
+      {
+        request_id: 'req-1',
+        session_id: 'preset-session',
+        preset: 'cheap',
+      },
+      {
+        request_id: 'req-other',
+        session_id: 'other-session',
+        preset: 'old',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      m as unknown as {
+        consumePresetRequest: () => boolean;
+      }
+    ).consumePresetRequest();
+
+    state = readState();
+    expect(state.preset_requests).toEqual([
+      {
+        request_id: 'req-other',
+        session_id: 'other-session',
+        preset: 'old',
+      },
+    ]);
+    expect(state.sessions[0].preset).toMatchObject({
+      current: 'cheap',
+      last_request_id: 'req-1',
+      result_ok: true,
+    });
+    expect(readFileSync(projectConfigPath, 'utf8')).toContain(
+      '// Project-local preset should remain',
+    );
+    expect(readFileSync(projectConfigPath, 'utf8')).toContain(
+      '"preset": "cheap"',
+    );
+  });
+
+  it('refreshes published preset state after an external config edit', () => {
+    const projectDir = path.join(TEST_DIR, 'refresh-project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const m = make('refresh-session', projectDir);
+    m.onLoad();
+    expect(readState().sessions[0].preset.current).toBe('old');
+
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'cheap' }));
+    for (let i = 0; i < 4; i++) {
+      (
+        m as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    expect(readState().sessions[0].preset).toMatchObject({
+      current: 'cheap',
+      available: ['cheap', 'old'],
+    });
+  });
+
+  it('keeps the last-known preset state when an external edit is malformed', () => {
+    const projectDir = path.join(TEST_DIR, 'malformed-project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+        },
+      }),
+    );
+
+    const m = make('malformed-session', projectDir);
+    m.onLoad();
+    expect(readState().sessions[0].preset.current).toBe('old');
+
+    writeFileSync(projectConfigPath, '{ invalid json');
+    for (let i = 0; i < 4; i++) {
+      (
+        m as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    expect(readState().sessions[0].preset.current).toBe('old');
   });
 
   it('shows orchestrator while orchestrator is busy with no specialists', () => {
