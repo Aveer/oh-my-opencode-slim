@@ -293,6 +293,59 @@ describe('CompanionManager', () => {
     });
   });
 
+  it('keeps legacy unscoped Companion requests on effective semantics', () => {
+    const projectDir = path.join(TEST_DIR, 'legacy-effective-project');
+    mkdirSync(projectDir, { recursive: true });
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        preset: 'global-a',
+        presets: {
+          'global-a': { orchestrator: { model: 'global-a-model' } },
+          'global-b': { orchestrator: { model: 'global-b-model' } },
+        },
+      }),
+    );
+
+    const m = make('legacy-effective-session', projectDir);
+    m.onLoad();
+
+    const state = readState();
+    state.preset_requests = [
+      {
+        request_id: 'legacy-unscoped',
+        session_id: 'legacy-effective-session',
+        preset: 'global-b',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+
+    (
+      m as unknown as {
+        consumePresetRequest: () => boolean;
+      }
+    ).consumePresetRequest();
+
+    expect(JSON.parse(readFileSync(userConfigPath, 'utf8')).preset).toBe(
+      'global-b',
+    );
+    expect(
+      existsSync(
+        path.join(
+          projectDir,
+          '.opencode',
+          'oh-my-opencode-slim.jsonc',
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it('refreshes published preset state after an external config edit', () => {
     const projectDir = path.join(TEST_DIR, 'refresh-project');
     const projectConfigDir = path.join(projectDir, '.opencode');
