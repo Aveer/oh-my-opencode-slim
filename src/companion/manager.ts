@@ -48,7 +48,7 @@ interface CompanionPresetState {
   last_scope?: CompanionPresetScope;
 }
 
-type CompanionPresetScope = 'project' | 'global';
+type CompanionPresetScope = 'effective' | 'project' | 'global';
 
 interface CompanionPresetRequest {
   request_id: string;
@@ -375,7 +375,11 @@ export class CompanionManager {
 
     const config = loadPluginConfig(this.cwd, { silent: true });
     const scope: CompanionPresetScope =
-      request.scope === 'global' ? 'global' : 'project';
+      request.scope === 'global'
+        ? 'global'
+        : request.scope === 'project'
+          ? 'project'
+          : 'effective';
     const result =
       scope === 'project' && request.inherit === true
         ? clearProjectPresetOnDisk(this.cwd)
