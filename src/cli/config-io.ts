@@ -1,5 +1,4 @@
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -590,7 +589,7 @@ function publishConfig(
   currentText?: string,
 ): void {
   const bakPath = `${configPath}.bak`;
-  if (currentText !== undefined) copyFileSync(configPath, bakPath);
+  if (currentText !== undefined) writeAtomic(bakPath, currentText);
 
   const bom = currentText?.startsWith('\uFEFF') ? '\uFEFF' : '';
   const content =
@@ -654,7 +653,7 @@ export function publishPreparedJsonConfig(
   if (!prepared.changed) return;
 
   if (prepared.originalText !== undefined) {
-    writeFileSync(`${prepared.configPath}.bak`, prepared.originalText);
+    writeAtomic(`${prepared.configPath}.bak`, prepared.originalText);
   }
   writeAtomic(prepared.configPath, prepared.content);
 }
