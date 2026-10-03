@@ -27,6 +27,14 @@ platform file manager and **Copy** places that path on the system clipboard.
 These actions use only the cwd already published in Companion state; they never
 guess a repository root or scan the filesystem.
 
+The compact menu has a second **More** page so the 80px `small` Companion does
+not need a taller menu. **Topmost** toggles the native window level and defaults
+to enabled, preserving current behavior. **Dim idle** is opt-in and only dims a
+truly idle Companion; active specialist tiles remain full intensity even while
+the orchestrator itself is idle. **Copy** lives on the More page alongside
+**Back**. These native-only preferences are persisted in `companion-state.json`
+beside remembered window positions and are intentionally not OMO config keys.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
