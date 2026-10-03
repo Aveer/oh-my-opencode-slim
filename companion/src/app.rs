@@ -731,10 +731,6 @@ fn render_session(
         }
     }
 
-    if let Some(stroke) = attention_stroke(&session.status) {
-        paint_outline(ui.painter(), surface.shrink(1.0), stroke);
-    }
-
     let label_h = (current_size * 0.15).clamp(13.0, 30.0);
     let font_size = (current_size * 0.09).clamp(9.0, 13.0);
     let strip = egui::Rect::from_min_size(
@@ -754,6 +750,10 @@ fn render_session(
         fid,
         egui::Color32::WHITE,
     );
+
+    if let Some(stroke) = attention_stroke(&session.status) {
+        paint_outline(ui.painter(), surface.shrink(1.0), stroke);
+    }
 }
 
 fn render_size_picker(ctx: &egui::Context, win_w: f32, win_h: f32) {
