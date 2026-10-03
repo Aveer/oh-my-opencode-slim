@@ -355,7 +355,7 @@ describe('switchPresetOnDisk', () => {
       projectConfigPath,
       `{
         // preserve
-        "preset": "local",
+        "preset": "local" /* comment, with comma */,
         "companion": { "enabled": true },
       }`,
     );
@@ -371,6 +371,37 @@ describe('switchPresetOnDisk', () => {
     };
     expect(parsed.preset).toBeUndefined();
     expect(parsed.companion?.enabled).toBe(true);
+  });
+
+  test('selection state interpolates global preset placeholders like the runtime loader', () => {
+    const projectDir = path.join(tempDir, 'project-env-selection');
+    fs.mkdirSync(projectDir, { recursive: true });
+    const userConfigPath = path.join(
+      tempDir,
+      'xdg-config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    fs.writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        preset: '{env:OMO_TEST_GLOBAL_PRESET}',
+        presets: {
+          global: { orchestrator: { model: 'global-model' } },
+        },
+      }),
+    );
+
+    process.env.OMO_TEST_GLOBAL_PRESET = 'global';
+    try {
+      expect(getPresetSelectionState(projectDir)).toMatchObject({
+        effective: 'global',
+        global: 'global',
+        project: undefined,
+      });
+    } finally {
+      delete process.env.OMO_TEST_GLOBAL_PRESET;
+    }
   });
 
   test('selection state separates effective, project, and global catalogs', () => {
