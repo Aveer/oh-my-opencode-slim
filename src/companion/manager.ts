@@ -12,7 +12,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { type ConfigLoadWarningKind, loadPluginConfig } from '../config/loader';
 import type { CompanionConfig } from '../config/schema';
-import { switchPresetOnDisk } from '../tools/preset-switch';
+import {
+  clearProjectPresetOnDisk,
+  getPresetSelectionState,
+  switchPresetOnDisk,
+} from '../tools/preset-switch';
 import { log } from '../utils/logger';
 
 // Only one companion `process.on('exit')` listener should be live per process.
@@ -30,17 +34,27 @@ const HARD_PRESET_REFRESH_WARNING_KINDS: ReadonlySet<ConfigLoadWarningKind> =
   new Set(['invalid-json', 'invalid-schema', 'read-error']);
 
 interface CompanionPresetState {
+  /** Backward-compatible effective view for older Companion binaries. */
   current?: string;
   available: string[];
+  effective?: string;
+  project?: string;
+  global?: string;
+  project_available?: string[];
+  global_available?: string[];
   message?: string;
   last_request_id?: string;
   result_ok?: boolean;
 }
 
+type CompanionPresetScope = 'project' | 'global';
+
 interface CompanionPresetRequest {
   request_id: string;
   session_id: string;
-  preset: string;
+  scope?: CompanionPresetScope;
+  preset?: string;
+  inherit?: boolean;
 }
 
 interface CompanionPresetResult extends CompanionPresetRequest {
@@ -273,8 +287,11 @@ export class CompanionManager {
   private spawnedCompanionPid: number | null = null;
   private presetPoller: NodeJS.Timeout | null = null;
   private presetRefreshTick = 0;
-  private currentPreset: string | undefined;
-  private availablePresets: string[] = [];
+  private effectivePreset: string | undefined;
+  private projectPreset: string | undefined;
+  private globalPreset: string | undefined;
+  private projectAvailablePresets: string[] = [];
+  private globalAvailablePresets: string[] = [];
   private presetMessage: string | undefined;
   private presetLastRequestId: string | undefined;
   private presetResultOk: boolean | undefined;
@@ -287,7 +304,7 @@ export class CompanionManager {
 
   private refreshPresetState(): boolean {
     let hardWarning = false;
-    const config = loadPluginConfig(this.cwd, {
+    loadPluginConfig(this.cwd, {
       silent: true,
       onWarning: (warning) => {
         if (HARD_PRESET_REFRESH_WARNING_KINDS.has(warning.kind)) {
@@ -297,21 +314,30 @@ export class CompanionManager {
     });
     if (hardWarning) return false;
 
-    const nextPreset =
-      typeof config.preset === 'string' && config.preset.trim()
-        ? config.preset.trim()
-        : undefined;
-    const nextPresets = Object.keys(config.presets ?? {}).sort((a, b) =>
-      a.localeCompare(b),
-    );
+    const next = getPresetSelectionState(this.cwd);
+    const projectCatalogChanged =
+      this.projectAvailablePresets.length !== next.projectAvailable.length ||
+      this.projectAvailablePresets.some(
+        (name, index) => name !== next.projectAvailable[index],
+      );
+    const globalCatalogChanged =
+      this.globalAvailablePresets.length !== next.globalAvailable.length ||
+      this.globalAvailablePresets.some(
+        (name, index) => name !== next.globalAvailable[index],
+      );
     const changed =
-      this.currentPreset !== nextPreset ||
-      this.availablePresets.length !== nextPresets.length ||
-      this.availablePresets.some((name, index) => name !== nextPresets[index]);
+      this.effectivePreset !== next.effective ||
+      this.projectPreset !== next.project ||
+      this.globalPreset !== next.global ||
+      projectCatalogChanged ||
+      globalCatalogChanged;
 
     if (!changed) return false;
-    this.currentPreset = nextPreset;
-    this.availablePresets = nextPresets;
+    this.effectivePreset = next.effective;
+    this.projectPreset = next.project;
+    this.globalPreset = next.global;
+    this.projectAvailablePresets = next.projectAvailable;
+    this.globalAvailablePresets = next.globalAvailable;
     return true;
   }
 
@@ -351,9 +377,19 @@ export class CompanionManager {
     if (!request) return false;
 
     const config = loadPluginConfig(this.cwd, { silent: true });
-    const result = switchPresetOnDisk(this.cwd, request.preset, config, {
-      scope: 'effective',
-    });
+    const scope: CompanionPresetScope =
+      request.scope === 'global' ? 'global' : 'project';
+    const result =
+      scope === 'project' && request.inherit === true
+        ? clearProjectPresetOnDisk(this.cwd)
+        : typeof request.preset === 'string' && request.preset.trim()
+          ? switchPresetOnDisk(this.cwd, request.preset, config, { scope })
+          : {
+              ok: false,
+              presetName: '',
+              message: 'Preset request is missing a preset name.',
+              summary: [],
+            };
     this.refreshPresetState();
     this.presetMessage = result.message;
     this.presetLastRequestId = request.request_id;
@@ -568,8 +604,13 @@ export class CompanionManager {
             }
           : undefined,
         preset: {
-          current: this.currentPreset,
-          available: this.availablePresets,
+          current: this.effectivePreset,
+          available: this.projectAvailablePresets,
+          effective: this.effectivePreset,
+          project: this.projectPreset,
+          global: this.globalPreset,
+          project_available: this.projectAvailablePresets,
+          global_available: this.globalAvailablePresets,
           message: this.presetMessage,
           last_request_id: this.presetLastRequestId,
           result_ok: this.presetResultOk,
