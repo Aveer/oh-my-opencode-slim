@@ -319,27 +319,22 @@ export class CompanionManager {
     sessionId?: string;
     agent?: string;
     status?: string;
-    model?: string;
-    variant?: string;
   }): void {
     if (this.config?.enabled !== true) return;
-    const { sessionId, agent, status, model, variant } = input;
+    const { sessionId, agent, status } = input;
     if (!sessionId || !status) return;
-
-    if (model || variant) {
-      this.sessionDetails.set(sessionId, {
-        ...(model ? { model } : {}),
-        ...(variant ? { variant } : {}),
-      });
-    }
 
     if (agent === 'orchestrator') {
       this.orchestratorSessionId = sessionId;
-      // Orchestrator going idle does NOT clear specialists: with background
-      // orchestration it idles while dispatched agents are still running.
-      // Specialists are removed only by their own idle/deleted events.
-      if (status === 'busy' || status === 'idle') {
-        this.status = status;
+      // Only orchestrator lifecycle drives the Companion's overall status.
+      // Specialist failures must never turn the whole project red while other
+      // work is still active.
+      if (status === 'busy') {
+        this.status = 'busy';
+      } else if (status === 'idle') {
+        // A confirmed terminal error stays visible until the next real busy
+        // turn. Raw session.error events are intentionally not fed here.
+        if (this.status !== 'error') this.status = 'idle';
       } else if (status === 'error' || status === 'failed') {
         this.status = 'error';
       }
@@ -359,13 +354,10 @@ export class CompanionManager {
       status === 'error' ||
       status === 'failed'
     ) {
-      // Remove by session even when the agent name is unknown, so a
-      // finished specialist can never get stuck on screen.
+      // A specialist terminal event removes only that specialist tile. It
+      // does not change the project-wide Companion status.
       this.busyAgentSessions.delete(sessionId);
       this.sessionDetails.delete(sessionId);
-      if (status === 'error' || status === 'failed') {
-        this.status = 'error';
-      }
     }
     this.flush();
   }
@@ -378,9 +370,24 @@ export class CompanionManager {
     if (this.config?.enabled !== true) return;
     const { sessionId, model, variant } = input;
     if (!sessionId || (!model && !variant)) return;
+
+    const previous = this.sessionDetails.get(sessionId);
+    const nextModel = model ?? previous?.model;
+    // A model change without an observed live variant must clear the previous
+    // variant. For the same model, a model-only telemetry update preserves the
+    // exact variant captured earlier from chat.message.
+    const nextVariant =
+      variant ??
+      (model && previous?.model && model !== previous.model
+        ? undefined
+        : previous?.variant);
+    if (previous?.model === nextModel && previous?.variant === nextVariant) {
+      return;
+    }
+
     this.sessionDetails.set(sessionId, {
-      ...(model ? { model } : {}),
-      ...(variant ? { variant } : {}),
+      ...(nextModel ? { model: nextModel } : {}),
+      ...(nextVariant ? { variant: nextVariant } : {}),
     });
     if (
       this.busyAgentSessions.has(sessionId) ||
@@ -404,9 +411,10 @@ export class CompanionManager {
     }
   }
 
-  onWaitingInput(sessionId?: string): void {
+  onWaitingInput(): void {
     if (this.config?.enabled !== true) return;
-    if (sessionId) this.orchestratorSessionId = sessionId;
+    // Waiting input is project-level UI state, not proof that the requesting
+    // session is the orchestrator. Keep orchestrator identity untouched.
     this.status = 'waiting-input';
     this.flush();
   }
