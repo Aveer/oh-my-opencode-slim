@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   closeSync,
   existsSync,
@@ -10,7 +11,6 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
