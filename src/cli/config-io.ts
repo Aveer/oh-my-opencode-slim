@@ -13,7 +13,14 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
+import {
+  applyEdits,
+  createScanner,
+  modify,
+  parse as parseJsonc,
+  parseTree,
+  SyntaxKind,
+} from 'jsonc-parser';
 import { MarketplaceLockOwnershipError } from '../marketplace/errors';
 import { acquireMarketplaceLease, writeAtomic } from '../marketplace/lease';
 import { getMarketplacePaths } from '../marketplace/paths';
@@ -774,6 +781,85 @@ export function writeJsonAtomic(filePath: string, value: unknown): void {
 }
 
 /** Read, mutate, and atomically publish a JSON/JSONC config under one lease. */
+function findCommaToken(
+  source: string,
+  start: number,
+  end: number,
+  preferLast = false,
+): { offset: number; length: number } | undefined {
+  const scanner = createScanner(source, false);
+  scanner.setPosition(start);
+  let match: { offset: number; length: number } | undefined;
+  while (scanner.getPosition() <= end) {
+    const token = scanner.scan();
+    if (token === SyntaxKind.EOF) break;
+    const offset = scanner.getTokenOffset();
+    if (offset >= end) break;
+    if (token === SyntaxKind.CommaToken) {
+      match = { offset, length: scanner.getTokenLength() };
+      if (!preferLast) return match;
+    }
+  }
+  return match;
+}
+
+/**
+ * Remove one top-level JSON/JSONC property while preserving comments belonging
+ * to neighboring properties. Token scanning distinguishes real separators from
+ * commas inside comments/strings.
+ */
+export function removeTopLevelJsonProperty(
+  configPath: string,
+  propertyName: string,
+): void {
+  withConfigWriteLease(configPath, () => {
+    if (!existsSync(configPath)) return;
+
+    const currentText = readFileSync(configPath, 'utf-8');
+    const hasBom = currentText.startsWith('\uFEFF');
+    const source = hasBom ? currentText.slice(1) : currentText;
+    const errors: Parameters<typeof parseTree>[1] = [];
+    const root = parseTree(source, errors, { allowTrailingComma: true });
+    if (errors.length > 0 || root?.type !== 'object') {
+      throw new Error('Invalid JSONC config');
+    }
+
+    const properties = (root.children ?? []).filter(
+      (node) => node.type === 'property',
+    );
+    const index = properties.findIndex(
+      (property) => property.children?.[0]?.value === propertyName,
+    );
+    if (index < 0) return;
+
+    const property = properties[index];
+    let removeStart = property.offset;
+    let removeEnd = property.offset + property.length;
+
+    if (properties.length > 1 && index < properties.length - 1) {
+      const next = properties[index + 1];
+      const comma = findCommaToken(source, removeEnd, next.offset);
+      if (!comma) throw new Error('Could not locate JSONC property separator');
+      removeEnd = comma.offset + comma.length;
+    } else if (properties.length > 1) {
+      const previous = properties[index - 1];
+      const comma = findCommaToken(
+        source,
+        previous.offset + previous.length,
+        property.offset,
+        true,
+      );
+      if (!comma) throw new Error('Could not locate JSONC property separator');
+      removeStart = comma.offset;
+    }
+
+    const updated = source.slice(0, removeStart) + source.slice(removeEnd);
+    parseJsonConfigText(updated);
+    writeBackupAtomic(`${configPath}.bak`, currentText);
+    writeAtomic(configPath, `${hasBom ? '\uFEFF' : ''}${updated}`);
+  });
+}
+
 export function mutateJsonFile(
   configPath: string,
   mutate: (current: JsonConfig) => JsonConfig,
