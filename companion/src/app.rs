@@ -461,13 +461,11 @@ impl eframe::App for CompanionApp {
         }
 
         if self.applied_always_on_top != Some(self.always_on_top) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                if self.always_on_top {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                },
-            ));
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
             self.applied_always_on_top = Some(self.always_on_top);
         }
 
@@ -738,12 +736,8 @@ fn render_session(
     let tint = animation_tint(&session.status, dim_when_idle);
     for (i, frame) in agent_frames.iter().enumerate() {
         if let Some(&cell) = rects.get(i) {
-            ui.painter().image(
-                frame.texture_id,
-                cell.shrink(SURFACE_INSET),
-                frame.uv,
-                tint,
-            );
+            ui.painter()
+                .image(frame.texture_id, cell.shrink(SURFACE_INSET), frame.uv, tint);
         }
     }
 
@@ -967,9 +961,9 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        animation_tint, apply_config, choose_owned_session, choose_session, config_key,
-        grid_dims, handle_drag_start, place_window, restore_window_position, size_from_config,
-        window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        animation_tint, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
+        handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
+        ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::CompanionConfigState;
     use eframe::egui;
@@ -1048,10 +1042,7 @@ mod tests {
         );
         assert_eq!(animation_tint("idle", false), egui::Color32::WHITE);
         assert_eq!(animation_tint("busy", true), egui::Color32::WHITE);
-        assert_eq!(
-            animation_tint("waiting-input", true),
-            egui::Color32::WHITE
-        );
+        assert_eq!(animation_tint("waiting-input", true), egui::Color32::WHITE);
     }
 
     #[test]
