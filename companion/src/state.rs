@@ -58,18 +58,39 @@ pub struct CompanionPresetState {
     #[serde(default)]
     pub available: Vec<String>,
     #[serde(default)]
+    pub effective: Option<String>,
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub global: Option<String>,
+    #[serde(default)]
+    pub project_available: Vec<String>,
+    #[serde(default)]
+    pub global_available: Vec<String>,
+    #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
     pub last_request_id: Option<String>,
     #[serde(default)]
     pub result_ok: Option<bool>,
+    #[serde(default)]
+    pub last_scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanionPresetRequest {
     pub request_id: String,
     pub session_id: String,
-    pub preset: String,
+    #[serde(default = "default_preset_scope")]
+    pub scope: String,
+    #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
+    pub inherit: bool,
+}
+
+fn default_preset_scope() -> String {
+    "project".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,9 +139,20 @@ pub fn write_preset_request(
     path: &std::path::Path,
     request: CompanionPresetRequest,
 ) -> std::io::Result<()> {
+    let valid_scope = request.scope == "project" || request.scope == "global";
+    let valid_selection = if request.inherit {
+        request.scope == "project" && request.preset.is_none()
+    } else {
+        request
+            .preset
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|preset| !preset.is_empty())
+    };
     if request.request_id.trim().is_empty()
         || request.session_id.trim().is_empty()
-        || request.preset.trim().is_empty()
+        || !valid_scope
+        || !valid_selection
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -284,6 +316,37 @@ mod tests {
     }
 
     #[test]
+    fn preset_request_writer_accepts_project_inherit_action() {
+        let path = temp_state_path("inherit");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"live","cwd":"/live"}]}"#,
+        )
+        .unwrap();
+
+        write_preset_request(
+            &path,
+            CompanionPresetRequest {
+                request_id: "inherit".into(),
+                session_id: "live".into(),
+                scope: "project".into(),
+                preset: None,
+                inherit: true,
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert_eq!(state.preset_requests.len(), 1);
+        assert!(state.preset_requests[0].inherit);
+        assert_eq!(state.preset_requests[0].scope, "project");
+        assert!(state.preset_requests[0].preset.is_none());
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn preset_request_writer_preserves_other_session_requests() {
         let path = temp_state_path("queue");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -298,7 +361,9 @@ mod tests {
             CompanionPresetRequest {
                 request_id: "req-a".into(),
                 session_id: "a".into(),
-                preset: "one".into(),
+                scope: "project".into(),
+                preset: Some("one".into()),
+                inherit: false,
             },
         )
         .unwrap();
@@ -307,7 +372,9 @@ mod tests {
             CompanionPresetRequest {
                 request_id: "req-b".into(),
                 session_id: "b".into(),
-                preset: "two".into(),
+                scope: "global".into(),
+                preset: Some("two".into()),
+                inherit: false,
             },
         )
         .unwrap();
@@ -335,7 +402,9 @@ mod tests {
             CompanionPresetRequest {
                 request_id: "new".into(),
                 session_id: "live".into(),
-                preset: "two".into(),
+                scope: "project".into(),
+                preset: Some("two".into()),
+                inherit: false,
             },
         )
         .unwrap();
