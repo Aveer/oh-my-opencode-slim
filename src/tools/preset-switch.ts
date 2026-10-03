@@ -203,11 +203,7 @@ export function switchPresetOnDisk(
       ? projectConfig.preset.trim()
       : undefined;
 
-  if (
-    scope === 'user' &&
-    projectPreset &&
-    projectPreset !== presetName
-  ) {
+  if (scope === 'user' && projectPreset && projectPreset !== presetName) {
     return {
       ok: false,
       presetName,
@@ -322,7 +318,8 @@ export function clearProjectPresetOnDisk(
   return {
     ok: true,
     presetName: '',
-    message: 'Project preset override removed. This project now inherits the global preset.',
+    message:
+      'Project preset override removed. This project now inherits the global preset.',
     summary: [],
   };
 }
