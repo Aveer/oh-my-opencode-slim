@@ -354,9 +354,11 @@ describe('switchPresetOnDisk', () => {
     fs.writeFileSync(
       projectConfigPath,
       `{
-        "preset": "local" /* comment, with comma */,
-        // preserve unrelated project setting comment
-        "companion": { "enabled": true },
+        "preset": "local" /* removed-field comment, with comma */,
+        "companion": {
+          // preserve unrelated project setting comment
+          "enabled": true
+        },
       }`,
     );
 
