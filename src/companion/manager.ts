@@ -23,10 +23,18 @@ import { log } from '../utils/logger';
 let activeExitListener: (() => void) | null = null;
 const activeManagers = new Set<CompanionManager>();
 
+interface CompanionAgentDetail {
+  session_id: string;
+  agent: string;
+  model?: string;
+  variant?: string;
+}
+
 interface CompanionSession {
   session_id: string;
   cwd: string;
   active_agents: string[];
+  active_agent_details?: CompanionAgentDetail[];
   status: string;
   pid: number;
   config?: CompanionState['config'];
@@ -240,6 +248,11 @@ export class CompanionManager {
   private status = 'idle';
   /** sessionId → agent name, for sessions currently busy. */
   private readonly busyAgentSessions = new Map<string, string>();
+  private readonly sessionDetails = new Map<
+    string,
+    { model?: string; variant?: string }
+  >();
+  private orchestratorSessionId: string | undefined;
   private readonly config?: CompanionConfig;
   private companionProcess: ChildProcess | null = null;
   private wasSpawner = false;
@@ -306,43 +319,92 @@ export class CompanionManager {
     sessionId?: string;
     agent?: string;
     status?: string;
+    model?: string;
+    variant?: string;
   }): void {
     if (this.config?.enabled !== true) return;
-    const { sessionId, agent, status } = input;
-    if (!sessionId || (status !== 'busy' && status !== 'idle')) return;
+    const { sessionId, agent, status, model, variant } = input;
+    if (!sessionId || !status) return;
+
+    if (model || variant) {
+      this.sessionDetails.set(sessionId, {
+        ...(model ? { model } : {}),
+        ...(variant ? { variant } : {}),
+      });
+    }
 
     if (agent === 'orchestrator') {
+      this.orchestratorSessionId = sessionId;
       // Orchestrator going idle does NOT clear specialists: with background
       // orchestration it idles while dispatched agents are still running.
       // Specialists are removed only by their own idle/deleted events.
-      this.status = status;
+      if (status === 'busy' || status === 'idle') {
+        this.status = status;
+      } else if (status === 'error' || status === 'failed') {
+        this.status = 'error';
+      }
       this.flush();
       return;
     }
 
-    if (status === 'busy') {
+    if (status === 'busy' || status === 'retry') {
       // Accept busy sessions even without a known agent name — Herdr
       // subagents (spawned via opencode attach) often lack the agent
       // field, and dropping the event leaves them shown as idle.
       this.busyAgentSessions.set(sessionId, agent ?? sessionId);
-    } else {
+    } else if (
+      status === 'idle' ||
+      status === 'completed' ||
+      status === 'stopped' ||
+      status === 'error' ||
+      status === 'failed'
+    ) {
       // Remove by session even when the agent name is unknown, so a
       // finished specialist can never get stuck on screen.
       this.busyAgentSessions.delete(sessionId);
+      if (status === 'error' || status === 'failed') {
+        this.status = 'error';
+      }
     }
     this.flush();
+  }
+
+  onSessionModelChanged(input: {
+    sessionId?: string;
+    model?: string;
+    variant?: string;
+  }): void {
+    if (this.config?.enabled !== true) return;
+    const { sessionId, model, variant } = input;
+    if (!sessionId || (!model && !variant)) return;
+    this.sessionDetails.set(sessionId, {
+      ...(model ? { model } : {}),
+      ...(variant ? { variant } : {}),
+    });
+    if (
+      this.busyAgentSessions.has(sessionId) ||
+      this.orchestratorSessionId === sessionId
+    ) {
+      this.flush();
+    }
   }
 
   onSessionDeleted(sessionId: string | undefined): void {
     if (this.config?.enabled !== true) return;
     if (!sessionId) return;
-    if (this.busyAgentSessions.delete(sessionId)) {
+    const removed = this.busyAgentSessions.delete(sessionId);
+    this.sessionDetails.delete(sessionId);
+    if (this.orchestratorSessionId === sessionId) {
+      this.orchestratorSessionId = undefined;
+    }
+    if (removed) {
       this.flush();
     }
   }
 
-  onWaitingInput(): void {
+  onWaitingInput(sessionId?: string): void {
     if (this.config?.enabled !== true) return;
+    if (sessionId) this.orchestratorSessionId = sessionId;
     this.status = 'waiting-input';
     this.flush();
   }
@@ -402,6 +464,37 @@ export class CompanionManager {
     }
   }
 
+  private detailFor(sessionId: string, agent: string): CompanionAgentDetail {
+    const detail = this.sessionDetails.get(sessionId);
+    return {
+      session_id: sessionId,
+      agent,
+      ...(detail?.model ? { model: detail.model } : {}),
+      ...(detail?.variant ? { variant: detail.variant } : {}),
+    };
+  }
+
+  private activeAgentDetails(): CompanionAgentDetail[] {
+    const details = [...this.busyAgentSessions.entries()]
+      .slice(0, 9)
+      .map(([sessionId, agent]) => this.detailFor(sessionId, agent));
+    if (details.length > 0) return details;
+
+    if (
+      (this.status === 'busy' || this.status === 'waiting-input') &&
+      this.orchestratorSessionId
+    ) {
+      return [
+        this.detailFor(
+          this.orchestratorSessionId,
+          this.status === 'waiting-input' ? 'input' : 'orchestrator',
+        ),
+      ];
+    }
+
+    return [];
+  }
+
   /** One entry per running agent instance (two fixers → two cells). */
   private activeAgents(): string[] {
     const agents = Array.from(this.busyAgentSessions.values());
@@ -418,6 +511,7 @@ export class CompanionManager {
         session_id: this.id,
         cwd: this.cwd,
         active_agents: this.activeAgents(),
+        active_agent_details: this.activeAgentDetails(),
         status: this.status,
         pid: process.pid,
         config: this.config
