@@ -90,7 +90,7 @@ pub struct CompanionPresetRequest {
 }
 
 fn default_preset_scope() -> String {
-    "project".to_string()
+    "effective".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,7 +139,8 @@ pub fn write_preset_request(
     path: &std::path::Path,
     request: CompanionPresetRequest,
 ) -> std::io::Result<()> {
-    let valid_scope = request.scope == "project" || request.scope == "global";
+    let valid_scope =
+        request.scope == "effective" || request.scope == "project" || request.scope == "global";
     let valid_selection = if request.inherit {
         request.scope == "project" && request.preset.is_none()
     } else {
