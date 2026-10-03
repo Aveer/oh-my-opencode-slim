@@ -15,6 +15,11 @@ reply/reject path resolves it. Error attention is deliberately deferred: raw
 fallback can still recover the turn, and the Companion should not duplicate the
 fallback subsystem's terminalization state machine.
 
+The optional native-attention follow-up uses the same settled waiting-input
+state: entering it requests informational user attention once for the selected
+session/status pair, and leaving it resets that request. It never steals focus
+and deliberately does not request critical/error attention.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
