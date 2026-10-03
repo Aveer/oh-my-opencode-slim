@@ -12,13 +12,13 @@ import {
 import * as fs from 'node:fs';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
   symlinkSync,
-  lstatSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
