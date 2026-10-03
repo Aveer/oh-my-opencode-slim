@@ -2094,6 +2094,18 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
               isInternalAdmission(info.sessionID, info.parentID));
           if (!internalAdmission) {
             sessionMetadata.setModel(info.sessionID, model);
+            const companionAgent =
+              sessionMetadata.getAgent(info.sessionID) ??
+              (typeof info.agent === 'string'
+                ? resolveRuntimeAgentName(runtime, info.agent)
+                : undefined);
+            companionManager.onSessionModelChanged({
+              sessionId: info.sessionID,
+              model,
+              variant: companionAgent
+                ? resolveTuiVariantForModel(companionAgent, model)
+                : undefined,
+            });
           }
           // Managed background-task sessions are identified by their session
           // ID. If the model serving one changed (fallback re-prompt, runtime
@@ -2185,7 +2197,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         event.type === 'permission.asked' ||
         event.type === 'question.asked'
       ) {
-        companionManager.onWaitingInput();
+        companionManager.onWaitingInput(eventSessionID);
       }
 
       if (
@@ -2212,10 +2224,36 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
                   'string'
               ? (rawCompanionStatus as { type: string }).type
               : undefined;
+        const companionAgent = sessionID
+          ? sessionMetadata.getAgent(sessionID)
+          : undefined;
+        const companionModel = sessionID
+          ? sessionMetadata.getModel(sessionID)
+          : undefined;
         companionManager.onSessionStatus({
           sessionId: sessionID,
-          agent: sessionID ? sessionMetadata.getAgent(sessionID) : undefined,
+          agent: companionAgent,
           status: companionStatus,
+          model: companionModel,
+          variant:
+            companionAgent && companionModel
+              ? resolveTuiVariantForModel(companionAgent, companionModel)
+              : undefined,
+        });
+      }
+
+      if (input.event.type === 'session.error' && eventSessionID) {
+        const companionAgent = sessionMetadata.getAgent(eventSessionID);
+        const companionModel = sessionMetadata.getModel(eventSessionID);
+        companionManager.onSessionStatus({
+          sessionId: eventSessionID,
+          agent: companionAgent,
+          status: 'error',
+          model: companionModel,
+          variant:
+            companionAgent && companionModel
+              ? resolveTuiVariantForModel(companionAgent, companionModel)
+              : undefined,
         });
       }
 
