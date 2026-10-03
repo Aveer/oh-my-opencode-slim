@@ -73,6 +73,11 @@ interface CompanionState {
   sessions: CompanionSession[];
   window_positions?: Record<string, { x: number; y: number }>;
   preset_requests?: CompanionPresetRequest[];
+  /** Native Companion-owned UI state. TS preserves but never interprets it. */
+  ui_preferences?: {
+    always_on_top: boolean;
+    dim_when_idle: boolean;
+  };
   config?: {
     enabled: boolean;
     position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
