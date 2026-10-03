@@ -228,6 +228,13 @@ fn agent_detail_tooltip(detail: &CompanionAgentDetail) -> String {
     lines.join("\n")
 }
 
+fn attention_type_for_status(status: &str) -> Option<egui::UserAttentionType> {
+    match status {
+        "waiting-input" => Some(egui::UserAttentionType::Informational),
+        _ => None,
+    }
+}
+
 fn attention_stroke(status: &str) -> Option<egui::Stroke> {
     match status {
         "waiting-input" => Some(egui::Stroke::new(
@@ -332,6 +339,7 @@ pub struct CompanionApp {
     window_positions: std::collections::BTreeMap<String, WindowPositionState>,
     project_keys: std::collections::BTreeMap<String, String>,
     drag_project_key: Option<String>,
+    last_attention_key: Option<(String, String)>,
     niri_generation: Arc<AtomicU64>,
 }
 
@@ -392,6 +400,7 @@ impl CompanionApp {
             window_positions,
             project_keys: std::collections::BTreeMap::new(),
             drag_project_key: None,
+            last_attention_key: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -506,6 +515,23 @@ impl eframe::App for CompanionApp {
         };
 
         let session = self.sessions[selected_idx].clone();
+        let attention_key = (session.session_id.clone(), session.status.clone());
+        if self.last_attention_key.as_ref() != Some(&attention_key) {
+            let previous_was_actionable = self
+                .last_attention_key
+                .as_ref()
+                .and_then(|(_, status)| attention_type_for_status(status))
+                .is_some();
+            if let Some(attention) = attention_type_for_status(&session.status) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(attention));
+            } else if previous_was_actionable {
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                    egui::UserAttentionType::Reset,
+                ));
+            }
+            self.last_attention_key = Some(attention_key);
+        }
+
         let selection_log_key = format!(
             "{}|{}|{}|{:?}",
             session.session_id, session.cwd, session.status, session.active_agents
@@ -911,9 +937,10 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_detail_tooltip, apply_config, attention_stroke, choose_owned_session, choose_session,
-        config_key, grid_dims, handle_drag_start, place_window, restore_window_position,
-        size_from_config, window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        agent_detail_tooltip, apply_config, attention_stroke, attention_type_for_status,
+        choose_owned_session, choose_session, config_key, grid_dims, handle_drag_start,
+        place_window, restore_window_position, size_from_config, window_size, ConfigKey,
+        SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionAgentDetail, CompanionConfigState};
 
@@ -996,6 +1023,18 @@ mod tests {
             agent_detail_tooltip(&detail),
             "fixer\nModel: provider/model\nVariant: high"
         );
+    }
+
+    #[test]
+    fn native_attention_is_reserved_for_waiting_input() {
+        assert_eq!(
+            attention_type_for_status("waiting-input"),
+            Some(egui::UserAttentionType::Informational)
+        );
+        assert_eq!(attention_type_for_status("error"), None);
+        assert_eq!(attention_type_for_status("failed"), None);
+        assert_eq!(attention_type_for_status("busy"), None);
+        assert_eq!(attention_type_for_status("idle"), None);
     }
 
     #[test]

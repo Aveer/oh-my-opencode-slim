@@ -15,6 +15,14 @@ reply/reject path resolves it. Error attention is deliberately deferred: raw
 fallback can still recover the turn, and the Companion should not duplicate the
 fallback subsystem's terminalization state machine.
 
+When the selected session enters `waiting-input`, the native Companion also
+requests informational user attention exactly once for that session/status pair.
+Returning to an ordinary state resets the request. The effect is delegated to
+the platform/window manager (for example taskbar flashing or Dock attention);
+unsupported environments may safely ignore it. Error/failure notifications are
+intentionally not emitted because the parent status PR does not claim canonical
+settled terminal evidence.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
