@@ -11,7 +11,7 @@ The companion system consists of two main components following a **Producer-Cons
 - **Producer (manager.ts)**: `CompanionManager` class
   - Listens to OpenCode session lifecycle events (`session.status`, `session.deleted`)
   - Tracks agent activity per session (orchestrator, fixers, etc.)
-  - Maintains state in a JSON file at `~/.local/share/opencode/storage/oh-my-opencode-slim/companion-state.json`
+  - Maintains state in a JSON file at `~/.local/share/opencode/storage/oh-my-opencode-slim/companion-state.json`; TypeScript session writes preserve native-only UI preference fields owned by the Rust companion
   - Spawns the companion binary process when enabled
   - Implements a locking mechanism for concurrent state writes
 
