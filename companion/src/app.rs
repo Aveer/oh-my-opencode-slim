@@ -523,9 +523,7 @@ impl eframe::App for CompanionApp {
                 .and_then(|(_, status)| attention_type_for_status(status))
                 .is_some();
             if let Some(attention) = attention_type_for_status(&session.status) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
-                    attention,
-                ));
+                ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(attention));
             } else if previous_was_actionable {
                 ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
                     egui::UserAttentionType::Reset,
