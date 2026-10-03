@@ -277,7 +277,6 @@ export function getPresetSelectionState(
   };
 }
 
-
 export function clearProjectPresetOnDisk(
   directory: string,
 ): PresetSwitchResult {
