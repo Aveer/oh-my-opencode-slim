@@ -1,6 +1,10 @@
 import * as fs from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { mutateJsonFile, stripJsonComments } from '../cli/config-io';
+import {
+  mutateJsonFile,
+  removeTopLevelJsonProperty,
+  stripJsonComments,
+} from '../cli/config-io';
 import type {
   AgentOverrideConfig,
   PluginConfig,
@@ -302,11 +306,7 @@ export function clearProjectPresetOnDisk(
   }
 
   try {
-    mutateJsonFile(projectConfigPath, (current) => {
-      const updated = { ...current };
-      delete updated.preset;
-      return updated;
-    });
+    removeTopLevelJsonProperty(projectConfigPath, 'preset');
   } catch (error) {
     return {
       ok: false,
