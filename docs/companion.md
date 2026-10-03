@@ -2,6 +2,17 @@
 
 The desktop companion app provides a floating status overlay showing running and active agents.
 
+The right-click menu also owns native window preferences that are intentionally
+separate from the OMO configuration file:
+
+- **Always on top** — enabled by default to preserve current behavior; can be
+  toggled at runtime through `ViewportCommand::WindowLevel`.
+- **Dim when idle** — disabled by default; when enabled, only the idle animation
+  is dimmed while busy/waiting states remain full intensity.
+
+These preferences are stored in `companion-state.json` beside remembered window
+positions. They are native UI state, not plugin configuration.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
