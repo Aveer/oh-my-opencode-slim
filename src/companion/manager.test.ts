@@ -26,11 +26,15 @@ function readState() {
 
 const previousXdg = process.env.XDG_DATA_HOME;
 const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+const previousOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+const previousPresetEnv = process.env.OH_MY_OPENCODE_SLIM_PRESET;
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   process.env.XDG_DATA_HOME = XDG_DIR;
   process.env.XDG_CONFIG_HOME = path.join(TEST_DIR, 'config');
+  delete process.env.OPENCODE_CONFIG_DIR;
+  delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
   const configDir = path.join(process.env.XDG_CONFIG_HOME, 'opencode');
   mkdirSync(configDir, { recursive: true });
   writeFileSync(path.join(configDir, 'oh-my-opencode-slim.json'), '{}');
@@ -45,6 +49,16 @@ afterEach(() => {
   else process.env.XDG_DATA_HOME = previousXdg;
   if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
   else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+  if (previousOpenCodeConfigDir === undefined) {
+    delete process.env.OPENCODE_CONFIG_DIR;
+  } else {
+    process.env.OPENCODE_CONFIG_DIR = previousOpenCodeConfigDir;
+  }
+  if (previousPresetEnv === undefined) {
+    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  } else {
+    process.env.OH_MY_OPENCODE_SLIM_PRESET = previousPresetEnv;
+  }
 });
 
 function make(
