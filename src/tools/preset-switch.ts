@@ -1,6 +1,11 @@
 import * as fs from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { mutateJsonFile, stripJsonComments } from '../cli/config-io';
+import { parseTree } from 'jsonc-parser';
+import {
+  mutateJsonFile,
+  stripJsonComments,
+  withSerializedConfigWrites,
+} from '../cli/config-io';
 import type {
   AgentOverrideConfig,
   PluginConfig,
@@ -15,6 +20,7 @@ import {
   getPluginConfigCandidates,
 } from '../config/loader';
 import { resolvePresetDefinition } from '../config/presets';
+import { writeAtomic } from '../marketplace/lease';
 import {
   isPrototypeSensitiveName,
   ownPresetValue,
@@ -276,6 +282,62 @@ export function getPresetSelectionState(
   };
 }
 
+function removeTopLevelPresetPreservingJsonc(configPath: string): void {
+  withSerializedConfigWrites([configPath], () => {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const hasBom = raw.startsWith('\uFEFF');
+    const source = hasBom ? raw.slice(1) : raw;
+    const errors: Parameters<typeof parseTree>[1] = [];
+    const root = parseTree(source, errors, { allowTrailingComma: true });
+    if (errors.length > 0 || root?.type !== 'object') {
+      throw new Error('Invalid JSONC config');
+    }
+
+    const properties = root.children ?? [];
+    const index = properties.findIndex(
+      (property) =>
+        property.type === 'property' &&
+        property.children?.[0]?.value === 'preset',
+    );
+    if (index < 0) return;
+
+    const property = properties[index];
+    let updated: string;
+    if (properties.length === 1) {
+      updated =
+        source.slice(0, property.offset) +
+        source.slice(property.offset + property.length);
+    } else if (index < properties.length - 1) {
+      const next = properties[index + 1];
+      const separator = source.indexOf(
+        ',',
+        property.offset + property.length,
+      );
+      if (separator < 0 || separator >= next.offset) {
+        throw new Error('Could not locate JSONC property separator');
+      }
+      updated =
+        source.slice(0, property.offset) + source.slice(separator + 1);
+    } else {
+      const previous = properties[index - 1];
+      const separator = source.indexOf(
+        ',',
+        previous.offset + previous.length,
+      );
+      if (separator < 0 || separator >= property.offset) {
+        throw new Error('Could not locate JSONC property separator');
+      }
+      updated =
+        source.slice(0, separator) +
+        source.slice(separator + 1, property.offset) +
+        source.slice(property.offset + property.length);
+    }
+
+    fs.copyFileSync(configPath, `${configPath}.bak`);
+    writeAtomic(configPath, `${hasBom ? '\uFEFF' : ''}${updated}`);
+  });
+}
+
 export function clearProjectPresetOnDisk(
   directory: string,
 ): PresetSwitchResult {
@@ -301,11 +363,7 @@ export function clearProjectPresetOnDisk(
   }
 
   try {
-    mutateJsonFile(projectConfigPath, (current) => {
-      const updated = { ...current };
-      delete updated.preset;
-      return updated;
-    });
+    removeTopLevelPresetPreservingJsonc(projectConfigPath);
   } catch (error) {
     return {
       ok: false,
