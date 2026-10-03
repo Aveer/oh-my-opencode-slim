@@ -330,7 +330,8 @@ export class CompanionManager {
       // An external /preset or manual config edit supersedes feedback from an
       // older Companion request.
       this.presetMessage = undefined;
-      this.presetLastRequestId = undefined;
+      // Keep the last request id long enough for the native Companion to
+      // observe completion even if an external edit races this refresh.
       this.presetResultOk = undefined;
       this.flush();
     }
