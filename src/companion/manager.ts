@@ -323,28 +323,15 @@ export class CompanionManager {
   }): void {
     if (this.config?.enabled !== true) return;
     const { sessionId, agent, status } = input;
-    if (!sessionId || !status) return;
+    if (!sessionId || (status !== 'busy' && status !== 'idle')) return;
 
     if (agent === 'orchestrator') {
       this.orchestratorSessionId = sessionId;
-      // Only orchestrator lifecycle drives the Companion's overall status.
-      // Specialist failures must never turn the whole project red while other
-      // work is still active.
-      if (status === 'busy') {
-        this.orchestratorBusy = true;
-        // A pending input request is cleared only by its explicit reply/reject
-        // event, not by lifecycle noise from the same session.
-        if (this.status !== 'waiting-input') this.status = 'busy';
-      } else if (status === 'idle') {
-        this.orchestratorBusy = false;
-        // Confirmed terminal errors and pending input stay visible until their
-        // own recovery/resolution signal. Raw session.error is never fed here.
-        if (this.status !== 'error' && this.status !== 'waiting-input') {
-          this.status = 'idle';
-        }
-      } else if (status === 'error' || status === 'failed') {
-        this.orchestratorBusy = false;
-        this.status = 'error';
+      this.orchestratorBusy = status === 'busy';
+      // A pending input request is cleared only by its explicit reply/reject
+      // event, not by ordinary lifecycle noise from the same session.
+      if (this.status !== 'waiting-input') {
+        this.status = status;
       }
       this.flush();
       return;
@@ -355,15 +342,9 @@ export class CompanionManager {
       // subagents (spawned via opencode attach) often lack the agent
       // field, and dropping the event leaves them shown as idle.
       this.busyAgentSessions.set(sessionId, agent ?? sessionId);
-    } else if (
-      status === 'idle' ||
-      status === 'completed' ||
-      status === 'stopped' ||
-      status === 'error' ||
-      status === 'failed'
-    ) {
-      // A specialist terminal event removes only that specialist tile. It
-      // does not change the project-wide Companion status.
+    } else {
+      // Remove by session even when the agent name is unknown, so a
+      // finished specialist can never get stuck on screen.
       this.busyAgentSessions.delete(sessionId);
       this.sessionDetails.delete(sessionId);
     }
