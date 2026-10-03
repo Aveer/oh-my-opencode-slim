@@ -3,12 +3,17 @@
 The desktop companion app provides a floating status overlay showing running and active agents.
 
 Hover an active agent tile to inspect the live provider/model recorded for that
-session and its resolved variant when one is known. These details come from the
-same runtime session metadata OMO Slim already uses for model-aware task
-admission; the Companion does not infer the model from a preset.
+session. A variant is shown only when it was observed on the live
+`chat.message` selection; model-only telemetry never guesses a variant from
+the agent configuration. The Companion therefore avoids presenting a configured
+default as if it were the user's current runtime choice.
 
-Actionable states are also surfaced visually: waiting-for-input and error states
-receive an attention outline while ordinary busy/idle animation remains unchanged.
+Actionable states are surfaced conservatively: waiting-for-input always receives
+an attention outline, while an error outline is reserved for an explicit
+terminal `session.status` error/failed state. Raw `session.error` events are
+not treated as terminal because foreground/model fallback may still recover the
+turn. Specialist failures remove only that specialist tile and never mark the
+whole project as failed.
 
 ## How to Enable in Configuration
 
