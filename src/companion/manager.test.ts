@@ -132,7 +132,7 @@ describe('CompanionManager', () => {
     );
 
     const userConfigPath = path.join(
-      process.env.XDG_CONFIG_HOME!,
+      path.join(TEST_DIR, 'config'),
       'opencode',
       'oh-my-opencode-slim.json',
     );
