@@ -30,6 +30,7 @@ const SIZE_KEY: &str = "companion_size";
 const MENU_OPEN_KEY: &str = "companion_menu_open";
 const MENU_POS_KEY: &str = "companion_menu_pos";
 const MENU_JUST_OPENED_KEY: &str = "companion_menu_just_opened";
+const PRESET_SCOPE_GLOBAL_KEY: &str = "companion_preset_scope_global";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct WindowGeometryKey {
@@ -280,19 +281,162 @@ fn compact_preset_label(value: &str) -> String {
     format!("{}…", chars[..5].iter().collect::<String>())
 }
 
-fn adjacent_preset(state: &CompanionPresetState, direction: isize) -> Option<String> {
-    if state.available.is_empty() {
-        return None;
+fn compact_scoped_label(prefix: &str, value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let value = if chars.len() <= 4 {
+        value.to_string()
+    } else {
+        format!("{}…", chars[..3].iter().collect::<String>())
+    };
+    format!("{prefix}:{value}")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PresetScope {
+    Project,
+    Global,
+}
+
+impl PresetScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Global => "global",
+        }
     }
-    let Some(current) = state.current.as_deref() else {
-        return state.available.first().cloned();
-    };
-    let Some(index) = state.available.iter().position(|name| name == current) else {
-        return state.available.first().cloned();
-    };
-    let len = state.available.len() as isize;
-    let next = (index as isize + direction).rem_euclid(len) as usize;
-    state.available.get(next).cloned()
+
+    fn toggled(self) -> Self {
+        match self {
+            Self::Project => Self::Global,
+            Self::Global => Self::Project,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PresetMenuAction {
+    scope: PresetScope,
+    preset: Option<String>,
+    inherit: bool,
+}
+
+fn has_scoped_preset_state(state: &CompanionPresetState) -> bool {
+    state.effective.is_some()
+        || state.project.is_some()
+        || state.global.is_some()
+        || !state.project_available.is_empty()
+        || !state.global_available.is_empty()
+}
+
+fn project_catalog(state: &CompanionPresetState) -> &[String] {
+    if state.project_available.is_empty() && !has_scoped_preset_state(state) {
+        &state.available
+    } else {
+        &state.project_available
+    }
+}
+
+fn project_current(state: &CompanionPresetState) -> Option<&str> {
+    if has_scoped_preset_state(state) {
+        state.project.as_deref()
+    } else {
+        state.current.as_deref()
+    }
+}
+
+fn adjacent_preset(
+    state: &CompanionPresetState,
+    scope: PresetScope,
+    direction: isize,
+) -> Option<PresetMenuAction> {
+    match scope {
+        PresetScope::Project => {
+            let available = project_catalog(state);
+            let len = available.len() + 1; // slot 0 is "inherit global"
+            if len <= 1 && project_current(state).is_none() {
+                return None;
+            }
+            let current_index = project_current(state)
+                .and_then(|current| {
+                    available
+                        .iter()
+                        .position(|name| name == current)
+                        .map(|index| index + 1)
+                })
+                .unwrap_or(0);
+            let next = (current_index as isize + direction)
+                .rem_euclid(len as isize) as usize;
+            if next == 0 {
+                Some(PresetMenuAction {
+                    scope,
+                    preset: None,
+                    inherit: true,
+                })
+            } else {
+                Some(PresetMenuAction {
+                    scope,
+                    preset: available.get(next - 1).cloned(),
+                    inherit: false,
+                })
+            }
+        }
+        PresetScope::Global => {
+            let available = &state.global_available;
+            if available.is_empty() {
+                return None;
+            }
+            let Some(current) = state.global.as_deref() else {
+                return Some(PresetMenuAction {
+                    scope,
+                    preset: available.first().cloned(),
+                    inherit: false,
+                });
+            };
+            let index = available
+                .iter()
+                .position(|name| name == current)
+                .unwrap_or(0);
+            let next =
+                (index as isize + direction).rem_euclid(available.len() as isize) as usize;
+            Some(PresetMenuAction {
+                scope,
+                preset: available.get(next).cloned(),
+                inherit: false,
+            })
+        }
+    }
+}
+
+fn scope_label(state: &CompanionPresetState, scope: PresetScope) -> String {
+    match scope {
+        PresetScope::Project => project_current(state)
+            .map(|current| compact_scoped_label("P", current))
+            .unwrap_or_else(|| "P:inh".to_string()),
+        PresetScope::Global => state
+            .global
+            .as_deref()
+            .map(|current| compact_scoped_label("G", current))
+            .unwrap_or_else(|| "G:none".to_string()),
+    }
+}
+
+fn scope_hover(state: &CompanionPresetState, scope: PresetScope) -> String {
+    match scope {
+        PresetScope::Project => match state.project.as_deref() {
+            Some(project) => format!(
+                "Project preset: {project}\nEffective: {}\nClick to edit Global instead. Project cycling includes Inherit.",
+                state.effective.as_deref().unwrap_or("none")
+            ),
+            None => format!(
+                "Project preset: Inherit Global\nEffective: {}\nClick to edit Global instead. Choosing a preset creates a project override.",
+                state.effective.as_deref().unwrap_or("none")
+            ),
+        },
+        PresetScope::Global => format!(
+            "Global preset: {}\nAffects projects that inherit the global setting. Projects with local overrides keep them.\nClick to edit this Project instead.",
+            state.global.as_deref().unwrap_or("none")
+        ),
+    }
 }
 
 fn preset_request_completed(sessions: &[SessionInfo], request_id: &str) -> bool {
@@ -657,7 +801,7 @@ impl eframe::App for CompanionApp {
                 render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
             });
 
-        if let Some(preset) = render_companion_menu(
+        if let Some(action) = render_companion_menu(
             ctx,
             win_w,
             win_h,
@@ -669,7 +813,9 @@ impl eframe::App for CompanionApp {
             let request = CompanionPresetRequest {
                 request_id: request_id.clone(),
                 session_id: session.session_id.clone(),
-                preset,
+                scope: action.scope.as_str().to_string(),
+                preset: action.preset,
+                inherit: action.inherit,
             };
             match write_preset_request(&self.state_path, request) {
                 Ok(()) => {
@@ -781,7 +927,7 @@ fn render_companion_menu(
     win_h: f32,
     preset_state: Option<&CompanionPresetState>,
     preset_pending: bool,
-) -> Option<String> {
+) -> Option<PresetMenuAction> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
         return None;
@@ -792,6 +938,15 @@ fn render_companion_menu(
         return None;
     }
 
+    let scope = if ctx.data(|d| {
+        d.get_temp::<bool>(egui::Id::new(PRESET_SCOPE_GLOBAL_KEY))
+            .unwrap_or(false)
+    }) {
+        PresetScope::Global
+    } else {
+        PresetScope::Project
+    };
+
     let pos: [f32; 2] = ctx.data(|d| {
         d.get_temp(egui::Id::new(MENU_POS_KEY))
             .unwrap_or([20.0, 20.0])
@@ -799,7 +954,7 @@ fn render_companion_menu(
     let size: f32 = ctx.data(|d| d.get_temp(egui::Id::new(SIZE_KEY)).unwrap_or(DEFAULT_SIZE));
     let x = pos[0].clamp(MENU_PAD, (win_w - MENU_W - MENU_PAD).max(MENU_PAD));
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
-    let mut selected_preset: Option<String> = None;
+    let mut selected: Option<PresetMenuAction> = None;
 
     let response = egui::Area::new(egui::Id::new("companion_menu"))
         .fixed_pos(egui::pos2(x, y))
@@ -814,9 +969,8 @@ fn render_companion_menu(
                     ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
 
                     if let Some(preset_state) = preset_state {
-                        let current = preset_state.current.as_deref().unwrap_or("none");
-                        let previous = adjacent_preset(preset_state, -1);
-                        let next = adjacent_preset(preset_state, 1);
+                        let previous = adjacent_preset(preset_state, scope, -1);
+                        let next = adjacent_preset(preset_state, scope, 1);
                         ui.horizontal(|ui| {
                             if ui
                                 .add_enabled(
@@ -825,41 +979,66 @@ fn render_companion_menu(
                                 )
                                 .clicked()
                             {
-                                selected_preset = previous;
+                                selected = previous;
                             }
 
+                            let feedback_matches_scope =
+                                preset_state.last_scope.as_deref() == Some(scope.as_str());
                             let hover = match preset_state.message.as_deref() {
-                                Some(message) => format!("Preset: {current}\n{message}"),
-                                None if preset_pending => {
-                                    format!("Preset: {current}\nApplying preset…")
+                                Some(message) if feedback_matches_scope => {
+                                    format!("{}\n{message}", scope_hover(preset_state, scope))
                                 }
-                                None => format!("Preset: {current}"),
+                                _ if preset_pending => {
+                                    format!("{}\nApplying preset…", scope_hover(preset_state, scope))
+                                }
+                                _ => scope_hover(preset_state, scope),
                             };
-                            let (display, color) = if preset_pending {
-                                ("…".to_string(), egui::Color32::from_rgb(200, 200, 204))
-                            } else {
+                            let color = if preset_pending {
+                                egui::Color32::from_rgb(200, 200, 204)
+                            } else if feedback_matches_scope {
                                 match preset_state.result_ok {
-                                    Some(true) => (
-                                        compact_preset_label(current),
-                                        egui::Color32::from_rgb(120, 220, 150),
-                                    ),
-                                    Some(false) => (
-                                        format!("!{}", compact_preset_label(current)),
-                                        egui::Color32::from_rgb(240, 110, 110),
-                                    ),
-                                    None => (compact_preset_label(current), egui::Color32::WHITE),
+                                    Some(true) => egui::Color32::from_rgb(120, 220, 150),
+                                    Some(false) => egui::Color32::from_rgb(240, 110, 110),
+                                    None => egui::Color32::WHITE,
                                 }
+                            } else {
+                                egui::Color32::WHITE
                             };
-                            ui.add_sized(
-                                [34.0, 18.0],
-                                egui::Label::new(
-                                    egui::RichText::new(display)
-                                        .size(10.0)
+                            let mut label = scope_label(preset_state, scope);
+                            if !preset_pending
+                                && feedback_matches_scope
+                                && preset_state.result_ok == Some(false)
+                            {
+                                label = format!("!{label}");
+                            }
+                            if ui
+                                .add_enabled(
+                                    !preset_pending,
+                                    egui::Button::new(
+                                        egui::RichText::new(if preset_pending {
+                                            "…".to_string()
+                                        } else {
+                                            label
+                                        })
+                                        .size(9.0)
                                         .strong()
                                         .color(color),
-                                ),
-                            )
-                            .on_hover_text(hover);
+                                    )
+                                    .min_size(egui::vec2(34.0, 18.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text(hover)
+                                .clicked()
+                            {
+                                let next_scope = scope.toggled();
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        egui::Id::new(PRESET_SCOPE_GLOBAL_KEY),
+                                        next_scope == PresetScope::Global,
+                                    );
+                                });
+                            }
 
                             if ui
                                 .add_enabled(
@@ -868,7 +1047,7 @@ fn render_companion_menu(
                                 )
                                 .clicked()
                             {
-                                selected_preset = next;
+                                selected = next;
                             }
                         });
                     }
@@ -887,15 +1066,14 @@ fn render_companion_menu(
                             } else {
                                 egui::Color32::from_rgb(30, 30, 32)
                             };
-                            let text =
-                                egui::RichText::new(*label)
-                                    .size(11.0)
-                                    .strong()
-                                    .color(if active {
-                                        egui::Color32::WHITE
-                                    } else {
-                                        egui::Color32::from_rgb(200, 200, 204)
-                                    });
+                            let text = egui::RichText::new(*label)
+                                .size(11.0)
+                                .strong()
+                                .color(if active {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_rgb(200, 200, 204)
+                                });
                             if ui
                                 .add_sized(
                                     [17.0, 18.0],
@@ -946,7 +1124,7 @@ fn render_companion_menu(
         ctx.data_mut(|d| d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false));
     }
 
-    selected_preset
+    selected
 }
 
 fn clicked_outside_menu(ctx: &egui::Context, menu_rect: egui::Rect) -> bool {
