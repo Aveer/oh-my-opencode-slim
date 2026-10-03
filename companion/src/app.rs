@@ -970,6 +970,7 @@ mod tests {
         window_size, ConfigKey, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::CompanionConfigState;
+    use eframe::egui;
 
     fn session(id: &str, status: &str, agents: &[&str]) -> SessionInfo {
         SessionInfo {
