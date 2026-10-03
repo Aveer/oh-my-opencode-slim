@@ -25,10 +25,15 @@ function readState() {
 }
 
 const previousXdg = process.env.XDG_DATA_HOME;
+const previousXdgConfig = process.env.XDG_CONFIG_HOME;
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   process.env.XDG_DATA_HOME = XDG_DIR;
+  process.env.XDG_CONFIG_HOME = path.join(TEST_DIR, 'config');
+  const configDir = path.join(process.env.XDG_CONFIG_HOME, 'opencode');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(path.join(configDir, 'oh-my-opencode-slim.json'), '{}');
 });
 
 afterEach(() => {
@@ -38,6 +43,8 @@ afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
   if (previousXdg === undefined) delete process.env.XDG_DATA_HOME;
   else process.env.XDG_DATA_HOME = previousXdg;
+  if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = previousXdgConfig;
 });
 
 function make(
@@ -92,6 +99,72 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].active_agents).toEqual(['intro']);
     expect(state.sessions[0].status).toBe('idle');
     expect(state.sessions[0].pid).toBe(process.pid);
+  });
+
+  it('publishes presets and applies a project-local preset request', () => {
+    const projectDir = path.join(TEST_DIR, 'project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(
+      projectConfigPath,
+      `{
+        // Project-local preset should remain the controlling layer.
+        "preset": "old",
+      }`,
+    );
+
+    const userConfigPath = path.join(
+      process.env.XDG_CONFIG_HOME!,
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        preset: 'cheap',
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const m = make('preset-session', projectDir);
+    m.onLoad();
+    let state = readState();
+    expect(state.sessions[0].preset.current).toBe('old');
+    expect(state.sessions[0].preset.available).toEqual(['cheap', 'old']);
+
+    state.preset_request = {
+      request_id: 'req-1',
+      session_id: 'preset-session',
+      preset: 'cheap',
+    };
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      m as unknown as {
+        consumePresetRequest: () => void;
+      }
+    ).consumePresetRequest();
+
+    state = readState();
+    expect(state.preset_request).toBeUndefined();
+    expect(state.preset_result).toMatchObject({
+      request_id: 'req-1',
+      preset: 'cheap',
+      ok: true,
+    });
+    expect(state.sessions[0].preset.current).toBe('cheap');
+    expect(readFileSync(projectConfigPath, 'utf8')).toContain(
+      '// Project-local preset should remain',
+    );
+    expect(readFileSync(projectConfigPath, 'utf8')).toContain(
+      '"preset": "cheap"',
+    );
   });
 
   it('shows orchestrator while orchestrator is busy with no specialists', () => {
