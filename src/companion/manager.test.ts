@@ -90,6 +90,7 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].session_id).toBe('test-session');
     expect(state.sessions[0].cwd).toBe('/home/user/myproject');
     expect(state.sessions[0].active_agents).toEqual(['intro']);
+    expect(state.sessions[0].active_agent_details).toEqual([]);
     expect(state.sessions[0].status).toBe('idle');
     expect(state.sessions[0].pid).toBe(process.pid);
   });
@@ -116,6 +117,65 @@ describe('CompanionManager', () => {
     });
     m.onSessionStatus({ sessionId: 'ses_a', agent: 'oracle', status: 'busy' });
     expect(readState().sessions[0].active_agents).toEqual(['oracle']);
+  });
+
+  it('publishes live model details without changing the active agent', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_a',
+      agent: 'fixer',
+      status: 'busy',
+      model: 'provider/model-a',
+      variant: 'high',
+    });
+
+    let state = readState();
+    expect(state.sessions[0].active_agents).toEqual(['fixer']);
+    expect(state.sessions[0].active_agent_details).toEqual([
+      {
+        session_id: 'ses_a',
+        agent: 'fixer',
+        model: 'provider/model-a',
+        variant: 'high',
+      },
+    ]);
+
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
+      model: 'provider/model-b',
+      variant: 'medium',
+    });
+
+    state = readState();
+    expect(state.sessions[0].active_agents).toEqual(['fixer']);
+    expect(state.sessions[0].active_agent_details[0]).toMatchObject({
+      session_id: 'ses_a',
+      agent: 'fixer',
+      model: 'provider/model-b',
+      variant: 'medium',
+    });
+  });
+
+  it('publishes orchestrator model details while it is the visible agent', () => {
+    const m = make();
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ses_orch',
+      agent: 'orchestrator',
+      status: 'busy',
+      model: 'provider/orchestrator',
+      variant: 'max',
+    });
+
+    expect(readState().sessions[0].active_agent_details).toEqual([
+      {
+        session_id: 'ses_orch',
+        agent: 'orchestrator',
+        model: 'provider/orchestrator',
+        variant: 'max',
+      },
+    ]);
   });
 
   it('shows all concurrently busy specialists', () => {
