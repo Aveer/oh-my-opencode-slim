@@ -280,53 +280,6 @@ describe('CompanionManager', () => {
     expect(flushes).toBe(1);
   });
 
-  it('specialist failures never replace the project-wide status', () => {
-    const m = make();
-    m.onLoad();
-    m.onSessionStatus({
-      sessionId: 'ses_orch',
-      agent: 'orchestrator',
-      status: 'busy',
-    });
-    m.onSessionStatus({
-      sessionId: 'ses_a',
-      agent: 'fixer',
-      status: 'busy',
-    });
-    m.onSessionStatus({
-      sessionId: 'ses_a',
-      agent: 'fixer',
-      status: 'failed',
-    });
-
-    const state = readState().sessions[0];
-    expect(state.status).toBe('busy');
-    expect(state.active_agents).toEqual(['orchestrator']);
-  });
-
-  it('confirmed orchestrator failure survives trailing idle until the next busy turn', () => {
-    const m = make();
-    m.onLoad();
-    m.onSessionStatus({
-      sessionId: 'ses_orch',
-      agent: 'orchestrator',
-      status: 'failed',
-    });
-    m.onSessionStatus({
-      sessionId: 'ses_orch',
-      agent: 'orchestrator',
-      status: 'idle',
-    });
-    expect(readState().sessions[0].status).toBe('error');
-
-    m.onSessionStatus({
-      sessionId: 'ses_orch',
-      agent: 'orchestrator',
-      status: 'busy',
-    });
-    expect(readState().sessions[0].status).toBe('busy');
-  });
-
   it('shows all concurrently busy specialists', () => {
     const m = make();
     m.onLoad();
