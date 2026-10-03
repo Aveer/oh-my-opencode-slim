@@ -337,11 +337,7 @@ describe('CompanionManager', () => {
     );
     expect(
       existsSync(
-        path.join(
-          projectDir,
-          '.opencode',
-          'oh-my-opencode-slim.jsonc',
-        ),
+        path.join(projectDir, '.opencode', 'oh-my-opencode-slim.jsonc'),
       ),
     ).toBe(false);
   });
