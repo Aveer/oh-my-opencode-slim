@@ -256,9 +256,10 @@ describe('switchPresetOnDisk', () => {
       'oh-my-opencode-slim.jsonc',
     );
     expect(fs.existsSync(projectConfigPath)).toBe(true);
-    expect((parse(fs.readFileSync(projectConfigPath, 'utf8')) as { preset?: string }).preset).toBe(
-      'cheap',
-    );
+    expect(
+      (parse(fs.readFileSync(projectConfigPath, 'utf8')) as { preset?: string })
+        .preset,
+    ).toBe('cheap');
     expect(JSON.parse(fs.readFileSync(userConfigPath, 'utf8')).preset).toBe(
       'global',
     );
@@ -308,9 +309,10 @@ describe('switchPresetOnDisk', () => {
     expect(JSON.parse(fs.readFileSync(userConfigPath, 'utf8')).preset).toBe(
       'global-new',
     );
-    expect((parse(fs.readFileSync(projectConfigPath, 'utf8')) as { preset?: string }).preset).toBe(
-      'local',
-    );
+    expect(
+      (parse(fs.readFileSync(projectConfigPath, 'utf8')) as { preset?: string })
+        .preset,
+    ).toBe('local');
   });
 
   test('global scope rejects presets defined only in the project layer', () => {
