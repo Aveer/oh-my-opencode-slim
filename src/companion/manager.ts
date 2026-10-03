@@ -303,12 +303,9 @@ export class CompanionManager {
     if (!request || request.session_id !== this.id) return;
 
     const config = loadPluginConfig(this.cwd, { silent: true });
-    const result = switchPresetOnDisk(
-      this.cwd,
-      request.preset,
-      config,
-      { scope: 'effective' },
-    );
+    const result = switchPresetOnDisk(this.cwd, request.preset, config, {
+      scope: 'effective',
+    });
     this.presetMessage = result.message;
     if (result.ok) this.currentPreset = result.presetName;
     this.refreshPresetState();
