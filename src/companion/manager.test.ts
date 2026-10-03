@@ -126,8 +126,12 @@ describe('CompanionManager', () => {
       sessionId: 'ses_a',
       agent: 'fixer',
       status: 'busy',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_a',
       model: 'provider/model-a',
       variant: 'high',
+      variantObserved: true,
     });
 
     let state = readState();
@@ -164,8 +168,12 @@ describe('CompanionManager', () => {
       sessionId: 'ses_orch',
       agent: 'orchestrator',
       status: 'busy',
+    });
+    m.onSessionModelChanged({
+      sessionId: 'ses_orch',
       model: 'provider/orchestrator',
       variant: 'max',
+      variantObserved: true,
     });
 
     expect(readState().sessions[0].active_agent_details).toEqual([
@@ -468,7 +476,7 @@ describe('CompanionManager', () => {
     expect(readState().sessions[0].active_agent_details).toEqual([]);
     expect(readState().sessions[0].status).toBe('waiting-input');
     m.onInputResolved();
-    expect(readState().sessions[0].status).toBe('idle');
+    expect(readState().sessions[0].status).toBe('busy');
   });
 
   it('keeps waiting-input sticky across busy and idle lifecycle noise', () => {
