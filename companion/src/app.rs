@@ -329,6 +329,7 @@ pub struct CompanionApp {
     project_keys: std::collections::BTreeMap<String, String>,
     drag_project_key: Option<String>,
     preset_request_seq: u64,
+    pending_preset_request_id: Option<String>,
     niri_generation: Arc<AtomicU64>,
 }
 
@@ -390,6 +391,7 @@ impl CompanionApp {
             project_keys: std::collections::BTreeMap::new(),
             drag_project_key: None,
             preset_request_seq: 0,
+            pending_preset_request_id: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -398,6 +400,23 @@ impl CompanionApp {
         if self.rx.try_recv().is_ok() {
             while self.rx.try_recv().is_ok() {}
             let state = read_state(&self.state_path);
+            if let Some(pending_request_id) = self.pending_preset_request_id.as_deref() {
+                let completed = self
+                    .owner_session_id
+                    .as_deref()
+                    .and_then(|owner| {
+                        state
+                            .sessions
+                            .iter()
+                            .find(|session| session.session_id == owner)
+                    })
+                    .and_then(|session| session.preset.as_ref())
+                    .and_then(|preset| preset.last_request_id.as_deref())
+                    == Some(pending_request_id);
+                if completed {
+                    self.pending_preset_request_id = None;
+                }
+            }
             self.sessions = state.sessions;
             let owned_config = config_for_owner(
                 &self.sessions,
@@ -640,15 +659,27 @@ impl eframe::App for CompanionApp {
                 render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
             });
 
-        if let Some(preset) = render_companion_menu(ctx, win_w, win_h, session.preset.as_ref()) {
+        if let Some(preset) = render_companion_menu(
+            ctx,
+            win_w,
+            win_h,
+            session.preset.as_ref(),
+            self.pending_preset_request_id.is_some(),
+        ) {
             self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
+            let request_id = format!("{}-{}", std::process::id(), self.preset_request_seq);
             let request = CompanionPresetRequest {
-                request_id: format!("{}-{}", std::process::id(), self.preset_request_seq),
+                request_id: request_id.clone(),
                 session_id: session.session_id.clone(),
                 preset,
             };
-            if let Err(err) = write_preset_request(&self.state_path, request) {
-                crate::log::debug(format!("preset request write failed: {err}"));
+            match write_preset_request(&self.state_path, request) {
+                Ok(()) => {
+                    self.pending_preset_request_id = Some(request_id);
+                }
+                Err(err) => {
+                    crate::log::debug(format!("preset request write failed: {err}"));
+                }
             }
         }
         ctx.request_repaint_after(Duration::from_millis(16));
@@ -751,6 +782,7 @@ fn render_companion_menu(
     win_w: f32,
     win_h: f32,
     preset_state: Option<&CompanionPresetState>,
+    preset_pending: bool,
 ) -> Option<String> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
@@ -791,7 +823,7 @@ fn render_companion_menu(
                             ui.horizontal(|ui| {
                                 if ui
                                     .add_enabled(
-                                        previous.is_some(),
+                                        !preset_pending && previous.is_some(),
                                         egui::Button::new("‹").min_size(egui::vec2(16.0, 18.0)),
                                     )
                                     .clicked()
@@ -801,21 +833,43 @@ fn render_companion_menu(
 
                                 let hover = match preset_state.message.as_deref() {
                                     Some(message) => format!("Preset: {current}\n{message}"),
+                                    None if preset_pending => {
+                                        format!("Preset: {current}\nApplying preset…")
+                                    }
                                     None => format!("Preset: {current}"),
+                                };
+                                let (display, color) = if preset_pending {
+                                    ("…".to_string(), egui::Color32::from_rgb(200, 200, 204))
+                                } else {
+                                    match preset_state.result_ok {
+                                        Some(true) => (
+                                            compact_preset_label(current),
+                                            egui::Color32::from_rgb(120, 220, 150),
+                                        ),
+                                        Some(false) => (
+                                            format!("!{}", compact_preset_label(current)),
+                                            egui::Color32::from_rgb(240, 110, 110),
+                                        ),
+                                        None => (
+                                            compact_preset_label(current),
+                                            egui::Color32::WHITE,
+                                        ),
+                                    }
                                 };
                                 ui.add_sized(
                                     [34.0, 18.0],
                                     egui::Label::new(
-                                        egui::RichText::new(compact_preset_label(current))
+                                        egui::RichText::new(display)
                                             .size(10.0)
-                                            .strong(),
+                                            .strong()
+                                            .color(color),
                                     ),
                                 )
                                 .on_hover_text(hover);
 
                                 if ui
                                     .add_enabled(
-                                        next.is_some(),
+                                        !preset_pending && next.is_some(),
                                         egui::Button::new("›").min_size(egui::vec2(16.0, 18.0)),
                                     )
                                     .clicked()
@@ -823,12 +877,6 @@ fn render_companion_menu(
                                     selected_preset = next;
                                 }
                             });
-
-                            if selected_preset.is_some() {
-                                ctx.data_mut(|d| {
-                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                });
-                            }
                         }
 
                         ui.label(
