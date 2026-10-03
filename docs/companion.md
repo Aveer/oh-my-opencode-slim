@@ -2,6 +2,14 @@
 
 The desktop companion app provides a floating status overlay showing running and active agents.
 
+Hover an active agent tile to inspect the live provider/model recorded for that
+session and its resolved variant when one is known. These details come from the
+same runtime session metadata OMO Slim already uses for model-aware task
+admission; the Companion does not infer the model from a preset.
+
+Actionable states are also surfaced visually: waiting-for-input and error states
+receive an attention outline while ordinary busy/idle animation remains unchanged.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
