@@ -2455,6 +2455,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         model?: {
           providerID: string;
           modelID: string;
+          variant?: string;
         };
         variant?: string;
         parts?: unknown[];
@@ -2688,6 +2689,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
           const liveVariant =
             routedChild?.entry.variant ??
             input.variant ??
+            input.model?.variant ??
             output?.message?.model?.variant;
           companionManager.onSessionModelChanged({
             sessionId: input.sessionID,
