@@ -354,8 +354,8 @@ describe('switchPresetOnDisk', () => {
     fs.writeFileSync(
       projectConfigPath,
       `{
-        // preserve
         "preset": "local" /* comment, with comma */,
+        // preserve unrelated project setting comment
         "companion": { "enabled": true },
       }`,
     );
@@ -364,7 +364,7 @@ describe('switchPresetOnDisk', () => {
 
     expect(result.ok).toBe(true);
     const text = fs.readFileSync(projectConfigPath, 'utf8');
-    expect(text).toContain('// preserve');
+    expect(text).toContain('// preserve unrelated project setting comment');
     const parsed = parse(text) as {
       preset?: string;
       companion?: { enabled?: boolean };
