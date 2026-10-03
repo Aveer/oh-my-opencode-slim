@@ -10,6 +10,12 @@ If the current project already has a project-local `.opencode` preset override,
 the Companion updates that controlling project layer. Otherwise it preserves the
 existing `/preset` behavior and writes the user-level preset.
 
+The same compact menu also exposes project-folder actions without any OpenCode
+host dependency: **Open** launches the session project directory in the platform
+file manager and **Copy** places the exact session working directory on the
+system clipboard. These actions intentionally operate on the directory already
+published by the Companion session state; they do not guess or scan for a repo.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
