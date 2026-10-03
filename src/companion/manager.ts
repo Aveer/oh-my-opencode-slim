@@ -45,6 +45,7 @@ interface CompanionPresetState {
   message?: string;
   last_request_id?: string;
   result_ok?: boolean;
+  last_scope?: CompanionPresetScope;
 }
 
 type CompanionPresetScope = 'project' | 'global';
@@ -295,6 +296,7 @@ export class CompanionManager {
   private presetMessage: string | undefined;
   private presetLastRequestId: string | undefined;
   private presetResultOk: boolean | undefined;
+  private presetLastScope: CompanionPresetScope | undefined;
 
   constructor(sessionId: string, cwd: string, config?: CompanionConfig) {
     this.id = sessionId;
@@ -394,6 +396,7 @@ export class CompanionManager {
     this.presetMessage = result.message;
     this.presetLastRequestId = request.request_id;
     this.presetResultOk = result.ok;
+    this.presetLastScope = scope;
 
     writeState((state) => {
       state.preset_requests = (state.preset_requests ?? []).filter(
@@ -614,6 +617,7 @@ export class CompanionManager {
           message: this.presetMessage,
           last_request_id: this.presetLastRequestId,
           result_ok: this.presetResultOk,
+          last_scope: this.presetLastScope,
         },
       };
       writeState((state) => {
