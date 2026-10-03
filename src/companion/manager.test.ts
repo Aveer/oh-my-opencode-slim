@@ -115,6 +115,33 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].pid).toBe(process.pid);
   });
 
+  it('preserves native-only UI preferences across TypeScript state writes', () => {
+    writeFileSync(
+      stateFilePath(),
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        ui_preferences: {
+          always_on_top: false,
+          dim_when_idle: true,
+        },
+      }),
+    );
+
+    const m = make('ui-pref-session');
+    m.onLoad();
+    m.onSessionStatus({
+      sessionId: 'ui-pref-session',
+      agent: 'orchestrator',
+      status: 'busy',
+    });
+
+    expect(readState().ui_preferences).toEqual({
+      always_on_top: false,
+      dim_when_idle: true,
+    });
+  });
+
   it('publishes presets and applies a project-local preset request', () => {
     const projectDir = path.join(TEST_DIR, 'project');
     const projectConfigDir = path.join(projectDir, '.opencode');
