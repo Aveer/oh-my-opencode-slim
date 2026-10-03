@@ -916,17 +916,19 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_config, choose_owned_session, choose_session, config_key, grid_dims,
-        handle_drag_start, place_window, restore_window_position, size_from_config, window_size,
-        ConfigKey, SessionInfo, WindowGeometryKey, GAP,
+        agent_detail_tooltip, apply_config, attention_stroke, choose_owned_session,
+        choose_session, config_key, grid_dims, handle_drag_start, place_window,
+        restore_window_position, size_from_config, window_size, ConfigKey, SessionInfo,
+        WindowGeometryKey, GAP,
     };
-    use crate::state::CompanionConfigState;
+    use crate::state::{CompanionAgentDetail, CompanionConfigState};
 
     fn session(id: &str, status: &str, agents: &[&str]) -> SessionInfo {
         SessionInfo {
             session_id: id.to_string(),
             cwd: format!("/{id}"),
             active_agents: agents.iter().map(|s| s.to_string()).collect(),
+            active_agent_details: Vec::new(),
             status: status.to_string(),
             pid: Some(1),
             active_agent: None,
@@ -986,6 +988,29 @@ mod tests {
             session("active", "busy", &["fixer"]),
         ];
         assert_eq!(choose_owned_session(&sessions, Some("gone")), Some(1));
+    }
+
+    #[test]
+    fn agent_detail_tooltip_includes_live_model_and_variant() {
+        let detail = CompanionAgentDetail {
+            session_id: "child".into(),
+            agent: "fixer".into(),
+            model: Some("provider/model".into()),
+            variant: Some("high".into()),
+        };
+        assert_eq!(
+            agent_detail_tooltip(&detail),
+            "fixer\nModel: provider/model\nVariant: high"
+        );
+    }
+
+    #[test]
+    fn attention_outline_is_reserved_for_actionable_states() {
+        assert!(attention_stroke("waiting-input").is_some());
+        assert!(attention_stroke("error").is_some());
+        assert!(attention_stroke("failed").is_some());
+        assert!(attention_stroke("busy").is_none());
+        assert!(attention_stroke("idle").is_none());
     }
 
     #[test]
