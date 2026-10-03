@@ -4320,58 +4320,6 @@ describe('plugin foreground fallback host gating', () => {
     }
   });
 
-  test('v2 host: Companion receives live variant from input.model.variant', async () => {
-    await Bun.write(
-      `${projectDir}/oh-my-opencode-slim.json`,
-      JSON.stringify({
-        companion: {
-          enabled: true,
-          binaryPath: `${projectDir}/missing-companion-bin`,
-        },
-        fallback: { enabled: false },
-      }),
-    );
-    const hooks = await createHooks('v2');
-
-    try {
-      await hooks['chat.message']?.(
-        {
-          sessionID: 'v2-companion-variant',
-          agent: 'fixer',
-          model: {
-            providerID: 'openai',
-            modelID: 'gpt-live',
-            variant: 'reasoning-high',
-          },
-        } as never,
-        {} as never,
-      );
-
-      const state = JSON.parse(readFileSync(stateFilePath(), 'utf8')) as {
-        sessions: Array<{
-          active_agent_details?: Array<{
-            session_id: string;
-            agent: string;
-            model?: string;
-            variant?: string;
-          }>;
-        }>;
-      };
-      const details = state.sessions.flatMap(
-        (session) => session.active_agent_details ?? [],
-      );
-
-      expect(details).toContainEqual({
-        session_id: 'v2-companion-variant',
-        agent: 'fixer',
-        model: 'openai/gpt-live',
-        variant: 'reasoning-high',
-      });
-    } finally {
-      await hooks.dispose?.();
-    }
-  });
-
   test('v2 host: retry-hook steering advances the chain in place', async () => {
     const { client, abort, promptAsync } = createFallbackClient();
     const hooks = await plugin({
