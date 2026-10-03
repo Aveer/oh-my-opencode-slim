@@ -347,7 +347,7 @@ export class CompanionManager {
       return;
     }
 
-    if (status === 'busy' || status === 'retry') {
+    if (status === 'busy') {
       // Accept busy sessions even without a known agent name — Herdr
       // subagents (spawned via opencode attach) often lack the agent
       // field, and dropping the event leaves them shown as idle.
@@ -362,6 +362,7 @@ export class CompanionManager {
       // Remove by session even when the agent name is unknown, so a
       // finished specialist can never get stuck on screen.
       this.busyAgentSessions.delete(sessionId);
+      this.sessionDetails.delete(sessionId);
       if (status === 'error' || status === 'failed') {
         this.status = 'error';
       }
@@ -394,10 +395,11 @@ export class CompanionManager {
     if (!sessionId) return;
     const removed = this.busyAgentSessions.delete(sessionId);
     this.sessionDetails.delete(sessionId);
-    if (this.orchestratorSessionId === sessionId) {
+    const wasOrchestrator = this.orchestratorSessionId === sessionId;
+    if (wasOrchestrator) {
       this.orchestratorSessionId = undefined;
     }
-    if (removed) {
+    if (removed || wasOrchestrator) {
       this.flush();
     }
   }
