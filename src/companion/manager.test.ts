@@ -238,6 +238,75 @@ describe('CompanionManager', () => {
     });
   });
 
+  it('preserves request acknowledgement across a racing external refresh', () => {
+    const projectDir = path.join(TEST_DIR, 'ack-refresh-project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectConfigPath = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+
+    const userConfigPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const m = make('ack-refresh-session', projectDir);
+    m.onLoad();
+
+    let state = readState();
+    state.preset_requests = [
+      {
+        request_id: 'req-ack',
+        session_id: 'ack-refresh-session',
+        preset: 'cheap',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      m as unknown as {
+        consumePresetRequest: () => boolean;
+      }
+    ).consumePresetRequest();
+
+    state = readState();
+    expect(state.sessions[0].preset).toMatchObject({
+      current: 'cheap',
+      last_request_id: 'req-ack',
+      result_ok: true,
+    });
+
+    // External edit lands before the native Companion has observed req-ack.
+    writeFileSync(projectConfigPath, JSON.stringify({ preset: 'old' }));
+    for (let i = 0; i < 4; i++) {
+      (
+        m as unknown as {
+          pollPresetState: () => void;
+        }
+      ).pollPresetState();
+    }
+
+    state = readState();
+    expect(state.sessions[0].preset).toMatchObject({
+      current: 'old',
+      last_request_id: 'req-ack',
+    });
+    expect(state.sessions[0].preset.result_ok).toBeUndefined();
+  });
+
   it('keeps the last-known preset state when an external edit is malformed', () => {
     const projectDir = path.join(TEST_DIR, 'malformed-project');
     const projectConfigDir = path.join(projectDir, '.opencode');
