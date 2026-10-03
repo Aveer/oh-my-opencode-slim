@@ -1085,6 +1085,8 @@ mod tests {
             current: Some("balanced".into()),
             available: vec!["cheap".into(), "balanced".into(), "deep".into()],
             message: None,
+            last_request_id: None,
+            result_ok: None,
         };
         assert_eq!(adjacent_preset(&state, 1), Some("deep".into()));
         assert_eq!(adjacent_preset(&state, -1), Some("cheap".into()));
@@ -1093,6 +1095,8 @@ mod tests {
             current: Some("deep".into()),
             available: state.available.clone(),
             message: None,
+            last_request_id: None,
+            result_ok: None,
         };
         assert_eq!(adjacent_preset(&edge, 1), Some("cheap".into()));
     }
@@ -1103,6 +1107,8 @@ mod tests {
             current: Some("removed".into()),
             available: vec!["cheap".into(), "deep".into()],
             message: None,
+            last_request_id: None,
+            result_ok: None,
         };
         assert_eq!(adjacent_preset(&state, 1), Some("cheap".into()));
     }
