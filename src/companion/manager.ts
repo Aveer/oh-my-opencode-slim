@@ -36,6 +36,7 @@ interface CompanionSession {
   active_agents: string[];
   active_agent_details?: CompanionAgentDetail[];
   status: string;
+  attention_seq?: number;
   pid: number;
   config?: CompanionState['config'];
 }
@@ -254,6 +255,8 @@ export class CompanionManager {
   >();
   private orchestratorSessionId: string | undefined;
   private orchestratorBusy = false;
+  private attentionSeq = 0;
+  private lastAttentionRequestId: string | undefined;
   private readonly config?: CompanionConfig;
   private companionProcess: ChildProcess | null = null;
   private wasSpawner = false;
@@ -403,8 +406,21 @@ export class CompanionManager {
     }
   }
 
-  onWaitingInput(): void {
+  onWaitingInput(requestId?: string): void {
     if (this.config?.enabled !== true) return;
+    // v2 permission asks are delivered raw + synthesized with the same request
+    // id. Advance only for a genuinely new request so additive bridge delivery
+    // cannot produce duplicate native notifications.
+    const isNewRequest =
+      requestId !== undefined
+        ? requestId !== this.lastAttentionRequestId
+        : this.status !== 'waiting-input';
+    if (isNewRequest) {
+      this.attentionSeq += 1;
+    }
+    if (requestId !== undefined) {
+      this.lastAttentionRequestId = requestId;
+    }
     // Waiting input is project-level UI state, not proof that the requesting
     // session is the orchestrator. Keep orchestrator identity untouched.
     this.status = 'waiting-input';
@@ -510,6 +526,7 @@ export class CompanionManager {
         active_agents: this.activeAgents(),
         active_agent_details: this.activeAgentDetails(),
         status: this.status,
+        attention_seq: this.attentionSeq,
         pid: process.pid,
         config: this.config
           ? {

@@ -2205,11 +2205,21 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         },
       );
 
+      const companionPayload =
+        event.properties ??
+        (input.event as { data?: Record<string, unknown> }).data;
+      const companionRequestId =
+        typeof companionPayload?.id === 'string'
+          ? companionPayload.id
+          : typeof companionPayload?.requestID === 'string'
+            ? companionPayload.requestID
+            : undefined;
+
       if (
         event.type === 'permission.asked' ||
         event.type === 'question.asked'
       ) {
-        companionManager.onWaitingInput();
+        companionManager.onWaitingInput(companionRequestId);
       }
 
       if (
