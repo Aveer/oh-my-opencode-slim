@@ -1011,10 +1011,7 @@ fn render_companion_menu(
     always_on_top: &mut bool,
     dim_when_idle: &mut bool,
 ) -> Option<PresetMenuAction> {
-    let open: bool = ctx.data(|d| {
-        d.get_temp(egui::Id::new(MENU_OPEN_KEY))
-            .unwrap_or(false)
-    });
+    let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
         return None;
     }
@@ -1052,10 +1049,7 @@ fn render_companion_menu(
         d.get_temp(egui::Id::new(MENU_POS_KEY))
             .unwrap_or([20.0, 20.0])
     });
-    let size: f32 = ctx.data(|d| {
-        d.get_temp(egui::Id::new(SIZE_KEY))
-            .unwrap_or(DEFAULT_SIZE)
-    });
+    let size: f32 = ctx.data(|d| d.get_temp(egui::Id::new(SIZE_KEY)).unwrap_or(DEFAULT_SIZE));
     let x = pos[0].clamp(MENU_PAD, (win_w - MENU_W - MENU_PAD).max(MENU_PAD));
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
     let mut selected: Option<PresetMenuAction> = None;
@@ -1066,10 +1060,7 @@ fn render_companion_menu(
         .show(ctx, |ui| {
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(20, 20, 22))
-                .stroke(egui::Stroke::new(
-                    1.0,
-                    egui::Color32::from_white_alpha(35),
-                ))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
                 .inner_margin(egui::Margin::symmetric(4.0, 4.0))
                 .show(ui, |ui| {
                     ui.set_min_width(MENU_W - MENU_PAD * 2.0);
@@ -1084,11 +1075,9 @@ fn render_companion_menu(
                         if ui
                             .add_sized(
                                 [MENU_W - MENU_PAD * 2.0, 18.0],
-                                egui::Button::new(
-                                    egui::RichText::new(top_label).size(9.0),
-                                )
-                                .fill(egui::Color32::from_rgb(30, 30, 32))
-                                .stroke(egui::Stroke::NONE),
+                                egui::Button::new(egui::RichText::new(top_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
                             )
                             .on_hover_text("Keep Companion windows above normal windows")
                             .clicked()
@@ -1104,11 +1093,9 @@ fn render_companion_menu(
                         if ui
                             .add_sized(
                                 [MENU_W - MENU_PAD * 2.0, 18.0],
-                                egui::Button::new(
-                                    egui::RichText::new(dim_label).size(9.0),
-                                )
-                                .fill(egui::Color32::from_rgb(30, 30, 32))
-                                .stroke(egui::Stroke::NONE),
+                                egui::Button::new(egui::RichText::new(dim_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
                             )
                             .on_hover_text("Dim Companion animation while idle")
                             .clicked()
@@ -1121,11 +1108,9 @@ fn render_companion_menu(
                             if ui
                                 .add_sized(
                                     [33.0, 17.0],
-                                    egui::Button::new(
-                                        egui::RichText::new("Copy").size(9.0),
-                                    )
-                                    .fill(egui::Color32::from_rgb(30, 30, 32))
-                                    .stroke(egui::Stroke::NONE),
+                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
                                 )
                                 .on_hover_text("Copy the project path")
                                 .clicked()
@@ -1139,11 +1124,9 @@ fn render_companion_menu(
                             if ui
                                 .add_sized(
                                     [33.0, 17.0],
-                                    egui::Button::new(
-                                        egui::RichText::new("Back").size(9.0),
-                                    )
-                                    .fill(egui::Color32::from_rgb(30, 30, 32))
-                                    .stroke(egui::Stroke::NONE),
+                                    egui::Button::new(egui::RichText::new("Back").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
                                 )
                                 .clicked()
                             {
@@ -1160,8 +1143,7 @@ fn render_companion_menu(
                                 if ui
                                     .add_enabled(
                                         !preset_pending && previous.is_some(),
-                                        egui::Button::new("‹")
-                                            .min_size(egui::vec2(16.0, 18.0)),
+                                        egui::Button::new("‹").min_size(egui::vec2(16.0, 18.0)),
                                     )
                                     .clicked()
                                 {
@@ -1172,10 +1154,7 @@ fn render_companion_menu(
                                     preset_state.last_scope.as_deref() == Some(scope.as_str());
                                 let hover = match preset_state.message.as_deref() {
                                     Some(message) if feedback_matches_scope => {
-                                        format!(
-                                            "{}\n{message}",
-                                            scope_hover(preset_state, scope)
-                                        )
+                                        format!("{}\n{message}", scope_hover(preset_state, scope))
                                     }
                                     _ if preset_pending => {
                                         format!(
@@ -1189,12 +1168,8 @@ fn render_companion_menu(
                                     egui::Color32::from_rgb(200, 200, 204)
                                 } else if feedback_matches_scope {
                                     match preset_state.result_ok {
-                                        Some(true) => {
-                                            egui::Color32::from_rgb(120, 220, 150)
-                                        }
-                                        Some(false) => {
-                                            egui::Color32::from_rgb(240, 110, 110)
-                                        }
+                                        Some(true) => egui::Color32::from_rgb(120, 220, 150),
+                                        Some(false) => egui::Color32::from_rgb(240, 110, 110),
                                         None => egui::Color32::WHITE,
                                     }
                                 } else {
@@ -1239,8 +1214,7 @@ fn render_companion_menu(
                                 if ui
                                     .add_enabled(
                                         !preset_pending && next.is_some(),
-                                        egui::Button::new("›")
-                                            .min_size(egui::vec2(16.0, 18.0)),
+                                        egui::Button::new("›").min_size(egui::vec2(16.0, 18.0)),
                                     )
                                     .clicked()
                                 {
@@ -1263,14 +1237,13 @@ fn render_companion_menu(
                                 } else {
                                     egui::Color32::from_rgb(30, 30, 32)
                                 };
-                                let text =
-                                    egui::RichText::new(*label).size(11.0).strong().color(
-                                        if active {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            egui::Color32::from_rgb(200, 200, 204)
-                                        },
-                                    );
+                                let text = egui::RichText::new(*label).size(11.0).strong().color(
+                                    if active {
+                                        egui::Color32::WHITE
+                                    } else {
+                                        egui::Color32::from_rgb(200, 200, 204)
+                                    },
+                                );
                                 if ui
                                     .add_sized(
                                         [17.0, 18.0],
@@ -1293,11 +1266,9 @@ fn render_companion_menu(
                             if ui
                                 .add_sized(
                                     [24.0, 17.0],
-                                    egui::Button::new(
-                                        egui::RichText::new("Open").size(9.0),
-                                    )
-                                    .fill(egui::Color32::from_rgb(30, 30, 32))
-                                    .stroke(egui::Stroke::NONE),
+                                    egui::Button::new(egui::RichText::new("Open").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
                                 )
                                 .on_hover_text("Open the project folder")
                                 .clicked()
@@ -1315,11 +1286,9 @@ fn render_companion_menu(
                             if ui
                                 .add_sized(
                                     [24.0, 17.0],
-                                    egui::Button::new(
-                                        egui::RichText::new("More").size(9.0),
-                                    )
-                                    .fill(egui::Color32::from_rgb(30, 30, 32))
-                                    .stroke(egui::Stroke::NONE),
+                                    egui::Button::new(egui::RichText::new("More").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
                                 )
                                 .on_hover_text("More Companion controls")
                                 .clicked()
