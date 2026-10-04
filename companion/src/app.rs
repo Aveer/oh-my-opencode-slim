@@ -853,6 +853,7 @@ impl eframe::App for CompanionApp {
             win_h,
             session.preset.as_ref(),
             self.pending_preset_request_id.is_some(),
+            &session.cwd,
         ) {
             self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
             let request_id = format!("{}-{}", std::process::id(), self.preset_request_seq);
@@ -980,12 +981,41 @@ fn render_session(
     }
 }
 
+fn open_project_directory(path: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(path)
+            .spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(path).spawn()?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(path).spawn()?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "opening project folders is not supported on this platform",
+    ))
+}
+
 fn render_companion_menu(
     ctx: &egui::Context,
     win_w: f32,
     win_h: f32,
     preset_state: Option<&CompanionPresetState>,
     preset_pending: bool,
+    project_dir: &str,
 ) -> Option<PresetMenuAction> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
@@ -1155,24 +1185,63 @@ fn render_companion_menu(
 
                         ui.add_space(1.0);
 
-                        if ui
-                            .add_sized(
-                                [MENU_W - MENU_PAD * 2.0, 17.0],
-                                egui::Button::new(
-                                    egui::RichText::new("Close")
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(240, 110, 110)),
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized(
+                                    [23.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Open").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
                                 )
-                                .fill(egui::Color32::from_rgb(38, 24, 26))
-                                .stroke(egui::Stroke::NONE),
-                            )
-                            .clicked()
-                        {
-                            ctx.data_mut(|d| {
-                                d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                d.insert_temp(egui::Id::new("companion_quit"), true);
-                            });
-                        }
+                                .on_hover_text("Open the project folder")
+                                .clicked()
+                            {
+                                if let Err(err) = open_project_directory(project_dir) {
+                                    crate::log::debug(format!(
+                                        "open project folder failed path={project_dir:?}: {err}"
+                                    ));
+                                }
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                });
+                            }
+
+                            if ui
+                                .add_sized(
+                                    [23.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Copy the project path")
+                                .clicked()
+                            {
+                                ctx.copy_text(project_dir.to_string());
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                });
+                            }
+
+                            if ui
+                                .add_sized(
+                                    [20.0, 17.0],
+                                    egui::Button::new(
+                                        egui::RichText::new("×")
+                                            .size(12.0)
+                                            .color(egui::Color32::from_rgb(240, 110, 110)),
+                                    )
+                                    .fill(egui::Color32::from_rgb(38, 24, 26))
+                                    .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Close Companion")
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                    d.insert_temp(egui::Id::new("companion_quit"), true);
+                                });
+                            }
+                        });
                     });
             });
 
