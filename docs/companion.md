@@ -22,9 +22,20 @@ Preset changes are sent back to the plugin over the Companion state channel; the
 native binary never parses or edits OMO configuration files directly.
 
 The same compact menu exposes project-folder actions without depending on an
-OpenCode Desktop host API: **Open** launches the exact session `cwd` in the
-platform file manager, while **Copy** puts that path on the system clipboard.
-Neither action guesses a repository root or scans the filesystem.
+OpenCode Desktop host API. **Open** launches the exact session `cwd` in the
+platform file manager. A compact **More** page keeps the menu usable at the
+80px Companion size and contains **Copy**, **Topmost**, **Dim idle**, and
+**Back**.
+
+**Topmost** preserves the historical always-on-top behavior by default but can
+be disabled at runtime. **Dim idle** is off by default and only lowers the
+opacity of the idle animation; busy and waiting-input states stay full
+intensity.
+
+These native UI preferences are stored in `companion-state.json` beside
+remembered window positions, not in `oh-my-opencode-slim.json[c]`. Rust owns
+their writes while TypeScript state updates preserve the native-only fields.
+No action guesses a repository root or scans the filesystem.
 
 ## How to Enable in Configuration
 
