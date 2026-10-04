@@ -647,13 +647,11 @@ impl eframe::App for CompanionApp {
         }
 
         if self.applied_always_on_top != Some(self.always_on_top) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                if self.always_on_top {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                },
-            ));
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
             self.applied_always_on_top = Some(self.always_on_top);
         }
 
@@ -948,12 +946,8 @@ fn render_session(
     let tint = animation_tint(&session.status, dim_when_idle);
     for (i, frame) in agent_frames.iter().enumerate() {
         if let Some(&cell) = rects.get(i) {
-            ui.painter().image(
-                frame.texture_id,
-                cell.shrink(SURFACE_INSET),
-                frame.uv,
-                tint,
-            );
+            ui.painter()
+                .image(frame.texture_id, cell.shrink(SURFACE_INSET), frame.uv, tint);
         }
     }
 
@@ -1054,282 +1048,274 @@ fn render_companion_menu(
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
     let mut selected: Option<PresetMenuAction> = None;
 
-    let response =
-        egui::Area::new(egui::Id::new("companion_menu"))
-            .fixed_pos(egui::pos2(x, y))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(20, 20, 22))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
-                    .inner_margin(egui::Margin::symmetric(4.0, 4.0))
-                    .show(ui, |ui| {
-                        ui.set_min_width(MENU_W - MENU_PAD * 2.0);
-                        ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
+    let response = egui::Area::new(egui::Id::new("companion_menu"))
+        .fixed_pos(egui::pos2(x, y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(20, 20, 22))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
+                .inner_margin(egui::Margin::symmetric(4.0, 4.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(MENU_W - MENU_PAD * 2.0);
+                    ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
 
-                        if more_open {
-                            let top_label = if *always_on_top {
-                                "[x] Topmost"
-                            } else {
-                                "[ ] Topmost"
-                            };
-                            if ui
-                                .add_sized(
-                                    [MENU_W - MENU_PAD * 2.0, 18.0],
-                                    egui::Button::new(egui::RichText::new(top_label).size(9.0))
-                                        .fill(egui::Color32::from_rgb(30, 30, 32))
-                                        .stroke(egui::Stroke::NONE),
-                                )
-                                .on_hover_text("Keep the Companion above normal windows")
-                                .clicked()
-                            {
-                                *always_on_top = !*always_on_top;
-                            }
-
-                            let dim_label = if *dim_when_idle {
-                                "[x] Dim idle"
-                            } else {
-                                "[ ] Dim idle"
-                            };
-                            if ui
-                                .add_sized(
-                                    [MENU_W - MENU_PAD * 2.0, 18.0],
-                                    egui::Button::new(egui::RichText::new(dim_label).size(9.0))
-                                        .fill(egui::Color32::from_rgb(30, 30, 32))
-                                        .stroke(egui::Stroke::NONE),
-                                )
-                                .on_hover_text("Dim the animation while the selected session is idle")
-                                .clicked()
-                            {
-                                *dim_when_idle = !*dim_when_idle;
-                            }
-
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .add_sized(
-                                        [33.0, 17.0],
-                                        egui::Button::new(egui::RichText::new("Copy").size(9.0))
-                                            .fill(egui::Color32::from_rgb(30, 30, 32))
-                                            .stroke(egui::Stroke::NONE),
-                                    )
-                                    .on_hover_text("Copy the project path")
-                                    .clicked()
-                                {
-                                    ctx.copy_text(project_dir.to_string());
-                                    ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                        d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
-                                    });
-                                }
-
-                                if ui
-                                    .add_sized(
-                                        [34.0, 17.0],
-                                        egui::Button::new(egui::RichText::new("Back").size(9.0))
-                                            .fill(egui::Color32::from_rgb(30, 30, 32))
-                                            .stroke(egui::Stroke::NONE),
-                                    )
-                                    .clicked()
-                                {
-                                    ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
-                                    });
-                                }
-                            });
+                    if more_open {
+                        let top_label = if *always_on_top {
+                            "[x] Topmost"
                         } else {
-                            if let Some(preset_state) = preset_state {
-                                let previous = adjacent_preset(preset_state, scope, -1);
-                                let next = adjacent_preset(preset_state, scope, 1);
-                                ui.horizontal(|ui| {
-                                    if ui
-                                        .add_enabled(
-                                            !preset_pending && previous.is_some(),
-                                            egui::Button::new("‹")
-                                                .min_size(egui::vec2(16.0, 18.0)),
-                                        )
-                                        .clicked()
-                                    {
-                                        selected = previous;
-                                    }
+                            "[ ] Topmost"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(top_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text("Keep the Companion above normal windows")
+                            .clicked()
+                        {
+                            *always_on_top = !*always_on_top;
+                        }
 
-                                    let feedback_matches_scope =
-                                        preset_state.last_scope.as_deref() == Some(scope.as_str());
-                                    let hover = match preset_state.message.as_deref() {
-                                        Some(message) if feedback_matches_scope => {
-                                            format!("{}\n{message}", scope_hover(preset_state, scope))
-                                        }
-                                        _ if preset_pending => {
-                                            format!(
-                                                "{}\nApplying preset…",
-                                                scope_hover(preset_state, scope)
-                                            )
-                                        }
-                                        _ => scope_hover(preset_state, scope),
-                                    };
-                                    let color = if preset_pending {
-                                        egui::Color32::from_rgb(200, 200, 204)
-                                    } else if feedback_matches_scope {
-                                        match preset_state.result_ok {
-                                            Some(true) => {
-                                                egui::Color32::from_rgb(120, 220, 150)
-                                            }
-                                            Some(false) => {
-                                                egui::Color32::from_rgb(240, 110, 110)
-                                            }
-                                            None => egui::Color32::WHITE,
-                                        }
-                                    } else {
-                                        egui::Color32::WHITE
-                                    };
-                                    let mut label = scope_label(preset_state, scope);
-                                    if !preset_pending
-                                        && feedback_matches_scope
-                                        && preset_state.result_ok == Some(false)
-                                    {
-                                        label = format!("!{label}");
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !preset_pending,
-                                            egui::Button::new(
-                                                egui::RichText::new(if preset_pending {
-                                                    "…".to_string()
-                                                } else {
-                                                    label
-                                                })
-                                                .size(9.0)
-                                                .strong()
-                                                .color(color),
-                                            )
-                                            .min_size(egui::vec2(34.0, 18.0))
-                                            .fill(egui::Color32::from_rgb(30, 30, 32))
-                                            .stroke(egui::Stroke::NONE),
-                                        )
-                                        .on_hover_text(hover)
-                                        .clicked()
-                                    {
-                                        let next_scope = scope.toggled();
-                                        ctx.data_mut(|d| {
-                                            d.insert_temp(
-                                                egui::Id::new(PRESET_SCOPE_GLOBAL_KEY),
-                                                next_scope == PresetScope::Global,
-                                            );
-                                        });
-                                    }
+                        let dim_label = if *dim_when_idle {
+                            "[x] Dim idle"
+                        } else {
+                            "[ ] Dim idle"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(dim_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text("Dim the animation while the selected session is idle")
+                            .clicked()
+                        {
+                            *dim_when_idle = !*dim_when_idle;
+                        }
 
-                                    if ui
-                                        .add_enabled(
-                                            !preset_pending && next.is_some(),
-                                            egui::Button::new("›")
-                                                .min_size(egui::vec2(16.0, 18.0)),
-                                        )
-                                        .clicked()
-                                    {
-                                        selected = next;
-                                    }
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized(
+                                    [33.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Copy the project path")
+                                .clicked()
+                            {
+                                ctx.copy_text(project_dir.to_string());
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                    d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
                                 });
                             }
 
-                            ui.label(
-                                egui::RichText::new("Size")
-                                    .size(9.0)
-                                    .color(egui::Color32::from_rgb(165, 165, 170)),
-                            );
-
+                            if ui
+                                .add_sized(
+                                    [34.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Back").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
+                                });
+                            }
+                        });
+                    } else {
+                        if let Some(preset_state) = preset_state {
+                            let previous = adjacent_preset(preset_state, scope, -1);
+                            let next = adjacent_preset(preset_state, scope, 1);
                             ui.horizontal(|ui| {
-                                for (label, preset) in SIZE_PRESETS {
-                                    let active = (size - preset).abs() < 0.5;
-                                    let fill = if active {
-                                        egui::Color32::from_rgb(58, 72, 102)
-                                    } else {
-                                        egui::Color32::from_rgb(30, 30, 32)
-                                    };
-                                    let text = egui::RichText::new(*label)
-                                        .size(11.0)
-                                        .strong()
-                                        .color(if active {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            egui::Color32::from_rgb(200, 200, 204)
-                                        });
-                                    if ui
-                                        .add_sized(
-                                            [17.0, 18.0],
-                                            egui::Button::new(text)
-                                                .fill(fill)
-                                                .stroke(egui::Stroke::NONE),
+                                if ui
+                                    .add_enabled(
+                                        !preset_pending && previous.is_some(),
+                                        egui::Button::new("‹").min_size(egui::vec2(16.0, 18.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    selected = previous;
+                                }
+
+                                let feedback_matches_scope =
+                                    preset_state.last_scope.as_deref() == Some(scope.as_str());
+                                let hover = match preset_state.message.as_deref() {
+                                    Some(message) if feedback_matches_scope => {
+                                        format!("{}\n{message}", scope_hover(preset_state, scope))
+                                    }
+                                    _ if preset_pending => {
+                                        format!(
+                                            "{}\nApplying preset…",
+                                            scope_hover(preset_state, scope)
                                         )
-                                        .clicked()
-                                    {
-                                        ctx.data_mut(|d| {
-                                            d.insert_temp(egui::Id::new(SIZE_KEY), *preset);
-                                            d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                        });
                                     }
-                                }
-                            });
-
-                            ui.add_space(1.0);
-
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .add_sized(
-                                        [23.0, 17.0],
-                                        egui::Button::new(egui::RichText::new("Open").size(9.0))
-                                            .fill(egui::Color32::from_rgb(30, 30, 32))
-                                            .stroke(egui::Stroke::NONE),
-                                    )
-                                    .on_hover_text("Open the project folder")
-                                    .clicked()
-                                {
-                                    if let Err(err) = open_project_directory(project_dir) {
-                                        crate::log::debug(format!(
-                                            "open project folder failed path={project_dir:?}: {err}"
-                                        ));
+                                    _ => scope_hover(preset_state, scope),
+                                };
+                                let color = if preset_pending {
+                                    egui::Color32::from_rgb(200, 200, 204)
+                                } else if feedback_matches_scope {
+                                    match preset_state.result_ok {
+                                        Some(true) => egui::Color32::from_rgb(120, 220, 150),
+                                        Some(false) => egui::Color32::from_rgb(240, 110, 110),
+                                        None => egui::Color32::WHITE,
                                     }
-                                    ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                    });
-                                }
-
-                                if ui
-                                    .add_sized(
-                                        [23.0, 17.0],
-                                        egui::Button::new(egui::RichText::new("More").size(9.0))
-                                            .fill(egui::Color32::from_rgb(30, 30, 32))
-                                            .stroke(egui::Stroke::NONE),
-                                    )
-                                    .on_hover_text("More Companion controls")
-                                    .clicked()
+                                } else {
+                                    egui::Color32::WHITE
+                                };
+                                let mut label = scope_label(preset_state, scope);
+                                if !preset_pending
+                                    && feedback_matches_scope
+                                    && preset_state.result_ok == Some(false)
                                 {
-                                    ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(MENU_MORE_KEY), true);
-                                    });
+                                    label = format!("!{label}");
                                 }
-
                                 if ui
-                                    .add_sized(
-                                        [20.0, 17.0],
+                                    .add_enabled(
+                                        !preset_pending,
                                         egui::Button::new(
-                                            egui::RichText::new("×")
-                                                .size(12.0)
-                                                .color(egui::Color32::from_rgb(240, 110, 110)),
+                                            egui::RichText::new(if preset_pending {
+                                                "…".to_string()
+                                            } else {
+                                                label
+                                            })
+                                            .size(9.0)
+                                            .strong()
+                                            .color(color),
                                         )
-                                        .fill(egui::Color32::from_rgb(38, 24, 26))
+                                        .min_size(egui::vec2(34.0, 18.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
                                         .stroke(egui::Stroke::NONE),
                                     )
-                                    .on_hover_text("Close Companion")
+                                    .on_hover_text(hover)
                                     .clicked()
                                 {
+                                    let next_scope = scope.toggled();
                                     ctx.data_mut(|d| {
-                                        d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
-                                        d.insert_temp(egui::Id::new("companion_quit"), true);
+                                        d.insert_temp(
+                                            egui::Id::new(PRESET_SCOPE_GLOBAL_KEY),
+                                            next_scope == PresetScope::Global,
+                                        );
                                     });
+                                }
+
+                                if ui
+                                    .add_enabled(
+                                        !preset_pending && next.is_some(),
+                                        egui::Button::new("›").min_size(egui::vec2(16.0, 18.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    selected = next;
                                 }
                             });
                         }
-                    });
-            });
+
+                        ui.label(
+                            egui::RichText::new("Size")
+                                .size(9.0)
+                                .color(egui::Color32::from_rgb(165, 165, 170)),
+                        );
+
+                        ui.horizontal(|ui| {
+                            for (label, preset) in SIZE_PRESETS {
+                                let active = (size - preset).abs() < 0.5;
+                                let fill = if active {
+                                    egui::Color32::from_rgb(58, 72, 102)
+                                } else {
+                                    egui::Color32::from_rgb(30, 30, 32)
+                                };
+                                let text = egui::RichText::new(*label).size(11.0).strong().color(
+                                    if active {
+                                        egui::Color32::WHITE
+                                    } else {
+                                        egui::Color32::from_rgb(200, 200, 204)
+                                    },
+                                );
+                                if ui
+                                    .add_sized(
+                                        [17.0, 18.0],
+                                        egui::Button::new(text)
+                                            .fill(fill)
+                                            .stroke(egui::Stroke::NONE),
+                                    )
+                                    .clicked()
+                                {
+                                    ctx.data_mut(|d| {
+                                        d.insert_temp(egui::Id::new(SIZE_KEY), *preset);
+                                        d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                    });
+                                }
+                            }
+                        });
+
+                        ui.add_space(1.0);
+
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized(
+                                    [23.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Open").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Open the project folder")
+                                .clicked()
+                            {
+                                if let Err(err) = open_project_directory(project_dir) {
+                                    crate::log::debug(format!(
+                                        "open project folder failed path={project_dir:?}: {err}"
+                                    ));
+                                }
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                });
+                            }
+
+                            if ui
+                                .add_sized(
+                                    [23.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("More").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("More Companion controls")
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_MORE_KEY), true);
+                                });
+                            }
+
+                            if ui
+                                .add_sized(
+                                    [20.0, 17.0],
+                                    egui::Button::new(
+                                        egui::RichText::new("×")
+                                            .size(12.0)
+                                            .color(egui::Color32::from_rgb(240, 110, 110)),
+                                    )
+                                    .fill(egui::Color32::from_rgb(38, 24, 26))
+                                    .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Close Companion")
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                    d.insert_temp(egui::Id::new("companion_quit"), true);
+                                });
+                            }
+                        });
+                    }
+                });
+        });
 
     let just_opened = ctx.data_mut(|d| {
         let id = egui::Id::new(MENU_JUST_OPENED_KEY);
@@ -1450,10 +1436,7 @@ mod tests {
         );
         assert_eq!(animation_tint("idle", false), egui::Color32::WHITE);
         assert_eq!(animation_tint("busy", true), egui::Color32::WHITE);
-        assert_eq!(
-            animation_tint("waiting-input", true),
-            egui::Color32::WHITE
-        );
+        assert_eq!(animation_tint("waiting-input", true), egui::Color32::WHITE);
     }
 
     #[test]
