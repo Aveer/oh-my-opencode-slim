@@ -116,6 +116,7 @@ describe('CompanionManager', () => {
   });
 
   it('preserves native-only UI preferences across TypeScript state writes', () => {
+    mkdirSync(path.dirname(stateFilePath()), { recursive: true });
     writeFileSync(
       stateFilePath(),
       JSON.stringify({
