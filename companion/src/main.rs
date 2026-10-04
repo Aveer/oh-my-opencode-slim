@@ -34,15 +34,22 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("oh-my-opencode-slim-companion")
+        .with_app_id("oh-my-opencode-slim-companion")
+        .with_decorations(false)
+        .with_transparent(true)
+        .with_active(false)
+        .with_inner_size([120.0, 120.0]);
+    if state::read_state(&state::state_file_path())
+        .ui_preferences
+        .always_on_top
+    {
+        viewport = viewport.with_always_on_top();
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("oh-my-opencode-slim-companion")
-            .with_app_id("oh-my-opencode-slim-companion")
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_always_on_top()
-            .with_active(false)
-            .with_inner_size([120.0, 120.0]),
+        viewport,
         // Run as a macOS accessory app: no Dock icon, never steals focus
         // from the terminal when the windows appear.
         event_loop_builder: Some(Box::new(|builder| {
