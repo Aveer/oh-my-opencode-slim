@@ -23,9 +23,17 @@ native binary never parses or edits OMO configuration files directly.
 
 The same compact menu also exposes project-folder actions without an OpenCode
 host dependency: **Open** launches the exact session `cwd` in the platform file
-manager, while **Copy** places that exact path on the system clipboard. The
-actions use only the directory already published by session state; they do not
-guess repository roots or scan the filesystem.
+manager. A compact **More** page keeps the smallest 80px Companion usable while
+adding **Copy**, **Topmost**, **Dim idle**, and **Back**.
+
+**Topmost** defaults to enabled to preserve existing behavior and changes the
+native window level at runtime. **Dim idle** defaults to disabled and only
+reduces the idle animation opacity; busy and waiting-input states remain full
+intensity.
+
+These purely native UI preferences are stored in `companion-state.json` beside
+remembered window positions. They are intentionally not OMO plugin configuration,
+and TypeScript state updates preserve the Rust-owned preference fields.
 
 ## How to Enable in Configuration
 
