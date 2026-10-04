@@ -21,6 +21,24 @@ Companion refresh path.
 Preset changes are sent back to the plugin over the Companion state channel; the
 native binary never parses or edits OMO configuration files directly.
 
+The same compact menu also exposes native project/window controls without any
+OpenCode host dependency. The main page keeps the 76×78 footprint used by the
+smallest Companion size and shows **Open | More | ×**. **Open** launches the
+exact session working directory in the platform file manager.
+
+**More** switches to a second page with:
+- **Topmost** — toggles the native window level without stealing focus;
+- **Dim idle** — dims only the idle animation while busy/waiting states stay at
+  full intensity;
+- **Copy** — copies the exact session working directory;
+- **Back** — returns to the main controls.
+
+Right-click always opens the main page; Escape from More returns to the main
+page before Escape closes the menu. Topmost/Dim idle are native UI preferences
+stored in `companion-state.json` beside remembered window positions, not in
+OMO configuration. Their defaults preserve existing behavior: Topmost on, idle
+dimming off.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):

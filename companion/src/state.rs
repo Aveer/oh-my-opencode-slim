@@ -32,6 +32,27 @@ fn default_speed() -> f32 {
     1.0
 }
 
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CompanionUiPreferencesState {
+    #[serde(default = "default_true")]
+    pub always_on_top: bool,
+    #[serde(default)]
+    pub dim_when_idle: bool,
+}
+
+impl Default for CompanionUiPreferencesState {
+    fn default() -> Self {
+        Self {
+            always_on_top: true,
+            dim_when_idle: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CompanionState {
     pub version: u32,
@@ -43,6 +64,8 @@ pub struct CompanionState {
     pub window_positions: BTreeMap<String, WindowPositionState>,
     #[serde(default)]
     pub preset_requests: Vec<CompanionPresetRequest>,
+    #[serde(default)]
+    pub ui_preferences: CompanionUiPreferencesState,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -200,6 +223,24 @@ pub fn write_preset_request(
     Ok(())
 }
 
+pub fn write_ui_preferences(
+    path: &std::path::Path,
+    preferences: CompanionUiPreferencesState,
+) -> std::io::Result<()> {
+    let _lock = StateWriteLock::acquire(path)?;
+    let mut state = read_state(path);
+    state.ui_preferences = preferences;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let json = serde_json::to_string(&state).map_err(std::io::Error::other)?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
+}
+
 pub fn write_project_window_position(
     path: &std::path::Path,
     project: &str,
@@ -299,7 +340,10 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_state, write_preset_request, CompanionPresetRequest};
+    use super::{
+        read_state, write_preset_request, write_ui_preferences, CompanionPresetRequest,
+        CompanionUiPreferencesState,
+    };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -314,6 +358,44 @@ mod tests {
                 std::process::id()
             ))
             .join("companion-state.json")
+    }
+
+    #[test]
+    fn ui_preferences_default_to_current_behavior() {
+        let path = temp_state_path("ui-defaults");
+        let state = read_state(&path);
+        assert!(state.ui_preferences.always_on_top);
+        assert!(!state.ui_preferences.dim_when_idle);
+    }
+
+    #[test]
+    fn ui_preference_write_preserves_session_request_and_position_state() {
+        let path = temp_state_path("ui-preserve");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version":1,"sessions":[{"session_id":"live","cwd":"/live"}],"preset_requests":[{"request_id":"req","session_id":"live","scope":"project","preset":"one"}],"window_positions":{"/live":{"x":42.0,"y":84.0}}}"#,
+        )
+        .unwrap();
+
+        write_ui_preferences(
+            &path,
+            CompanionUiPreferencesState {
+                always_on_top: false,
+                dim_when_idle: true,
+            },
+        )
+        .unwrap();
+
+        let state = read_state(&path);
+        assert!(!state.ui_preferences.always_on_top);
+        assert!(state.ui_preferences.dim_when_idle);
+        assert_eq!(state.sessions.len(), 1);
+        assert_eq!(state.preset_requests.len(), 1);
+        assert_eq!(state.window_positions["/live"].x, 42.0);
+        assert_eq!(state.window_positions["/live"].y, 84.0);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
