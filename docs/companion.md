@@ -21,6 +21,11 @@ Companion refresh path.
 Preset changes are sent back to the plugin over the Companion state channel; the
 native binary never parses or edits OMO configuration files directly.
 
+The same compact menu exposes project-folder actions without depending on an
+OpenCode Desktop host API: **Open** launches the exact session `cwd` in the
+platform file manager, while **Copy** puts that path on the system clipboard.
+Neither action guesses a repository root or scans the filesystem.
+
 ## How to Enable in Configuration
 
 You can enable the companion by adding a `companion` section to your setting configuration file (`~/.config/opencode/oh-my-opencode-slim.json` or `.opencode/oh-my-opencode-slim.json`):
