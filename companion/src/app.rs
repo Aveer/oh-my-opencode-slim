@@ -858,6 +858,8 @@ impl eframe::App for CompanionApp {
         if current_preferences != previous_preferences {
             if let Err(err) = write_ui_preferences(&self.state_path, current_preferences) {
                 crate::log::debug(format!("ui preference write failed: {err}"));
+                self.always_on_top = previous_preferences.always_on_top;
+                self.dim_when_idle = previous_preferences.dim_when_idle;
             }
         }
 
