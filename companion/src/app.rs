@@ -12,8 +12,8 @@ use crate::niri;
 use crate::screen::primary_size;
 use crate::state::{
     read_state, start_watcher, write_preset_request, write_project_window_position,
-    CompanionConfigState, CompanionPresetRequest, CompanionPresetState, SessionInfo,
-    WindowPositionState,
+    write_ui_preferences, CompanionConfigState, CompanionPresetRequest, CompanionPresetState,
+    CompanionUiPreferencesState, SessionInfo, WindowPositionState,
 };
 
 const DEFAULT_SIZE: f32 = 120.0;
@@ -30,6 +30,7 @@ const SIZE_KEY: &str = "companion_size";
 const MENU_OPEN_KEY: &str = "companion_menu_open";
 const MENU_POS_KEY: &str = "companion_menu_pos";
 const MENU_JUST_OPENED_KEY: &str = "companion_menu_just_opened";
+const MENU_MORE_KEY: &str = "companion_menu_more";
 const PRESET_SCOPE_GLOBAL_KEY: &str = "companion_preset_scope_global";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,6 +122,14 @@ fn normalized_loop_style(style: &str) -> &str {
 
 fn normalized_speed(speed: f32) -> f32 {
     crate::gifs::normalized_speed(speed)
+}
+
+fn animation_tint(status: &str, dim_when_idle: bool) -> egui::Color32 {
+    if dim_when_idle && status == "idle" {
+        egui::Color32::from_white_alpha(110)
+    } else {
+        egui::Color32::WHITE
+    }
 }
 
 fn apply_config(
@@ -482,6 +491,9 @@ pub struct CompanionApp {
     drag_project_key: Option<String>,
     preset_request_seq: u64,
     pending_preset_request_id: Option<String>,
+    always_on_top: bool,
+    dim_when_idle: bool,
+    applied_always_on_top: Option<bool>,
     niri_generation: Arc<AtomicU64>,
 }
 
@@ -497,6 +509,7 @@ impl CompanionApp {
             owner_session_id,
             state.sessions.len()
         ));
+        let ui_preferences = state.ui_preferences;
         let sessions = state.sessions;
         let window_positions = state.window_positions;
 
@@ -544,6 +557,9 @@ impl CompanionApp {
             drag_project_key: None,
             preset_request_seq: 0,
             pending_preset_request_id: None,
+            always_on_top: ui_preferences.always_on_top,
+            dim_when_idle: ui_preferences.dim_when_idle,
+            applied_always_on_top: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -552,6 +568,7 @@ impl CompanionApp {
         if self.rx.try_recv().is_ok() {
             while self.rx.try_recv().is_ok() {}
             let state = read_state(&self.state_path);
+            let ui_preferences = state.ui_preferences;
             if let Some(pending_request_id) = self.pending_preset_request_id.as_deref() {
                 if preset_request_completed(&state.sessions, pending_request_id) {
                     self.pending_preset_request_id = None;
@@ -571,6 +588,8 @@ impl CompanionApp {
                 owned_config
             ));
             self.window_positions = state.window_positions;
+            self.always_on_top = ui_preferences.always_on_top;
+            self.dim_when_idle = ui_preferences.dim_when_idle;
             self.project_keys
                 .retain(|cwd, _| self.sessions.iter().any(|session| &session.cwd == cwd));
             self.has_modern_config = state.config.is_some();
@@ -626,6 +645,15 @@ impl eframe::App for CompanionApp {
         if quit || (self.registered && self.sessions.is_empty()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+
+        if self.applied_always_on_top != Some(self.always_on_top) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
+            self.applied_always_on_top = Some(self.always_on_top);
         }
 
         if !self.registered {
@@ -785,6 +813,7 @@ impl eframe::App for CompanionApp {
                 d.insert_temp(egui::Id::new(MENU_POS_KEY), [cursor.x, cursor.y]);
                 d.insert_temp(egui::Id::new(MENU_OPEN_KEY), true);
                 d.insert_temp(egui::Id::new(MENU_JUST_OPENED_KEY), true);
+                d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
             });
         }
 
@@ -796,9 +825,22 @@ impl eframe::App for CompanionApp {
             )
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                render_session(ui, ctx, &session, &agent_frames, self.size, win_w, win_h);
+                render_session(
+                    ui,
+                    ctx,
+                    &session,
+                    &agent_frames,
+                    self.size,
+                    win_w,
+                    win_h,
+                    self.dim_when_idle,
+                );
             });
 
+        let preferences_before = CompanionUiPreferencesState {
+            always_on_top: self.always_on_top,
+            dim_when_idle: self.dim_when_idle,
+        };
         if let Some(action) = render_companion_menu(
             ctx,
             win_w,
@@ -806,6 +848,8 @@ impl eframe::App for CompanionApp {
             session.preset.as_ref(),
             self.pending_preset_request_id.is_some(),
             &session.cwd,
+            &mut self.always_on_top,
+            &mut self.dim_when_idle,
         ) {
             self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
             let request_id = format!("{}-{}", std::process::id(), self.preset_request_seq);
@@ -823,6 +867,17 @@ impl eframe::App for CompanionApp {
                 Err(err) => {
                     crate::log::debug(format!("preset request write failed: {err}"));
                 }
+            }
+        }
+        let preferences_after = CompanionUiPreferencesState {
+            always_on_top: self.always_on_top,
+            dim_when_idle: self.dim_when_idle,
+        };
+        if preferences_after != preferences_before {
+            if let Err(err) = write_ui_preferences(&self.state_path, preferences_after) {
+                self.always_on_top = preferences_before.always_on_top;
+                self.dim_when_idle = preferences_before.dim_when_idle;
+                crate::log::debug(format!("ui preference write failed: {err}"));
             }
         }
         ctx.request_repaint_after(Duration::from_millis(16));
@@ -869,6 +924,7 @@ fn render_session(
     current_size: f32,
     win_w: f32,
     win_h: f32,
+    dim_when_idle: bool,
 ) {
     let cwd = &session.cwd;
 
@@ -888,14 +944,11 @@ fn render_session(
     );
     ui.painter().rect_filled(surface, 0.0, egui::Color32::BLACK);
 
+    let tint = animation_tint(&session.status, dim_when_idle);
     for (i, frame) in agent_frames.iter().enumerate() {
         if let Some(&cell) = rects.get(i) {
-            ui.painter().image(
-                frame.texture_id,
-                cell.shrink(SURFACE_INSET),
-                frame.uv,
-                egui::Color32::WHITE,
-            );
+            ui.painter()
+                .image(frame.texture_id, cell.shrink(SURFACE_INSET), frame.uv, tint);
         }
     }
 
@@ -955,6 +1008,8 @@ fn render_companion_menu(
     preset_state: Option<&CompanionPresetState>,
     preset_pending: bool,
     project_dir: &str,
+    always_on_top: &mut bool,
+    dim_when_idle: &mut bool,
 ) -> Option<PresetMenuAction> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
@@ -962,9 +1017,24 @@ fn render_companion_menu(
     }
 
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false));
+        let more = ctx.data(|d| {
+            d.get_temp::<bool>(egui::Id::new(MENU_MORE_KEY))
+                .unwrap_or(false)
+        });
+        ctx.data_mut(|d| {
+            if more {
+                d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
+            } else {
+                d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+            }
+        });
         return None;
     }
+
+    let more = ctx.data(|d| {
+        d.get_temp::<bool>(egui::Id::new(MENU_MORE_KEY))
+            .unwrap_or(false)
+    });
 
     let scope = if ctx.data(|d| {
         d.get_temp::<bool>(egui::Id::new(PRESET_SCOPE_GLOBAL_KEY))
@@ -984,19 +1054,88 @@ fn render_companion_menu(
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
     let mut selected: Option<PresetMenuAction> = None;
 
-    let response =
-        egui::Area::new(egui::Id::new("companion_menu"))
-            .fixed_pos(egui::pos2(x, y))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(20, 20, 22))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
-                    .inner_margin(egui::Margin::symmetric(4.0, 4.0))
-                    .show(ui, |ui| {
-                        ui.set_min_width(MENU_W - MENU_PAD * 2.0);
-                        ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
+    let response = egui::Area::new(egui::Id::new("companion_menu"))
+        .fixed_pos(egui::pos2(x, y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(20, 20, 22))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(35)))
+                .inner_margin(egui::Margin::symmetric(4.0, 4.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(MENU_W - MENU_PAD * 2.0);
+                    ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
 
+                    if more {
+                        let top_label = if *always_on_top {
+                            "[x] Topmost"
+                        } else {
+                            "[ ] Topmost"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(top_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text("Keep Companion windows above normal windows")
+                            .clicked()
+                        {
+                            *always_on_top = !*always_on_top;
+                        }
+
+                        let dim_label = if *dim_when_idle {
+                            "[x] Dim idle"
+                        } else {
+                            "[ ] Dim idle"
+                        };
+                        if ui
+                            .add_sized(
+                                [MENU_W - MENU_PAD * 2.0, 18.0],
+                                egui::Button::new(egui::RichText::new(dim_label).size(9.0))
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text("Dim Companion animation while idle")
+                            .clicked()
+                        {
+                            *dim_when_idle = !*dim_when_idle;
+                        }
+
+                        ui.add_space(1.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_sized(
+                                    [33.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Copy the project path")
+                                .clicked()
+                            {
+                                ctx.copy_text(project_dir.to_string());
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                });
+                            }
+
+                            if ui
+                                .add_sized(
+                                    [33.0, 17.0],
+                                    egui::Button::new(egui::RichText::new("Back").size(9.0))
+                                        .fill(egui::Color32::from_rgb(30, 30, 32))
+                                        .stroke(egui::Stroke::NONE),
+                                )
+                                .clicked()
+                            {
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(egui::Id::new(MENU_MORE_KEY), false);
+                                });
+                            }
+                        });
+                    } else {
                         if let Some(preset_state) = preset_state {
                             let previous = adjacent_preset(preset_state, scope, -1);
                             let next = adjacent_preset(preset_state, scope, 1);
@@ -1123,7 +1262,6 @@ fn render_companion_menu(
                         });
 
                         ui.add_space(1.0);
-
                         ui.horizontal(|ui| {
                             if ui
                                 .add_sized(
@@ -1148,16 +1286,15 @@ fn render_companion_menu(
                             if ui
                                 .add_sized(
                                     [24.0, 17.0],
-                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
+                                    egui::Button::new(egui::RichText::new("More").size(9.0))
                                         .fill(egui::Color32::from_rgb(30, 30, 32))
                                         .stroke(egui::Stroke::NONE),
                                 )
-                                .on_hover_text("Copy the project path")
+                                .on_hover_text("More Companion controls")
                                 .clicked()
                             {
-                                ctx.copy_text(project_dir.to_string());
                                 ctx.data_mut(|d| {
-                                    d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
+                                    d.insert_temp(egui::Id::new(MENU_MORE_KEY), true);
                                 });
                             }
 
@@ -1181,8 +1318,9 @@ fn render_companion_menu(
                                 });
                             }
                         });
-                    });
-            });
+                    }
+                });
+        });
 
     let just_opened = ctx.data_mut(|d| {
         let id = egui::Id::new(MENU_JUST_OPENED_KEY);
@@ -1250,10 +1388,10 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        adjacent_preset, apply_config, choose_owned_session, choose_session, config_key, grid_dims,
-        handle_drag_start, place_window, preset_request_completed, restore_window_position,
-        size_from_config, window_size, ConfigKey, PresetMenuAction, PresetScope, SessionInfo,
-        WindowGeometryKey, GAP,
+        adjacent_preset, animation_tint, apply_config, choose_owned_session, choose_session,
+        config_key, grid_dims, handle_drag_start, place_window, preset_request_completed,
+        restore_window_position, size_from_config, window_size, ConfigKey, PresetMenuAction,
+        PresetScope, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionConfigState, CompanionPresetState};
 
@@ -1452,6 +1590,17 @@ mod tests {
                 inherit: false,
             })
         );
+    }
+
+    #[test]
+    fn idle_dimming_is_opt_in_and_never_dims_active_states() {
+        assert_eq!(
+            animation_tint("idle", true),
+            egui::Color32::from_white_alpha(110)
+        );
+        assert_eq!(animation_tint("idle", false), egui::Color32::WHITE);
+        assert_eq!(animation_tint("busy", true), egui::Color32::WHITE);
+        assert_eq!(animation_tint("waiting-input", true), egui::Color32::WHITE);
     }
 
     #[test]
