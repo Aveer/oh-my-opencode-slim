@@ -10,6 +10,7 @@ The companion communicates with OpenCode host runtime via file-based state shari
 
 - Displays animated GIFs for `idle`, `question`, `unknown`, and agent-specific animations (`council`, `designer`, `explorer`, `fixer`, `librarian`, `observer`, `oracle`, `orchestrator`).
 - Agent tiles can expose live session model/variant metadata on hover; waiting-input uses an attention outline without changing the animation contract. Error attention is intentionally deferred until canonical terminal evidence is available.
+- Entering waiting-input can also request native informational user attention once per session/status transition; ordinary states reset the request.
 - Animated windows can be resized (S/M/L/XL presets), repositioned via drag-and-drop, and anchored to screen edges.
 - Session state tracks window positions, sizes, and config per project directory using a hidden state file.
 - Animations are pre-generated as 72-frame JPEG sprite sheets (12x6 grid, 200x200 each frame) from companion/VIDEOS/*.mp4 source videos.
