@@ -16,6 +16,7 @@ import {
   ForegroundFallbackManager,
   isFailoverError,
   isInlineFailoverError,
+  isPermanentQuotaBillingError,
 } from './index';
 
 // ACCEPTANCE GAP: config() hook behaviour is not covered by CI — verify live.
@@ -1724,10 +1725,108 @@ describe('isFailoverError', () => {
     expect(isFailoverError({ message: 'Rate limit exceeded' })).toBe(true);
   });
 
-  test('returns true for "quota exceeded" in responseBody', () => {
-    expect(isFailoverError({ data: { responseBody: 'quota exceeded' } })).toBe(
+  test.each([
+    'quota exceeded',
+    'usage exceeded',
+    'usage limit reached',
+    'Monthly usage limit reached. Resets in X days.',
+    '5-hour usage limit reached. Resets in 36min.',
+    'Weekly usage limit reached. Resets in 2 days.',
+    'AI_APICallError: The usage limit has been reached',
+    'Free usage exceeded, subscribe to Go',
+    'Usage exceeded for this billing period',
+  ])('surfaces spent allowance "%s" (issue #966)', (signal) => {
+    expect(isFailoverError({ message: signal })).toBe(false);
+    expect(isPermanentQuotaBillingError({ message: signal })).toBe(true);
+  });
+
+  test('does not surface "Monthly usage limit exceeded" without reached wording (issue #966)', () => {
+    expect(isFailoverError({ message: 'Monthly usage limit exceeded' })).toBe(
       true,
     );
+  });
+
+  test.each([
+    'quota exceeded',
+    'usage exceeded',
+    'usage limit reached',
+    'usage limit has been reached',
+    'Monthly usage limit reached. Resets in X days.',
+    'Weekly usage limit reached. Resets in 2 days.',
+    '5-hour usage limit reached. Resets in 36min.',
+  ])(
+    'surfaces spent allowance "%s" under a 429 wrapper (issue #966)',
+    (signal) => {
+      expect(
+        isFailoverError({ message: signal, data: { statusCode: 429 } }),
+      ).toBe(false);
+      expect(
+        isFailoverError({
+          data: { statusCode: 429, responseBody: signal },
+        }),
+      ).toBe(false);
+      expect(isFailoverError({ data: { statusCode: 429 } })).toBe(true);
+    },
+  );
+
+  test('surfaces spent allowance in nested carriers (issue #966)', () => {
+    expect(
+      isFailoverError({
+        data: { statusCode: 429 },
+        cause: { message: 'quota exceeded' },
+      }),
+    ).toBe(false);
+    expect(isFailoverError({ cause: { message: 'quota exceeded' } })).toBe(
+      false,
+    );
+    expect(isFailoverError({ data: { code: 'usage exceeded' } })).toBe(false);
+    expect(
+      isPermanentQuotaBillingError({
+        cause: { message: 'quota exceeded' },
+      }),
+    ).toBe(true);
+    // Per-carrier transport: an anchored signal split across carriers
+    // must neither match nor synthesize.
+    expect(
+      isFailoverError({
+        message: 'fetch failed',
+        data: { responseBody: 'x' },
+      }),
+    ).toBe(true);
+    expect(
+      isFailoverError({ message: 'fetch', data: { message: 'failed' } }),
+    ).toBe(false);
+    // Cross-carrier escape stays closed: short-horizon phrasing in an
+    // unrelated carrier must not re-enable failover.
+    expect(
+      isFailoverError({
+        message: 'quota exceeded',
+        data: { responseBody: 'try again later for other errors' },
+      }),
+    ).toBe(false);
+  });
+
+  test.each([
+    'quota exceeded, retry after 20s',
+    'Quota exceeded for quota metric, try again in 30s',
+    'quota exceeded, retry in 20s',
+    'quota exceeded, will reset at midnight',
+  ])(
+    'returns true for short-horizon "%s" despite spent wording (issue #966)',
+    (signal) => {
+      expect(isFailoverError({ message: signal })).toBe(true);
+      expect(isFailoverError(signal)).toBe(true);
+    },
+  );
+
+  test('substring veto wins over host type for spent allowance (issue #966)', () => {
+    expect(
+      isFailoverError({
+        type: 'provider.quota',
+        message: 'quota exceeded',
+        status: 429,
+      }),
+    ).toBe(false);
   });
 
   test('returns true for bailian "quota has been exhausted" (issue #1083)', () => {
@@ -1926,10 +2025,6 @@ describe('isFailoverError', () => {
     ).toBe(false);
   });
 
-  test('returns true for "usage exceeded"', () => {
-    expect(isFailoverError({ message: 'usage exceeded' })).toBe(true);
-  });
-
   test('returns true for "overloaded"', () => {
     expect(isFailoverError({ message: 'overloaded_error' })).toBe(true);
   });
@@ -1942,30 +2037,6 @@ describe('isFailoverError', () => {
     expect(isFailoverError({ message: 'Service Unavailable' })).toBe(true);
   });
 
-  test('returns true for "Monthly usage limit reached"', () => {
-    expect(
-      isFailoverError({
-        message: 'Monthly usage limit reached. Resets in X days.',
-      }),
-    ).toBe(true);
-  });
-
-  test('returns true for "5-hour usage limit reached"', () => {
-    expect(
-      isFailoverError({
-        message: '5-hour usage limit reached. Resets in 36min.',
-      }),
-    ).toBe(true);
-  });
-
-  test('returns true for "Weekly usage limit reached"', () => {
-    expect(
-      isFailoverError({
-        message: 'Weekly usage limit reached. Resets in 2 days.',
-      }),
-    ).toBe(true);
-  });
-
   test('returns false for non-rate-limit error', () => {
     expect(isFailoverError({ message: 'invalid API key' })).toBe(false);
   });
@@ -1975,9 +2046,9 @@ describe('isFailoverError', () => {
   });
 
   test('returns true for string error with rate-limit message', () => {
-    expect(isFailoverError('Usage exceeded')).toBe(true);
+    expect(isFailoverError('Usage exceeded')).toBe(false);
     expect(isFailoverError('rate limit exceeded')).toBe(true);
-    expect(isFailoverError('quota exceeded')).toBe(true);
+    expect(isFailoverError('quota exceeded')).toBe(false);
   });
 
   test('returns false for non-object', () => {
@@ -2118,6 +2189,60 @@ describe('isFailoverError', () => {
     expect(isFailoverError({ message: 'invalid model configuration' })).toBe(
       false,
     );
+  });
+});
+
+describe('ForegroundFallbackManager surfaces spent allowance (issue #966)', () => {
+  const SURFACE = 'Monthly usage limit reached. Resets in X days.';
+
+  test('message.updated surfaces without replay', async () => {
+    const { manager, mocks } = makeManager({ maxRetries: 0 });
+    const sid = 'surface-message-updated';
+    await manager.handleEvent(redoEvents.assistant(sid));
+    await manager.handleEvent(
+      redoEvents.assistant(sid, 'a', { message: SURFACE }),
+    );
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('session.error surfaces without replay', async () => {
+    const { manager, mocks } = makeManager({ maxRetries: 0 });
+    const sid = 'surface-session-error';
+    await manager.handleEvent(redoEvents.assistant(sid));
+    await manager.handleEvent(redoEvents.error(sid, { message: SURFACE }));
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('session.status retry surfaces without abort or replay', async () => {
+    const { manager, mocks } = makeManager({ maxRetries: 0 });
+    const sid = 'surface-status-retry';
+    await manager.handleEvent(redoEvents.assistant(sid));
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt: 1, message: SURFACE },
+      },
+    });
+    expect(mocks.abort).not.toHaveBeenCalled();
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+  });
+
+  test('handleV2Retry leaves the host decision alone', async () => {
+    const { manager } = makeManager({ maxRetries: 0 });
+    const switchModel = mock(async () => {});
+    const event = {
+      sessionID: 'surface-v2-retry',
+      agent: 'orchestrator',
+      model: { providerID: 'test', id: 'a' },
+      error: { message: SURFACE },
+      decision: { retry: false },
+    };
+    await manager.handleV2Retry(event, switchModel);
+    expect(switchModel).not.toHaveBeenCalled();
+    expect(event.decision).toEqual({ retry: false });
   });
 });
 
@@ -3397,7 +3522,7 @@ describe('ForegroundFallbackManager message.updated', () => {
           agent: 'explorer',
           providerID: 'openai',
           modelID: 'gpt-4o-mini',
-          error: { message: 'quota exceeded' },
+          error: { message: 'rate limit exceeded' },
         },
       },
     });
@@ -4155,7 +4280,7 @@ describe('ForegroundFallbackManager session.status', () => {
       type: 'session.status',
       properties: {
         sessionID: 'child-oracle-sticky',
-        status: { type: 'retry', message: 'usage limit reached, retrying...' },
+        status: { type: 'retry', message: 'rate limit exceeded, retrying...' },
       },
     });
 
@@ -4193,7 +4318,7 @@ describe('ForegroundFallbackManager session.status', () => {
       type: 'session.status',
       properties: {
         sessionID: 'child-oracle-agent-body',
-        status: { type: 'retry', message: 'usage limit reached, retrying...' },
+        status: { type: 'retry', message: 'rate limit exceeded, retrying...' },
       },
     });
 
@@ -4232,7 +4357,7 @@ describe('ForegroundFallbackManager session.status', () => {
       type: 'session.status',
       properties: {
         sessionID: 'sess-4',
-        status: { type: 'retry', message: 'usage limit reached, retrying...' },
+        status: { type: 'retry', message: 'rate limit exceeded, retrying...' },
       },
     });
 
@@ -4348,7 +4473,7 @@ describe('ForegroundFallbackManager session.status', () => {
         status: {
           type: 'retry',
           attempt: 1,
-          message: 'Free usage exceeded, subscribe to Go',
+          message: 'Rate limit exceeded, retrying...',
         },
       },
     });
@@ -4415,7 +4540,7 @@ describe('ForegroundFallbackManager session.status', () => {
       properties: {
         sessionID: 'sess-error-field',
         status: { type: 'retry', attempt: 1, message: 'retrying...' },
-        error: { message: 'Usage exceeded for this billing period' },
+        error: { message: 'Rate limit exceeded for this billing period' },
       },
     });
     expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
@@ -4447,7 +4572,7 @@ describe('ForegroundFallbackManager session.status', () => {
       properties: {
         sessionID: 'sess-str-error',
         status: { type: 'retry', attempt: 1, message: 'retrying...' },
-        error: 'Usage exceeded for this billing period',
+        error: 'Rate limit exceeded for this billing period',
       },
     });
     expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
@@ -5750,7 +5875,7 @@ describe('ForegroundFallbackManager deduplication', () => {
       type: 'session.error',
       properties: {
         sessionID: 'sess-cascade',
-        error: { message: 'Monthly usage limit reached' },
+        error: { message: 'Rate limit exceeded' },
       },
     });
 
@@ -6256,7 +6381,7 @@ describe('ForegroundFallbackManager disableChain', () => {
           agent: 'explorer',
           providerID: 'openai',
           modelID: 'gpt-4o-mini',
-          error: { message: 'quota exceeded' },
+          error: { message: 'rate limit exceeded' },
         },
       },
     });

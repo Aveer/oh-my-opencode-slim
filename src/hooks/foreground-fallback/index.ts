@@ -45,10 +45,10 @@ const RETRYABLE_ERROR_PATTERNS = [
   /\b429\b/,
   /rate.?limit/i,
   /too many requests/i,
-  /quota.?exceeded/i,
+  // NOTE: `quota/usage exceeded` live in SURFACE_QUOTA_PATTERNS, a
+  // conditional veto — same-carrier short-horizon phrasing fails over.
   /\bquota\b.*\bexhausted/i,
   /quota.?threshold/i,
-  /usage.?exceeded/i,
   /ExceededBudget/i,
   /over.?budget/i,
   /usage limit/i,
@@ -115,6 +115,21 @@ const RETRYABLE_ERROR_PATTERNS = [
   /\bcoding plan package has expired\b/i,
   /\b(?:weekly|monthly) limit exhausted\b/i,
 ];
+
+// Spent allowance surfaces (issue #966): waiting or switching models
+// cannot recover — fail over only with same-carrier short-horizon phrasing.
+const SURFACE_QUOTA_PATTERNS = [
+  /quota.?exceeded/i,
+  /usage.?exceeded/i,
+  /usage.?limit has been reached/i,
+  /usage.?limit reached/i,
+  /(?:monthly|weekly|5-hour)\s+usage\s+limit\s+reached/i,
+];
+
+// Short-horizon retry phrasing: the quota may reset soon, so fail over.
+// Excludes bare "Resets in X days/min" (issue #966 stays surfaced).
+const SHORT_HORIZON_RETRY_PATTERN =
+  /retry (after|in)|reset (after|at)|will reset at|try again|per minute|per day|tpm\b|rpm\b/i;
 
 const OUTAGE_STATUS_CODES = new Set([500, 502, 503, 504]);
 // v2 host classification ({type, message, status?}); status is omitted when
@@ -219,9 +234,38 @@ function eventSessionID(props: {
   return props.sessionID ?? props.info?.id;
 }
 
+/** Per-carrier wording texts an error's signal can hide in. */
+function failoverCarriers(err: Record<string, unknown>): string[] {
+  return [
+    err.code,
+    err.message,
+    nestedField(err.data, 'code'),
+    nestedField(err.data, 'message'),
+    nestedField(err.data, 'responseBody'),
+    nestedField(err.cause, 'code'),
+    nestedField(err.cause, 'message'),
+    err.responseBody,
+  ]
+    .filter(
+      (value): value is string | number =>
+        (typeof value === 'string' && value !== '') ||
+        typeof value === 'number',
+    )
+    .map(String);
+}
+
+/** Joined text over every carrier an error's wording can hide in. */
+function failoverText(err: Record<string, unknown>): string {
+  return failoverCarriers(err).join(' ');
+}
+
 export function isFailoverError(error: unknown): boolean {
   if (!error) return false;
   if (typeof error === 'string') {
+    // Spent-allowance wording surfaces (issue #966); short-horizon
+    // retry phrasing still fails over.
+    if (SURFACE_QUOTA_PATTERNS.some((pattern) => pattern.test(error)))
+      return SHORT_HORIZON_RETRY_PATTERN.test(error);
     return (
       RETRYABLE_ERROR_PATTERNS.some((pattern) => pattern.test(error)) ||
       PROVIDER_OUTAGE_PATTERNS.some((pattern) => pattern.test(error)) ||
@@ -243,6 +287,17 @@ export function isFailoverError(error: unknown): boolean {
     };
   };
   const statusCode = extractStatusCode(err);
+  // Spent-allowance wording surfaces even under a 429 wrapper or a
+  // failover host type (issue #966); same-carrier short-horizon retry
+  // phrasing still fails over.
+  const carriers = failoverCarriers(err as Record<string, unknown>);
+  let shortHorizonSurface = false;
+  for (const carrier of carriers) {
+    if (SURFACE_QUOTA_PATTERNS.some((pattern) => pattern.test(carrier))) {
+      if (!SHORT_HORIZON_RETRY_PATTERN.test(carrier)) return false;
+      shortHorizonSurface = true;
+    }
+  }
   if (
     statusCode === 429 ||
     statusCode === 401 ||
@@ -262,27 +317,20 @@ export function isFailoverError(error: unknown): boolean {
     return true;
   }
 
-  const messages = [
-    err.message ?? '',
-    err.data?.message ?? '',
-    err.data?.responseBody ?? '',
-  ];
   if (
-    messages.some((message) =>
-      TRANSPORT_MESSAGE_PATTERNS.some((p) => p.test(message)),
+    carriers.some((carrier) =>
+      TRANSPORT_MESSAGE_PATTERNS.some((p) => p.test(carrier)),
     )
-  ) {
+  )
     return true;
-  }
 
-  const text = [
-    err.message ?? '',
-    err.data?.message ?? '',
-    err.data?.responseBody ?? '',
-  ].join(' ');
   const hasFailoverReason =
-    RETRYABLE_ERROR_PATTERNS.some((p) => p.test(text)) ||
-    PROVIDER_OUTAGE_PATTERNS.some((p) => p.test(text));
+    shortHorizonSurface ||
+    carriers.some(
+      (carrier) =>
+        RETRYABLE_ERROR_PATTERNS.some((p) => p.test(carrier)) ||
+        PROVIDER_OUTAGE_PATTERNS.some((p) => p.test(carrier)),
+    );
   // Providers sometimes return recoverable rate-limit/outage payloads with
   // an HTTP 400 wrapper. Preserve application-level 400 failures, but let a
   // recognizable failover body continue through the fallback path.
@@ -297,31 +345,19 @@ const PERMANENT_QUOTA_BILLING_PATTERNS = [
   /\bcoding plan package has expired\b/i,
   /\b(?:weekly|monthly) limit exhausted\b/i,
   /\b(?:1113|1308|1309|1310)\b/,
+  // Shared spent-allowance family: trigger paths gate on isFailoverError
+  // first, so surface errors never reach bypassInitialFallbackDelay here.
+  ...SURFACE_QUOTA_PATTERNS,
 ];
 
-/** Permanent payment/quota exhaustion cannot recover by waiting on this model. */
+/** Permanent exhaustion skips the delay and fails over immediately. */
 export function isPermanentQuotaBillingError(error: unknown): boolean {
   if (extractStatusCode(error) === 402) return true;
   const text =
     typeof error === 'string'
       ? error
       : isRecord(error)
-        ? [
-            error.code,
-            error.message,
-            nestedField(error.data, 'code'),
-            nestedField(error.data, 'message'),
-            nestedField(error.data, 'responseBody'),
-            nestedField(error.cause, 'code'),
-            nestedField(error.cause, 'message'),
-            error.responseBody,
-          ]
-            .filter(
-              (value): value is string | number =>
-                typeof value === 'string' || typeof value === 'number',
-            )
-            .map(String)
-            .join(' ')
+        ? failoverText(error)
         : '';
   return PERMANENT_QUOTA_BILLING_PATTERNS.some((pattern) => pattern.test(text));
 }
