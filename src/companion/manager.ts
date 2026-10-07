@@ -232,6 +232,27 @@ export function companionSessionIdForDirectory(directory: string): string {
   return `proc_${process.pid}_${digest}`;
 }
 
+export function normalizeCompanionSessionStatus(
+  eventType: string,
+  status?: string,
+): 'busy' | 'idle' | undefined {
+  if (eventType === 'session.idle' || eventType === 'session.error') {
+    return 'idle';
+  }
+  if (eventType !== 'session.status') return undefined;
+  if (status === 'busy' || status === 'retry') return 'busy';
+  if (
+    status === 'idle' ||
+    status === 'completed' ||
+    status === 'stopped' ||
+    status === 'error' ||
+    status === 'failed'
+  ) {
+    return 'idle';
+  }
+  return undefined;
+}
+
 /**
  * Tracks live agent activity per session and mirrors it to the companion
  * state file. Source of truth is OpenCode's session.status events: every
