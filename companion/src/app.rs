@@ -172,6 +172,37 @@ fn handle_drag_start(
     }
 }
 
+fn persist_window_position_async(
+    state_path: std::path::PathBuf,
+    project_key: String,
+    position: WindowPositionState,
+    generation: Arc<AtomicU64>,
+    write_generation: u64,
+) {
+    std::thread::spawn(move || {
+        for _ in 0..6 {
+            if generation.load(Ordering::Acquire) != write_generation {
+                return;
+            }
+            match write_project_window_position(&state_path, &project_key, position) {
+                Ok(()) => return,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+                Err(err) => {
+                    crate::log::debug(format!(
+                        "window position write failed project={project_key:?}: {err}"
+                    ));
+                    return;
+                }
+            }
+        }
+        crate::log::debug(format!(
+            "window position write timed out project={project_key:?}"
+        ));
+    });
+}
+
 pub(crate) fn place_window(position: &str, screen: [f32; 2], win: [f32; 2]) -> [f32; 2] {
     let (screen_w, screen_h) = (screen[0], screen[1]);
     let (win_w, win_h) = (win[0], win[1]);
@@ -695,7 +726,18 @@ impl CompanionApp {
                 state.config,
                 owned_config
             ));
-            self.window_positions = state.window_positions;
+            let mut next_window_positions = state.window_positions;
+            self.pending_window_positions.retain(
+                |project, (pending_position, _generation)| {
+                    if next_window_positions.get(project) == Some(pending_position) {
+                        false
+                    } else {
+                        next_window_positions.insert(project.clone(), *pending_position);
+                        true
+                    }
+                },
+            );
+            self.window_positions = next_window_positions;
             self.project_keys
                 .retain(|cwd, _| self.sessions.iter().any(|session| &session.cwd == cwd));
             self.has_modern_config = state.config.is_some();
@@ -772,18 +814,20 @@ impl eframe::App for CompanionApp {
 
         self.size = ctx.data(|d| d.get_temp(egui::Id::new(SIZE_KEY)).unwrap_or(self.size));
 
-        let Some(selected_idx) =
-            choose_owned_session(&self.sessions, self.owner_session_id.as_deref())
-        else {
-            if self.owner_session_id.is_some() {
-                crate::log::debug(format!(
-                    "close owner session missing owner={:?} sessions={}",
-                    self.owner_session_id,
-                    self.sessions.len()
-                ));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                return;
-            }
+        let menu_open = ctx.data(|d| {
+            d.get_temp::<bool>(egui::Id::new(MENU_OPEN_KEY))
+                .unwrap_or(false)
+        });
+        if !menu_open {
+            self.menu_target_session_id = None;
+        }
+        let pinned_session = if menu_open {
+            self.menu_target_session_id.as_deref()
+        } else {
+            None
+        };
+
+        let Some(selected_idx) = selected_session_index(&self.sessions, pinned_session) else {
             egui::CentralPanel::default()
                 .frame(egui::Frame::none().fill(egui::Color32::BLACK))
                 .show(ctx, |ui| {
@@ -863,11 +907,6 @@ impl eframe::App for CompanionApp {
         let n = agent_frames.len().max(1);
         let (cols, rows) = grid_dims(n);
         let [win_w, win_h] = window_size(self.size, cols, rows);
-        let menu_open = ctx.data(|d| {
-            d.get_temp::<bool>(egui::Id::new(MENU_OPEN_KEY))
-                .unwrap_or(false)
-        });
-
         let geometry = WindowGeometryKey {
             session_id: session.session_id.clone(),
             project_key: project_key.clone(),
@@ -927,18 +966,29 @@ impl eframe::App for CompanionApp {
                         x: rect.min.x,
                         y: rect.min.y,
                     };
-                    if write_project_window_position(&self.state_path, &project_key, position)
-                        .is_ok()
-                    {
-                        self.window_positions.insert(project_key, position);
-                        self.applied_geometry = None;
-                    }
+                    let write_generation = self
+                        .position_write_generation
+                        .fetch_add(1, Ordering::AcqRel)
+                        + 1;
+                    self.window_positions
+                        .insert(project_key.clone(), position);
+                    self.pending_window_positions
+                        .insert(project_key.clone(), (position, write_generation));
+                    self.applied_geometry = None;
+                    persist_window_position_async(
+                        self.state_path.clone(),
+                        project_key,
+                        position,
+                        Arc::clone(&self.position_write_generation),
+                        write_generation,
+                    );
                 }
             }
         }
 
         if ctx.input(|i| i.pointer.secondary_released()) {
             let cursor = ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default();
+            self.menu_target_session_id = Some(session.session_id.clone());
             ctx.data_mut(|d| {
                 d.insert_temp(egui::Id::new(MENU_POS_KEY), [cursor.x, cursor.y]);
                 d.insert_temp(egui::Id::new(MENU_OPEN_KEY), true);
