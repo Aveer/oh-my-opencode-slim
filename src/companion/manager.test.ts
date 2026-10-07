@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import {
   CompanionManager,
   companionSessionIdForDirectory,
+  normalizeCompanionSessionStatus,
   resolveCompanionBinaryPath,
   stateFilePath,
 } from './manager';
@@ -120,6 +121,31 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].active_agent_details).toEqual([]);
     expect(state.sessions[0].status).toBe('idle');
     expect(state.sessions[0].pid).toBe(process.pid);
+  });
+
+  it('normalizes all terminal lifecycle forms to idle', () => {
+    expect(normalizeCompanionSessionStatus('session.idle')).toBe('idle');
+    expect(normalizeCompanionSessionStatus('session.error')).toBe('idle');
+    for (const status of ['idle', 'completed', 'stopped', 'error', 'failed']) {
+      expect(normalizeCompanionSessionStatus('session.status', status)).toBe(
+        'idle',
+      );
+    }
+  });
+
+  it('normalizes retry as active and ignores unrelated lifecycle events', () => {
+    expect(normalizeCompanionSessionStatus('session.status', 'busy')).toBe(
+      'busy',
+    );
+    expect(normalizeCompanionSessionStatus('session.status', 'retry')).toBe(
+      'busy',
+    );
+    expect(normalizeCompanionSessionStatus('session.status', 'unknown')).toBe(
+      undefined,
+    );
+    expect(normalizeCompanionSessionStatus('message.updated', 'busy')).toBe(
+      undefined,
+    );
   });
 
   it('derives stable distinct manager ids per project directory', () => {
