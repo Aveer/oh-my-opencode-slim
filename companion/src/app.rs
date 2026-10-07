@@ -1646,12 +1646,12 @@ fn is_pid_alive(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        adjacent_preset, agent_detail_tooltip, apply_config, attention_key, attention_stroke,
-        attention_type_for_status, choose_owned_session, choose_session, config_key, grid_dims,
-        handle_drag_start, pending_preset_request_should_clear, place_window,
-        preset_request_completed, restore_window_position, should_apply_geometry, size_from_config,
-        window_size, ConfigKey, PendingPresetRequest, PresetMenuAction, PresetScope, SessionInfo,
-        WindowGeometryKey, GAP,
+        adjacent_preset, adjacent_project_session_index, agent_detail_tooltip, apply_config,
+        attention_key, attention_stroke, attention_type_for_status, choose_session, config_key,
+        grid_dims, handle_drag_start, pending_preset_request_should_clear, place_window,
+        preset_request_completed, project_session_indices, restore_window_position,
+        selected_session_index, should_apply_geometry, size_from_config, window_size, ConfigKey,
+        PendingPresetRequest, PresetMenuAction, PresetScope, SessionInfo, WindowGeometryKey, GAP,
     };
     use crate::state::{CompanionAgentDetail, CompanionConfigState, CompanionPresetState};
 
@@ -1762,21 +1762,48 @@ mod tests {
     }
 
     #[test]
-    fn owned_session_wins_when_present() {
+    fn pinned_menu_target_wins_over_automatic_activity_selection() {
         let sessions = vec![
-            session("first", "waiting-input", &["input"]),
-            session("owner", "idle", &["intro"]),
+            session("active", "waiting-input", &["input"]),
+            session("target", "idle", &["intro"]),
         ];
-        assert_eq!(choose_owned_session(&sessions, Some("owner")), Some(1));
+        assert_eq!(
+            selected_session_index(&sessions, Some("target")),
+            Some(1)
+        );
     }
 
     #[test]
-    fn missing_owner_falls_back_to_active_session() {
+    fn missing_menu_target_falls_back_to_active_session() {
         let sessions = vec![
             session("idle", "idle", &["intro"]),
             session("active", "busy", &["fixer"]),
         ];
-        assert_eq!(choose_owned_session(&sessions, Some("gone")), Some(1));
+        assert_eq!(
+            selected_session_index(&sessions, Some("gone")),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn project_selector_deduplicates_projects_and_cycles_independently_of_activity() {
+        let mut alpha_old = session("alpha-old", "busy", &["fixer"]);
+        alpha_old.cwd = "/projects/alpha".into();
+        let mut alpha_new = session("alpha-new", "idle", &["intro"]);
+        alpha_new.cwd = "/projects/alpha".into();
+        let mut beta = session("beta", "waiting-input", &["input"]);
+        beta.cwd = "/projects/beta".into();
+        let sessions = vec![alpha_old, alpha_new, beta];
+
+        assert_eq!(project_session_indices(&sessions), vec![1, 2]);
+        assert_eq!(
+            adjacent_project_session_index(&sessions, "alpha-new", 1),
+            Some(2)
+        );
+        assert_eq!(
+            adjacent_project_session_index(&sessions, "beta", 1),
+            Some(1)
+        );
     }
 
     #[test]
