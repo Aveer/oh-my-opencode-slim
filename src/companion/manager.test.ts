@@ -214,6 +214,13 @@ describe('CompanionManager', () => {
     expect(state.sessions[0].preset.current).toBe('old');
     expect(state.sessions[0].preset.available).toEqual(['cheap', 'old']);
 
+    state.sessions.push({
+      session_id: 'other-session',
+      cwd: path.join(TEST_DIR, 'other-project'),
+      active_agents: ['intro'],
+      status: 'idle',
+      pid: process.pid,
+    });
     state.preset_requests = [
       {
         request_id: 'req-1',
