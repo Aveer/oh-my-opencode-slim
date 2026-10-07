@@ -21,8 +21,8 @@ const GAP: f32 = 10.0;
 
 const SIZE_PRESETS: &[(&str, f32)] = &[("S", 80.0), ("M", 120.0), ("L", 160.0), ("XL", 200.0)];
 
-const MENU_W: f32 = 76.0;
-const MENU_H: f32 = 78.0;
+const MENU_W: f32 = 96.0;
+const MENU_H: f32 = 98.0;
 const MENU_PAD: f32 = 2.0;
 const SURFACE_INSET: f32 = 1.0;
 
@@ -370,6 +370,12 @@ struct PresetMenuAction {
     inherit: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CompanionMenuAction {
+    SelectProject(isize),
+    SelectPreset(PresetMenuAction),
+}
+
 fn has_scoped_preset_state(state: &CompanionPresetState) -> bool {
     state.effective.is_some()
         || state.project.is_some()
@@ -458,13 +464,13 @@ fn adjacent_preset(
 fn scope_label(state: &CompanionPresetState, scope: PresetScope) -> String {
     match scope {
         PresetScope::Project => project_current(state)
-            .map(|current| compact_scoped_label("P", current))
-            .unwrap_or_else(|| "P:inh".to_string()),
+            .map(|current| compact_scoped_label("Prj", current))
+            .unwrap_or_else(|| "Prj:Inherit".to_string()),
         PresetScope::Global => state
             .global
             .as_deref()
-            .map(|current| compact_scoped_label("G", current))
-            .unwrap_or_else(|| "G:none".to_string()),
+            .map(|current| compact_scoped_label("Gbl", current))
+            .unwrap_or_else(|| "Gbl:None".to_string()),
     }
 }
 
@@ -513,17 +519,58 @@ fn pending_preset_request_should_clear(
             .any(|session| session.session_id == pending.session_id)
 }
 
-fn choose_owned_session(sessions: &[SessionInfo], owner_session_id: Option<&str>) -> Option<usize> {
-    if let Some(owner_session_id) = owner_session_id {
-        if let Some(index) = sessions
-            .iter()
-            .position(|session| session.session_id == owner_session_id)
+fn selected_session_index(
+    sessions: &[SessionInfo],
+    pinned_session_id: Option<&str>,
+) -> Option<usize> {
+    pinned_session_id
+        .and_then(|session_id| {
+            sessions
+                .iter()
+                .position(|session| session.session_id == session_id)
+        })
+        .or_else(|| choose_session(sessions))
+}
+
+fn project_session_indices(sessions: &[SessionInfo]) -> Vec<usize> {
+    let mut indices: Vec<usize> = Vec::new();
+    for (index, session) in sessions.iter().enumerate() {
+        if let Some(existing) = indices
+            .iter_mut()
+            .find(|existing| sessions[**existing].cwd == session.cwd)
         {
-            return Some(index);
+            *existing = index;
+        } else {
+            indices.push(index);
         }
     }
+    indices
+}
 
-    choose_session(sessions)
+fn adjacent_project_session_index(
+    sessions: &[SessionInfo],
+    current_session_id: &str,
+    direction: isize,
+) -> Option<usize> {
+    let projects = project_session_indices(sessions);
+    if projects.len() <= 1 {
+        return None;
+    }
+    let current = projects
+        .iter()
+        .position(|index| sessions[*index].session_id == current_session_id)
+        .unwrap_or(0);
+    let next = (current as isize + direction).rem_euclid(projects.len() as isize) as usize;
+    projects.get(next).copied()
+}
+
+fn project_display_name(cwd: &str) -> String {
+    std::path::Path::new(cwd)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(cwd)
+        .to_string()
 }
 
 pub struct CompanionApp {
@@ -546,8 +593,12 @@ pub struct CompanionApp {
     window_positions: std::collections::BTreeMap<String, WindowPositionState>,
     project_keys: std::collections::BTreeMap<String, String>,
     drag_project_key: Option<String>,
+    menu_target_session_id: Option<String>,
     last_attention_key: Option<(String, u64)>,
     preset_request_seq: u64,
+    position_write_generation: Arc<AtomicU64>,
+    pending_window_positions:
+        std::collections::BTreeMap<String, (WindowPositionState, u64)>,
     pending_preset_request: Option<PendingPresetRequest>,
     niri_generation: Arc<AtomicU64>,
 }
@@ -609,8 +660,11 @@ impl CompanionApp {
             window_positions,
             project_keys: std::collections::BTreeMap::new(),
             drag_project_key: None,
+            menu_target_session_id: None,
             last_attention_key: None,
             preset_request_seq: 0,
+            position_write_generation: Arc::new(AtomicU64::new(0)),
+            pending_window_positions: std::collections::BTreeMap::new(),
             pending_preset_request: None,
             niri_generation: Arc::new(AtomicU64::new(0)),
         }
