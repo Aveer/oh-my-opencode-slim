@@ -149,6 +149,20 @@ describe('CompanionManager', () => {
     );
   });
 
+  it('does not age-steal a state lock from a live owner', () => {
+    const lock = companionStateLock();
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(path.join(lock, 'owner'), `${process.pid}\nlive-owner`);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lock, old, old);
+
+    const m = make('live-state-lock');
+    m.onLoad();
+
+    expect(existsSync(lock)).toBe(true);
+    expect(existsSync(stateFilePath())).toBe(false);
+  });
+
   it('does not spawn native companion until owner state publication succeeds', () => {
     const lock = companionStateLock();
     mkdirSync(lock, { recursive: true });
