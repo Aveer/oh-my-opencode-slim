@@ -6,6 +6,9 @@ use std::time::Duration;
 
 const MAX_WINDOW_POSITIONS: usize = 100;
 const MAX_PRESET_REQUESTS: usize = 64;
+const STATE_LOCK_RETRY_ATTEMPTS: usize = 40;
+const STATE_LOCK_RETRY_MS: u64 = 25;
+const STATE_LOCK_STALE_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanionConfigState {
@@ -261,14 +264,33 @@ struct StateWriteLock {
     path: PathBuf,
 }
 
+fn state_lock_is_stale(lock_path: &std::path::Path) -> bool {
+    std::fs::metadata(lock_path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age >= Duration::from_millis(STATE_LOCK_STALE_MS))
+}
+
 impl StateWriteLock {
     fn acquire(state_path: &std::path::Path) -> std::io::Result<Self> {
         let lock_path = state_path.with_extension("json.lock");
-        for _ in 0..40 {
+        for _ in 0..STATE_LOCK_RETRY_ATTEMPTS {
             match std::fs::create_dir(&lock_path) {
                 Ok(()) => return Ok(Self { path: lock_path }),
                 Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    std::thread::sleep(Duration::from_millis(25));
+                    if state_lock_is_stale(&lock_path) {
+                        match std::fs::remove_dir_all(&lock_path) {
+                            Ok(()) => continue,
+                            Err(remove_err)
+                                if remove_err.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                continue;
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(STATE_LOCK_RETRY_MS));
                 }
                 Err(err) => return Err(err),
             }
@@ -313,7 +335,10 @@ fn poll_loop(path: PathBuf, tx: Sender<()>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_state, write_preset_request, CompanionPresetRequest};
+    use super::{
+        read_state, state_lock_is_stale, write_preset_request, CompanionPresetRequest,
+        STATE_LOCK_STALE_MS,
+    };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -328,6 +353,13 @@ mod tests {
                 std::process::id()
             ))
             .join("companion-state.json")
+    }
+
+    #[test]
+    fn missing_state_lock_is_not_stale() {
+        let path = temp_state_path("missing-lock").with_extension("json.lock");
+        assert!(!state_lock_is_stale(&path));
+        assert!(STATE_LOCK_STALE_MS > 0);
     }
 
     #[test]
