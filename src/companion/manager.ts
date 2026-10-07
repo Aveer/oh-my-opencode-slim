@@ -218,7 +218,10 @@ export function companionSessionIdForDirectory(directory: string): string {
   const normalized = path.resolve(directory).replace(/[\\/]+$/, '');
   const identity =
     process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
+  const digest = createHash('sha256')
+    .update(identity)
+    .digest('hex')
+    .slice(0, 12);
   return `proc_${process.pid}_${digest}`;
 }
 
