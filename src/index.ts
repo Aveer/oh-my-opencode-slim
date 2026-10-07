@@ -23,6 +23,7 @@ import type { RegistryFactoryBridge } from './agents/registry-bridge';
 import {
   CompanionManager,
   companionSessionIdForDirectory,
+  normalizeCompanionSessionStatus,
 } from './companion/manager';
 import { ensureCompanionVersion } from './companion/updater';
 import { deepMerge, loadPluginConfig, type Preset } from './config';
@@ -2336,25 +2337,14 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         companionManager.onInputResolved();
       }
 
-      if (input.event.type === 'session.status') {
-        const props = input.event.properties as
-          | { sessionID?: string; status?: { type?: string } | string }
-          | undefined;
-        const sessionID = props?.sessionID;
-        const rawCompanionStatus = props?.status;
-        const companionStatus =
-          typeof rawCompanionStatus === 'string'
-            ? rawCompanionStatus
-            : typeof rawCompanionStatus === 'object' &&
-                rawCompanionStatus !== null &&
-                'type' in rawCompanionStatus &&
-                typeof (rawCompanionStatus as { type?: unknown }).type ===
-                  'string'
-              ? (rawCompanionStatus as { type: string }).type
-              : undefined;
+      const companionStatus = normalizeCompanionSessionStatus(
+        event.type,
+        statusType,
+      );
+      if (eventSessionID && companionStatus) {
         companionManager.onSessionStatus({
-          sessionId: sessionID,
-          agent: sessionID ? sessionMetadata.getAgent(sessionID) : undefined,
+          sessionId: eventSessionID,
+          agent: sessionMetadata.getAgent(eventSessionID),
           status: companionStatus,
         });
       }
@@ -2807,12 +2797,12 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
           const pendingStatus = pendingTuiBusySessions.get(input.sessionID);
           pendingTuiBusySessions.delete(input.sessionID);
           markTuiAgentActive(input.sessionID, agent, pendingStatus);
+          companionManager.onSessionStatus({
+            sessionId: input.sessionID,
+            agent,
+            status: 'busy',
+          });
         }
-        companionManager.onSessionStatus({
-          sessionId: input.sessionID,
-          agent,
-          status: 'busy',
-        });
       }
 
       // chat.message carries the model selected for this message, and it
