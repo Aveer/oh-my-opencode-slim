@@ -20,7 +20,10 @@ import {
   type ResolvedAgentRegistry,
 } from './agents/registry';
 import type { RegistryFactoryBridge } from './agents/registry-bridge';
-import { CompanionManager } from './companion/manager';
+import {
+  CompanionManager,
+  companionSessionIdForDirectory,
+} from './companion/manager';
 import { ensureCompanionVersion } from './companion/updater';
 import { deepMerge, loadPluginConfig, type Preset } from './config';
 import {
@@ -1392,7 +1395,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     );
     interviewManager = createInterviewManager(ctx, config);
     companionManager = new CompanionManager(
-      `proc_${process.pid}`,
+      companionSessionIdForDirectory(ctx.directory),
       ctx.directory,
       runtime.companion,
       hostFlavor,
