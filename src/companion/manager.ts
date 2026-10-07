@@ -173,6 +173,24 @@ function readState(): CompanionState {
   return { version: 1, sessions: [] };
 }
 
+function pruneDeadSessions(state: CompanionState): void {
+  state.sessions = state.sessions.filter(
+    (session) =>
+      !Number.isInteger(session.pid) ||
+      session.pid === process.pid ||
+      isProcessAlive(session.pid),
+  );
+  if (!state.preset_requests?.length) return;
+
+  const liveSessionIds = new Set(
+    state.sessions.map((session) => session.session_id),
+  );
+  state.preset_requests = state.preset_requests.filter((request) =>
+    liveSessionIds.has(request.session_id),
+  );
+  if (state.preset_requests.length === 0) delete state.preset_requests;
+}
+
 function writeState(mutator: (state: CompanionState) => void): boolean {
   const file = stateFilePath();
   try {
@@ -181,6 +199,7 @@ function writeState(mutator: (state: CompanionState) => void): boolean {
     if (!release) return false;
     try {
       const state = readState();
+      pruneDeadSessions(state);
       mutator(state);
       const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
       writeFileSync(tmp, JSON.stringify(state));
