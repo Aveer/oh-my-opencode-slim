@@ -356,10 +356,10 @@ fn choose_session(sessions: &[SessionInfo]) -> Option<usize> {
 
 fn compact_preset_label(value: &str) -> String {
     let chars: Vec<char> = value.chars().collect();
-    if chars.len() <= 6 {
+    if chars.len() <= 8 {
         return value.to_string();
     }
-    format!("{}…", chars[..5].iter().collect::<String>())
+    format!("{}…", chars[..7].iter().collect::<String>())
 }
 
 fn compact_scoped_label(prefix: &str, value: &str) -> String {
@@ -1011,29 +1011,43 @@ impl eframe::App for CompanionApp {
             ctx,
             win_w,
             win_h,
-            session.preset.as_ref(),
+            &self.sessions,
+            &session,
             self.pending_preset_request.is_some(),
-            &session.session_id,
-            &session.cwd,
         ) {
-            self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
-            let request_id = format!("{}-{}", std::process::id(), self.preset_request_seq);
-            let request = CompanionPresetRequest {
-                request_id: request_id.clone(),
-                session_id: session.session_id.clone(),
-                scope: action.scope.as_str().to_string(),
-                preset: action.preset,
-                inherit: action.inherit,
-            };
-            match write_preset_request(&self.state_path, request) {
-                Ok(()) => {
-                    self.pending_preset_request = Some(PendingPresetRequest {
-                        request_id,
-                        session_id: session.session_id.clone(),
-                    });
+            match action {
+                CompanionMenuAction::SelectProject(direction) => {
+                    if let Some(next_index) = adjacent_project_session_index(
+                        &self.sessions,
+                        &session.session_id,
+                        direction,
+                    ) {
+                        self.menu_target_session_id =
+                            Some(self.sessions[next_index].session_id.clone());
+                    }
                 }
-                Err(err) => {
-                    crate::log::debug(format!("preset request write failed: {err}"));
+                CompanionMenuAction::SelectPreset(action) => {
+                    self.preset_request_seq = self.preset_request_seq.wrapping_add(1);
+                    let request_id =
+                        format!("{}-{}", std::process::id(), self.preset_request_seq);
+                    let request = CompanionPresetRequest {
+                        request_id: request_id.clone(),
+                        session_id: session.session_id.clone(),
+                        scope: action.scope.as_str().to_string(),
+                        preset: action.preset,
+                        inherit: action.inherit,
+                    };
+                    match write_preset_request(&self.state_path, request) {
+                        Ok(()) => {
+                            self.pending_preset_request = Some(PendingPresetRequest {
+                                request_id,
+                                session_id: session.session_id.clone(),
+                            });
+                        }
+                        Err(err) => {
+                            crate::log::debug(format!("preset request write failed: {err}"));
+                        }
+                    }
                 }
             }
         }
@@ -1245,11 +1259,10 @@ fn render_companion_menu(
     ctx: &egui::Context,
     win_w: f32,
     win_h: f32,
-    preset_state: Option<&CompanionPresetState>,
+    sessions: &[SessionInfo],
+    target: &SessionInfo,
     preset_pending: bool,
-    session_id: &str,
-    project_dir: &str,
-) -> Option<PresetMenuAction> {
+) -> Option<CompanionMenuAction> {
     let open: bool = ctx.data(|d| d.get_temp(egui::Id::new(MENU_OPEN_KEY)).unwrap_or(false));
     if !open {
         return None;
@@ -1274,8 +1287,8 @@ fn render_companion_menu(
             .unwrap_or([20.0, 20.0])
     });
     let size: f32 = ctx.data(|d| d.get_temp(egui::Id::new(SIZE_KEY)).unwrap_or(DEFAULT_SIZE));
-    let pending_id = project_open_pending_id(session_id);
-    let error_id = project_open_error_id(session_id);
+    let pending_id = project_open_pending_id(&target.session_id);
+    let error_id = project_open_error_id(&target.session_id);
     let project_open_pending = ctx.data(|d| d.get_temp::<bool>(pending_id).unwrap_or(false));
     let project_open_error = ctx
         .data(|d| d.get_temp::<String>(error_id).unwrap_or_default())
@@ -1283,7 +1296,9 @@ fn render_companion_menu(
         .to_string();
     let x = pos[0].clamp(MENU_PAD, (win_w - MENU_W - MENU_PAD).max(MENU_PAD));
     let y = pos[1].clamp(MENU_PAD, (win_h - MENU_H - MENU_PAD).max(MENU_PAD));
-    let mut selected: Option<PresetMenuAction> = None;
+    let mut selected: Option<CompanionMenuAction> = None;
+    let multiple_projects = project_session_indices(sessions).len() > 1;
+    let project_label = compact_preset_label(&project_display_name(&target.cwd));
 
     let response =
         egui::Area::new(egui::Id::new("companion_menu"))
@@ -1298,18 +1313,62 @@ fn render_companion_menu(
                         ui.set_min_width(MENU_W - MENU_PAD * 2.0);
                         ui.spacing_mut().item_spacing = egui::vec2(1.0, 2.0);
 
-                        if let Some(preset_state) = preset_state {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(
+                                    multiple_projects,
+                                    egui::Button::new("‹")
+                                        .min_size(egui::vec2(16.0, 18.0)),
+                                )
+                                .on_hover_text("Previous project")
+                                .clicked()
+                            {
+                                selected = Some(CompanionMenuAction::SelectProject(-1));
+                            }
+
+                            ui.add_sized(
+                                [54.0, 18.0],
+                                egui::Button::new(
+                                    egui::RichText::new(&project_label)
+                                        .size(9.0)
+                                        .strong(),
+                                )
+                                .fill(egui::Color32::from_rgb(30, 30, 32))
+                                .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text(format!(
+                                "Preset target project:\n{}",
+                                target.cwd
+                            ));
+
+                            if ui
+                                .add_enabled(
+                                    multiple_projects,
+                                    egui::Button::new("›")
+                                        .min_size(egui::vec2(16.0, 18.0)),
+                                )
+                                .on_hover_text("Next project")
+                                .clicked()
+                            {
+                                selected = Some(CompanionMenuAction::SelectProject(1));
+                            }
+                        });
+
+                        if let Some(preset_state) = target.preset.as_ref() {
                             let previous = adjacent_preset(preset_state, scope, -1);
                             let next = adjacent_preset(preset_state, scope, 1);
                             ui.horizontal(|ui| {
                                 if ui
                                     .add_enabled(
                                         !preset_pending && previous.is_some(),
-                                        egui::Button::new("‹").min_size(egui::vec2(16.0, 18.0)),
+                                        egui::Button::new("‹")
+                                            .min_size(egui::vec2(16.0, 18.0)),
                                     )
+                                    .on_hover_text("Previous preset")
                                     .clicked()
                                 {
-                                    selected = previous;
+                                    selected = previous
+                                        .map(CompanionMenuAction::SelectPreset);
                                 }
 
                                 let feedback_matches_scope =
@@ -1349,19 +1408,21 @@ fn render_companion_menu(
                                         !preset_pending,
                                         egui::Button::new(
                                             egui::RichText::new(if preset_pending {
-                                                "…".to_string()
+                                                "Applying…".to_string()
                                             } else {
                                                 label
                                             })
-                                            .size(9.0)
+                                            .size(8.5)
                                             .strong()
                                             .color(color),
                                         )
-                                        .min_size(egui::vec2(34.0, 18.0))
+                                        .min_size(egui::vec2(54.0, 18.0))
                                         .fill(egui::Color32::from_rgb(30, 30, 32))
                                         .stroke(egui::Stroke::NONE),
                                     )
-                                    .on_hover_text(hover)
+                                    .on_hover_text(format!(
+                                        "{hover}\nClick to switch Project / Global scope."
+                                    ))
                                     .clicked()
                                 {
                                     let next_scope = scope.toggled();
@@ -1376,20 +1437,30 @@ fn render_companion_menu(
                                 if ui
                                     .add_enabled(
                                         !preset_pending && next.is_some(),
-                                        egui::Button::new("›").min_size(egui::vec2(16.0, 18.0)),
+                                        egui::Button::new("›")
+                                            .min_size(egui::vec2(16.0, 18.0)),
                                     )
+                                    .on_hover_text("Next preset")
                                     .clicked()
                                 {
-                                    selected = next;
+                                    selected = next.map(CompanionMenuAction::SelectPreset);
                                 }
                             });
+                        } else {
+                            ui.add_sized(
+                                [88.0, 18.0],
+                                egui::Button::new(
+                                    egui::RichText::new("Preset unavailable")
+                                        .size(8.5)
+                                        .color(egui::Color32::from_rgb(165, 165, 170)),
+                                )
+                                .fill(egui::Color32::from_rgb(30, 30, 32))
+                                .stroke(egui::Stroke::NONE),
+                            )
+                            .on_hover_text(
+                                "This project has not published preset state yet.",
+                            );
                         }
-
-                        ui.label(
-                            egui::RichText::new("Size")
-                                .size(9.0)
-                                .color(egui::Color32::from_rgb(165, 165, 170)),
-                        );
 
                         ui.horizontal(|ui| {
                             for (label, preset) in SIZE_PRESETS {
@@ -1408,11 +1479,12 @@ fn render_companion_menu(
                                 );
                                 if ui
                                     .add_sized(
-                                        [17.0, 18.0],
+                                        [20.0, 18.0],
                                         egui::Button::new(text)
                                             .fill(fill)
                                             .stroke(egui::Stroke::NONE),
                                     )
+                                    .on_hover_text(format!("Companion size {label}"))
                                     .clicked()
                                 {
                                     ctx.data_mut(|d| {
@@ -1422,8 +1494,6 @@ fn render_companion_menu(
                                 }
                             }
                         });
-
-                        ui.add_space(1.0);
 
                         ui.horizontal(|ui| {
                             let open_label = if project_open_pending {
@@ -1439,39 +1509,49 @@ fn render_companion_menu(
                                 egui::Color32::from_rgb(240, 110, 110)
                             };
                             let open_hover = if project_open_pending {
-                                "Opening the project folder…".to_string()
+                                "Opening the selected project folder…".to_string()
                             } else if project_open_error.is_empty() {
-                                "Open the project folder".to_string()
+                                "Open the selected project folder".to_string()
                             } else {
-                                format!("Open the project folder\n{project_open_error}")
+                                format!(
+                                    "Open the selected project folder\n{project_open_error}"
+                                )
                             };
                             if ui
                                 .add_enabled(
                                     !project_open_pending,
                                     egui::Button::new(
-                                        egui::RichText::new(open_label).size(9.0).color(open_color),
+                                        egui::RichText::new(open_label)
+                                            .size(9.0)
+                                            .color(open_color),
                                     )
-                                    .min_size(egui::vec2(23.0, 17.0))
+                                    .min_size(egui::vec2(30.0, 17.0))
                                     .fill(egui::Color32::from_rgb(30, 30, 32))
                                     .stroke(egui::Stroke::NONE),
                                 )
                                 .on_hover_text(open_hover)
                                 .clicked()
                             {
-                                start_project_directory_open(ctx, session_id, project_dir);
+                                start_project_directory_open(
+                                    ctx,
+                                    &target.session_id,
+                                    &target.cwd,
+                                );
                             }
 
                             if ui
                                 .add_sized(
-                                    [23.0, 17.0],
-                                    egui::Button::new(egui::RichText::new("Copy").size(9.0))
-                                        .fill(egui::Color32::from_rgb(30, 30, 32))
-                                        .stroke(egui::Stroke::NONE),
+                                    [30.0, 17.0],
+                                    egui::Button::new(
+                                        egui::RichText::new("Copy").size(9.0),
+                                    )
+                                    .fill(egui::Color32::from_rgb(30, 30, 32))
+                                    .stroke(egui::Stroke::NONE),
                                 )
-                                .on_hover_text("Copy the project path")
+                                .on_hover_text("Copy the selected project path")
                                 .clicked()
                             {
-                                ctx.copy_text(project_dir.to_string());
+                                ctx.copy_text(target.cwd.clone());
                                 ctx.data_mut(|d| {
                                     d.insert_temp(egui::Id::new(MENU_OPEN_KEY), false);
                                 });
