@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -18,6 +19,7 @@ import {
 } from '../tools/preset-switch';
 import { log } from '../utils/logger';
 import {
+  acquirePidFileLock,
   acquirePidFileLockWithRetry,
   isProcessAlive,
   parsePidFile,
@@ -34,6 +36,8 @@ let activeExitListener: (() => void) | null = null;
 const activeManagers = new Set<CompanionManager>();
 const MAX_PRESET_REQUESTS = 64;
 const PRESET_REFRESH_EVERY_TICKS = 4;
+const STATE_LOCK_STALE_MS = 5_000;
+const STATE_PUBLISH_RETRY_MS = 250;
 const HARD_PRESET_REFRESH_WARNING_KINDS: ReadonlySet<ConfigLoadWarningKind> =
   new Set(['invalid-json', 'invalid-schema', 'read-error']);
 
@@ -173,7 +177,8 @@ function writeState(mutator: (state: CompanionState) => void): boolean {
   const file = stateFilePath();
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    const release = acquireStateLock(file);
+    const release = acquirePidFileLock(file, STATE_LOCK_STALE_MS);
+    if (!release) return false;
     try {
       const state = readState();
       mutator(state);
@@ -190,25 +195,12 @@ function writeState(mutator: (state: CompanionState) => void): boolean {
   }
 }
 
-function acquireStateLock(file: string): () => void {
-  const lock = `${file}.lock`;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      mkdirSync(lock);
-      return () => {
-        try {
-          rmSync(lock, { recursive: true, force: true });
-        } catch (err) {
-          log('[companion] lock release failed', String(err));
-        }
-      };
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') throw err;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-    }
-  }
-  throw new Error('timed out waiting for companion state lock');
+export function companionSessionIdForDirectory(directory: string): string {
+  const normalized = path.resolve(directory).replace(/[\\/]+$/, '');
+  const identity =
+    process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
+  return `proc_${process.pid}_${digest}`;
 }
 
 /**
@@ -238,6 +230,7 @@ export class CompanionManager {
   private wasSpawner = false;
   private spawnedCompanionPid: number | null = null;
   private presetPoller: NodeJS.Timeout | null = null;
+  private publishRetryTimer: NodeJS.Timeout | null = null;
   private presetRefreshTick = 0;
   private effectivePreset: string | undefined;
   private projectPreset: string | undefined;
@@ -344,6 +337,24 @@ export class CompanionManager {
     if (this.presetPoller) return;
     this.presetPoller = setInterval(() => this.pollPresetState(), 250);
     this.presetPoller.unref();
+  }
+
+  private schedulePublishRetry(): void {
+    if (this.publishRetryTimer || this.config?.enabled !== true) return;
+    this.publishRetryTimer = setTimeout(() => {
+      this.publishRetryTimer = null;
+      if (!activeManagers.has(this)) return;
+      this.publishAndSpawn();
+    }, STATE_PUBLISH_RETRY_MS);
+    this.publishRetryTimer.unref();
+  }
+
+  private publishAndSpawn(): void {
+    if (this.flush()) {
+      this.spawnIfAvailable();
+    } else {
+      this.schedulePublishRetry();
+    }
   }
 
   private acknowledgePresetRequest(requestId: string): boolean {
@@ -457,9 +468,8 @@ export class CompanionManager {
     this.restoreAttentionState();
     this.registerActiveManager();
     this.refreshPresetState();
-    this.flush();
     this.startPresetPoller();
-    this.spawnIfAvailable();
+    this.publishAndSpawn();
   }
 
   /**
@@ -469,9 +479,17 @@ export class CompanionManager {
    */
   private registerActiveManager(): void {
     for (const manager of [...activeManagers]) {
-      if (manager !== this && manager.id === this.id) {
-        manager.onExit();
+      if (manager === this || manager.id !== this.id) continue;
+
+      if (manager.wasSpawner && !this.wasSpawner) {
+        this.companionProcess = manager.companionProcess;
+        this.wasSpawner = true;
+        this.spawnedCompanionPid = manager.spawnedCompanionPid;
+        manager.companionProcess = null;
+        manager.wasSpawner = false;
+        manager.spawnedCompanionPid = null;
       }
+      manager.disposeForReplacement();
     }
 
     activeManagers.add(this);
@@ -479,6 +497,18 @@ export class CompanionManager {
       activeExitListener = () => CompanionManager.disposeActiveManagers();
       process.on('exit', activeExitListener);
     }
+  }
+
+  private disposeForReplacement(): void {
+    if (this.presetPoller) {
+      clearInterval(this.presetPoller);
+      this.presetPoller = null;
+    }
+    if (this.publishRetryTimer) {
+      clearTimeout(this.publishRetryTimer);
+      this.publishRetryTimer = null;
+    }
+    activeManagers.delete(this);
   }
 
   private static disposeActiveManagers(sessionId?: string): void {
@@ -617,6 +647,10 @@ export class CompanionManager {
       clearInterval(this.presetPoller);
       this.presetPoller = null;
     }
+    if (this.publishRetryTimer) {
+      clearTimeout(this.publishRetryTimer);
+      this.publishRetryTimer = null;
+    }
     activeManagers.delete(this);
     if (activeManagers.size === 0 && activeExitListener) {
       try {
@@ -701,8 +735,8 @@ export class CompanionManager {
     return ['intro'];
   }
 
-  private flush(): void {
-    if (this.config?.enabled !== true) return;
+  private flush(): boolean {
+    if (this.config?.enabled !== true) return false;
     try {
       const entry: CompanionSession = {
         session_id: this.id,
@@ -738,7 +772,7 @@ export class CompanionManager {
           last_scope: this.presetLastScope,
         },
       };
-      writeState((state) => {
+      const written = writeState((state) => {
         const idx = state.sessions.findIndex((s) => s.session_id === this.id);
         if (idx >= 0) {
           state.sessions[idx] = entry;
@@ -757,8 +791,12 @@ export class CompanionManager {
           };
         }
       });
+      if (!written) this.schedulePublishRetry();
+      return written;
     } catch (err) {
       log('[companion] flush failed', String(err));
+      this.schedulePublishRetry();
+      return false;
     }
   }
 
