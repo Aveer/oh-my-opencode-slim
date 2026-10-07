@@ -1317,6 +1317,49 @@ describe('CompanionManager', () => {
     expect(sb.active_agents).toEqual(['librarian']);
   });
 
+  it('prunes dead process sessions while preserving live project sessions', () => {
+    mkdirSync(path.dirname(stateFilePath()), { recursive: true });
+    writeFileSync(
+      stateFilePath(),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            session_id: 'dead-project',
+            cwd: '/dead',
+            active_agents: ['intro'],
+            status: 'idle',
+            pid: 999999999,
+          },
+          {
+            session_id: 'live-peer',
+            cwd: '/live-peer',
+            active_agents: ['intro'],
+            status: 'idle',
+            pid: process.pid,
+          },
+        ],
+        preset_requests: [
+          {
+            request_id: 'dead-request',
+            session_id: 'dead-project',
+            scope: 'project',
+            preset: 'one',
+          },
+        ],
+      }),
+    );
+
+    const current = make('current-project', '/current');
+    current.onLoad();
+
+    const state = readState();
+    expect(
+      state.sessions.map((session: { session_id: string }) => session.session_id),
+    ).toEqual(['live-peer', 'current-project']);
+    expect(state.preset_requests).toBeUndefined();
+  });
+
   it('is disabled by default and does not write state', () => {
     const m = new CompanionManager('test-disabled', '/path');
     m.onLoad();
