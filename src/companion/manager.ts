@@ -246,6 +246,7 @@ export class CompanionManager {
   private lastAttentionRequestId: string | undefined;
   private readonly config?: CompanionConfig;
   private companionProcess: ChildProcess | null = null;
+  private spawnChecked = false;
   private wasSpawner = false;
   private spawnedCompanionPid: number | null = null;
   private presetPoller: NodeJS.Timeout | null = null;
@@ -360,6 +361,9 @@ export class CompanionManager {
 
   private schedulePublishRetry(): void {
     if (this.publishRetryTimer || this.config?.enabled !== true) return;
+    log('[companion] state publish deferred; retrying', {
+      sessionId: this.id,
+    });
     this.publishRetryTimer = setTimeout(() => {
       this.publishRetryTimer = null;
       if (!activeManagers.has(this)) return;
@@ -369,11 +373,13 @@ export class CompanionManager {
   }
 
   private publishAndSpawn(): void {
-    if (this.flush()) {
-      this.spawnIfAvailable();
-    } else {
+    if (!this.flush()) {
       this.schedulePublishRetry();
+      return;
     }
+    if (this.spawnChecked) return;
+    this.spawnChecked = true;
+    this.spawnIfAvailable();
   }
 
   private acknowledgePresetRequest(requestId: string): boolean {
@@ -502,6 +508,7 @@ export class CompanionManager {
 
       if (manager.wasSpawner && !this.wasSpawner) {
         this.companionProcess = manager.companionProcess;
+        this.spawnChecked = true;
         this.wasSpawner = true;
         this.spawnedCompanionPid = manager.spawnedCompanionPid;
         manager.companionProcess = null;
