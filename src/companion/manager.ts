@@ -36,7 +36,6 @@ let activeExitListener: (() => void) | null = null;
 const activeManagers = new Set<CompanionManager>();
 const MAX_PRESET_REQUESTS = 64;
 const PRESET_REFRESH_EVERY_TICKS = 4;
-const STATE_LOCK_STALE_MS = 5_000;
 const STATE_PUBLISH_RETRY_MS = 250;
 const HARD_PRESET_REFRESH_WARNING_KINDS: ReadonlySet<ConfigLoadWarningKind> =
   new Set(['invalid-json', 'invalid-schema', 'read-error']);
@@ -195,7 +194,10 @@ function writeState(mutator: (state: CompanionState) => void): boolean {
   const file = stateFilePath();
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    const release = acquirePidFileLock(file, STATE_LOCK_STALE_MS);
+    // Never age-steal a state lock from a live writer. Recovery is based on
+    // the PID/token owner record; this prevents a paused writer from losing
+    // ownership and committing over a successor.
+    const release = acquirePidFileLock(file);
     if (!release) return false;
     try {
       const state = readState();
@@ -203,6 +205,11 @@ function writeState(mutator: (state: CompanionState) => void): boolean {
       mutator(state);
       const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
       writeFileSync(tmp, JSON.stringify(state));
+      if (!release.isOwned()) {
+        rmSync(tmp, { force: true });
+        log('[companion] state lock ownership changed before commit');
+        return false;
+      }
       renameSync(tmp, file);
       return true;
     } finally {
