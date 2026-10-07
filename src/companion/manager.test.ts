@@ -1248,9 +1248,9 @@ describe('CompanionManager', () => {
     second.onLoad();
 
     expect(firstChild.killed()).toBe(false);
-    expect(
-      (second as unknown as { wasSpawner: boolean }).wasSpawner,
-    ).toBe(true);
+    expect((second as unknown as { wasSpawner: boolean }).wasSpawner).toBe(
+      true,
+    );
     expect(readState().sessions).toHaveLength(1);
     expect(readState().sessions[0].session_id).toBe('reload-session');
 
@@ -1355,7 +1355,9 @@ describe('CompanionManager', () => {
 
     const state = readState();
     expect(
-      state.sessions.map((session: { session_id: string }) => session.session_id),
+      state.sessions.map(
+        (session: { session_id: string }) => session.session_id,
+      ),
     ).toEqual(['live-peer', 'current-project']);
     expect(state.preset_requests).toBeUndefined();
   });
