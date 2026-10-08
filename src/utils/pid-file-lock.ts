@@ -202,7 +202,9 @@ export function acquirePidFileLock(
           return false;
         }
         const seen = raw.split('\n')[1]?.trim();
-        return parsePidFile(raw) === process.pid && (seen ? seen : null) === token;
+        return (
+          parsePidFile(raw) === process.pid && (seen ? seen : null) === token
+        );
       };
 
       const release = (() => {
@@ -217,7 +219,10 @@ export function acquirePidFileLock(
           return;
         }
         const seen = raw.split('\n')[1]?.trim();
-        if (parsePidFile(raw) !== process.pid || (seen ? seen : null) !== token) {
+        if (
+          parsePidFile(raw) !== process.pid ||
+          (seen ? seen : null) !== token
+        ) {
           log('[pid-file-lock] lock owner changed; skipping release');
           return;
         }

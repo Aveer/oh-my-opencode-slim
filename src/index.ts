@@ -2342,10 +2342,12 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         statusType,
       );
       if (eventSessionID && companionStatus) {
+        const job = backgroundJobBoard.get(eventSessionID);
         companionManager.onSessionStatus({
           sessionId: eventSessionID,
           agent: sessionMetadata.getAgent(eventSessionID),
           status: companionStatus,
+          jobFinished: job !== undefined && job.state !== 'running',
         });
       }
 
