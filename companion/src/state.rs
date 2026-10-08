@@ -443,9 +443,8 @@ impl StateWriteLock {
 
     fn ensure_owned(&self) -> std::io::Result<()> {
         let raw = std::fs::read(self.path.join("owner"))?;
-        let owned = parse_state_lock_owner(&raw).is_some_and(|(pid, token)| {
-            pid == std::process::id() && token == self.token
-        });
+        let owned = parse_state_lock_owner(&raw)
+            .is_some_and(|(pid, token)| pid == std::process::id() && token == self.token);
         if owned {
             Ok(())
         } else {
@@ -461,9 +460,8 @@ impl Drop for StateWriteLock {
     fn drop(&mut self) {
         let snapshot = read_state_lock_snapshot(&self.path);
         let owned = snapshot.owner.as_deref().is_some_and(|raw| {
-            parse_state_lock_owner(raw).is_some_and(|(pid, token)| {
-                pid == std::process::id() && token == self.token
-            })
+            parse_state_lock_owner(raw)
+                .is_some_and(|(pid, token)| pid == std::process::id() && token == self.token)
         });
         if owned {
             let _ = remove_state_lock_if_matches(&self.path, &snapshot);
