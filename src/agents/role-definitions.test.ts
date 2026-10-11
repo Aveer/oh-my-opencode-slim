@@ -9,10 +9,11 @@ import { createOracleAgent } from './oracle';
 import { buildOrchestratorPrompt } from './orchestrator';
 import {
   ROLE_DEFINITIONS,
+  ROLE_WRITE_CAPABILITY,
   roleHasWriteCapability,
   SPECIALIST_ROLES,
 } from './role-definitions';
-import { ROLE_ROUTING_BLOCKS } from './role-routing';
+import { ROLE_ROUTING_BLOCKS, ROLE_ROUTING_SLIM_LINES } from './role-routing';
 
 const FACTORIES = {
   explorer: createExplorerAgent,
@@ -62,14 +63,14 @@ describe('specialist role definitions', () => {
     );
   });
 
-  test('keeps routing blocks available for specialists and council', () => {
+  test('keeps routing lines available for specialists and council', () => {
     const prompt = buildOrchestratorPrompt();
     for (const role of SPECIALIST_ROLES) {
-      expect(prompt).toContain(ROLE_ROUTING_BLOCKS[role]);
+      expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES[role]);
     }
-    expect(prompt).toContain(ROLE_ROUTING_BLOCKS.council);
+    expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES.council);
     expect(buildOrchestratorPrompt(new Set(['explorer']))).not.toContain(
-      ROLE_ROUTING_BLOCKS.explorer,
+      ROLE_ROUTING_SLIM_LINES.explorer,
     );
   });
   test('keeps behavioral steering while fixing local prompt inconsistencies', () => {
@@ -113,6 +114,32 @@ describe('roleHasWriteCapability', () => {
     expect(roleHasWriteCapability('custom-unknown')).toBe(true);
     expect(roleHasWriteCapability(undefined)).toBe(true);
     expect(roleHasWriteCapability('')).toBe(true);
+  });
+});
+
+describe('roleHasWriteCapability drift guard', () => {
+  test('table and Permissions rows in routing prose cover each other exactly', () => {
+    for (const [role, block] of Object.entries(ROLE_ROUTING_BLOCKS)) {
+      const permissions = /^- Permissions: (.+)$/m.exec(block);
+      if (permissions) {
+        // A role with a prose row must be in the table with a matching
+        // verdict — a new read-only role omitted from the table would
+        // otherwise fail safe to writer without a failing test.
+        expect(ROLE_WRITE_CAPABILITY[role]).toBe(
+          permissions[1].includes('write_files'),
+        );
+      } else {
+        // The explicit exception: librarian has no Permissions row (the
+        // role predates the convention) and stays omitted from the table
+        // so it fails safe to writer like any undetermined agent.
+        expect(role).toBe('librarian');
+        expect(role in ROLE_WRITE_CAPABILITY).toBe(false);
+      }
+    }
+    // No stale table entries for roles absent from the routing data.
+    for (const role of Object.keys(ROLE_WRITE_CAPABILITY)) {
+      expect(role in ROLE_ROUTING_BLOCKS).toBe(true);
+    }
   });
 });
 
