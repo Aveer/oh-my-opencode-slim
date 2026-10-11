@@ -16,6 +16,18 @@ Maintain repository-level build, packaging, and release validation automation. G
     src/skills/codemap/SKILL.md, src/skills/simplify/SKILL.md, etc.).
   - Performs clean install smoke by importing the installed server entry with Node and the optional OpenTUI-backed
     ./tui entry with Bun in a temp project.
+- `verify-companion-source.mjs`
+  - Compares release-affecting Rust/native assets and dependencies against the
+    manifest's immutable Companion tag. Ignores only crate version stamps.
+  - Fails before npm versioning and publishing when native sources outpace the
+    released executable. Also powers the automatic native release drift gate.
+- `prepare-companion-release.mjs`
+  - Stamps the new version into Cargo.toml and Cargo.lock for native builds.
+  - With published assets supplied, computes SHA256 checksums and generates the
+    packaged JSON plus TypeScript fallback manifests for the release PR.
+- `companion-release-scripts.test.ts`
+  - Covers native source/tag drift detection, version-only exceptions, and
+    digest generation against real fixture archive bytes.
 - `verify-companion-manifest.ts`
   - Verifies the packaged Companion manifest matches `companion/Cargo.toml` and the
     TypeScript fallback manifest.
