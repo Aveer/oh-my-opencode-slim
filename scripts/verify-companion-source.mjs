@@ -43,15 +43,14 @@ const manifest = JSON.parse(
 );
 const tag = tagArg ? tagArg.slice('--tag='.length) : manifest.tag;
 if (!/^companion-v\d+\.\d+\.\d+$/.test(tag)) {
-  fail('Invalid Companion release tag: ' + tag);
+  fail(`Invalid Companion release tag: ${tag}`);
 }
 
 try {
-  git('rev-parse', '--verify', 'refs/tags/' + tag + '^{commit}');
+  git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`);
 } catch {
   fail(
-    'Companion release tag ' + tag +
-      ' is unavailable. Fetch release tags before publishing (git fetch --tags origin).',
+    `Companion release tag ${tag} is unavailable. Fetch release tags before publishing (git fetch --tags origin).`,
   );
 }
 
@@ -69,7 +68,7 @@ try {
     .filter(releaseRelevant)
     .sort();
 } catch (error) {
-  fail('Unable to compare native Companion sources: ' + String(error));
+  fail(`Unable to compare native Companion sources: ${String(error)}`);
 }
 
 const drift = [];
@@ -80,7 +79,7 @@ for (const path of changed) {
   }
 
   try {
-    const released = git('show', tag + ':' + path);
+    const released = git('show', `${tag}:${path}`);
     const current = existsSync(path) ? readFileSync(path, 'utf8').trim() : '';
     if (
       withoutCrateVersion(path, released) !==
@@ -95,11 +94,9 @@ for (const path of changed) {
 
 if (drift.length > 0) {
   fail(
-    'Companion native sources have changed since ' + tag +
-      ':\n- ' + drift.join('\n- ') +
-      '\nPublish a new native Companion release and sync its manifest before releasing OMO Slim.',
+    `Companion native sources have changed since ${tag}:\n- ${drift.join('\n- ')}\nPublish a new native Companion release and sync its manifest before releasing OMO Slim.`,
     2,
   );
 }
 
-console.log('Companion native sources match release ' + tag + '.');
+console.log(`Companion native sources match release ${tag}.`);
