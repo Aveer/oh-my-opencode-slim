@@ -18,6 +18,9 @@ on:
       - 'scripts/verify-companion-source.mjs'
       - 'scripts/prepare-companion-release.mjs'
   workflow_dispatch:
+  # Recover incomplete uploads or pending manifest handoffs without manual polling.
+  schedule:
+    - cron: '17 */6 * * *'
 
 permissions:
   contents: write
@@ -32,36 +35,26 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.check.outputs.changed }}
+      release_needed: ${{ steps.check.outputs.release_needed }}
+      sync_needed: ${{ steps.check.outputs.sync_needed }}
       next_version: ${{ steps.check.outputs.next_version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Detect native changes since the published binary
+      - name: Verify the latest native release and calculate next action
         id: check
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          git fetch --tags origin
           tag="$(git tag -l 'companion-v[0-9]*' | sort -V | tail -n 1)"
           if [ -z "$tag" ]; then
             echo "::error::No native Companion release tag found."
             exit 1
           fi
-
-          set +e
-          node scripts/verify-companion-source.mjs --tag="$tag"
-          status=$?
-          set -e
-          case "$status" in
-            0)
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-            2) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
-            *) exit "$status" ;;
-          esac
-
           version="${tag#companion-v}"
           IFS='.' read -r major minor patch <<< "$version"
           if [[ ! "$major" =~ ^[0-9]+$ ||
@@ -70,11 +63,66 @@ jobs:
             echo "::error::Unexpected Companion tag: $tag"
             exit 1
           fi
-          echo "next_version=$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
+
+          set +e
+          node scripts/verify-companion-source.mjs --tag="$tag"
+          source_status=$?
+          set -e
+          if [ "$source_status" -ne 0 ] && [ "$source_status" -ne 2 ]; then
+            echo "::error::Companion native source verifier failed unexpectedly."
+            exit "$source_status"
+          fi
+
+          # Git tag creation and uploading five assets are separate operations.
+          # A crash in between MUST NOT be mistaken for a completed release.
+          complete=false
+          if release_json="$(gh release view "$tag" --json assets,isDraft 2>/dev/null)" &&
+             [ "$(printf '%s' "$release_json" | jq -r '.isDraft')" = "false" ]; then
+            mapfile -t published < <(printf '%s' "$release_json" | jq -r '.assets[].name')
+            complete=true
+            if [ "${#published[@]}" -ne 5 ]; then
+              complete=false
+            else
+              for target in \
+                aarch64-apple-darwin \
+                aarch64-unknown-linux-gnu \
+                x86_64-apple-darwin \
+                x86_64-pc-windows-msvc \
+                x86_64-unknown-linux-gnu; do
+                suffix=tar.gz
+                if [[ "$target" = *windows* ]]; then suffix=zip; fi
+                archive="oh-my-opencode-slim-companion-v${version}-${target}.${suffix}"
+                if ! printf '%s\n' "${published[@]}" | grep -Fxq "$archive"; then
+                  complete=false
+                  break
+                fi
+              done
+            fi
+          fi
+
+          manifest_tag="$(node -p "JSON.parse(require('fs').readFileSync('src/companion/companion-manifest.json', 'utf8')).tag")"
+          if [ "$source_status" -eq 2 ] || [ "$complete" != true ]; then
+            echo "release_needed=true" >> "$GITHUB_OUTPUT"
+            echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+            echo "next_version=$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
+            echo "::notice::Native release required: source drift=$source_status; latest release complete=$complete"
+          elif [ "$manifest_tag" != "$tag" ]; then
+            # Native binaries published successfully, but the manifest PR
+            # previously failed or has not yet been merged: resume this stage.
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+            echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+            echo "next_version=$version" >> "$GITHUB_OUTPUT"
+            echo "::notice::Native release $tag is complete; manifest sync pending."
+          else
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+            echo "next_version=$version" >> "$GITHUB_OUTPUT"
+            echo "Native Companion release and manifest are synchronized at $tag."
+          fi
 
   native_release:
     needs: detect
-    if: ${{ needs.detect.outputs.changed == 'true' }}
+    if: ${{ needs.detect.outputs.release_needed == 'true' }}
     uses: ./.github/workflows/companion-release.yml
     with:
       version: ${{ needs.detect.outputs.next_version }}
@@ -84,7 +132,11 @@ jobs:
 
   sync_manifest:
     needs: [detect, native_release]
-    if: ${{ needs.native_release.result == 'success' }}
+    if: >-
+      always() && !cancelled() && needs.detect.result == 'success' &&
+      needs.detect.outputs.sync_needed == 'true' &&
+      (needs.native_release.result == 'success' ||
+       needs.native_release.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -120,7 +172,7 @@ jobs:
           bun run typecheck
           bun test
 
-      - name: Open release synchronization PR
+      - name: Open or recover release synchronization PR
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,16 +182,30 @@ jobs:
           branch="chore/companion-v$VERSION-manifest"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add companion/Cargo.toml companion/Cargo.lock \
-            src/companion/companion-manifest.json src/companion/updater.ts
-          git commit -m "chore(companion): sync published native v$VERSION"
-          git push origin "$branch"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Existing release sync branch $branch; recovering PR creation."
+          else
+            git switch -c "$branch"
+            git add companion/Cargo.toml companion/Cargo.lock \
+              src/companion/companion-manifest.json src/companion/updater.ts
+            if git diff --cached --quiet; then
+              echo "::notice::Native release metadata is already synchronized on master."
+              exit 0
+            fi
+            git commit -m "chore(companion): sync published native v$VERSION"
+            git push origin "$branch"
+          fi
+
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" -gt 0 ]; then
+            echo "Native manifest synchronization PR is already open."
+            exit 0
+          fi
 
           body="Generated from the *published* companion-v$VERSION release assets.\n\nNative code provenance is verified against the release tag; SHA-256 hashes were calculated from the uploaded archives.\n\nThe official OMO Slim npm release is blocked until this PR is merged.\n\nRefs #1427."
           if ! gh pr create --base master --head "$branch" \
             --title "chore(companion): sync native v$VERSION release" \
             --body "$(printf '%b' "$body")"; then
-            echo "::error::Release assets are published, but the manifest PR could not be opened. Enable GitHub Actions PR creation under Actions settings; the prepared branch remains available."
+            echo "::error::Native assets were published, but the manifest PR could not be opened. Enable Actions-created PRs in Settings; the branch remains available for recovery."
             exit 1
           fi
