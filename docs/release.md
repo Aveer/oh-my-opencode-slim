@@ -20,6 +20,12 @@ the release actually contains all five platform archives. When native sources
 are unchanged, the release is complete, and the packaged manifest is already
 aligned, the workflow does nothing.
 
+GitHub release lookup is fail-closed: missing or incomplete releases are
+handled as release work, but API outages, authentication errors, rate limits,
+and malformed responses do not trigger a new version. The lookup retries
+transient failures before reporting an error. An incomplete released tag is
+not overwritten; recovery uses a successor immutable patch.
+
 When native source changes require a release, the workflow automatically:
 
 1. Chooses the next Companion patch version and runs the reusable
