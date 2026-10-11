@@ -202,7 +202,7 @@ describe('council seat assembly', () => {
     );
   });
 
-  test('councilAssembly: false (disabled_hooks) leaves the prompt byte-identical', async () => {
+  test('assembly disabled + valid Seats trigger is refused (stale harness block backstop)', async () => {
     const board = new BackgroundJobBoard();
     seedCompleted(board, {
       taskID: 'ses_alpha',
@@ -214,6 +214,46 @@ describe('council seat assembly', () => {
       subagent_type: 'council',
       description: 'Council synthesis',
       prompt: 'Which migration is safest?\nSeats: councillor-1',
+      background: false,
+    };
+    const original = args.prompt;
+    await expect(
+      handleToolExecuteBefore(
+        { tool: 'task', sessionID: PARENT, callID: 'call_council' },
+        { args },
+        { ...deps(board), councilAssembly: false },
+      ),
+    ).rejects.toThrow(
+      'council assembly is disabled — paste each seat response into the prompt and call council again.',
+    );
+    // Refused before any mutation: the prompt still carries its trigger line,
+    // so a retried paste-mode call re-enters cleanly.
+    expect(args.prompt).toBe(original);
+  });
+
+  test('assembly disabled + no Seats line passes through byte-identically (paste-mode flow)', async () => {
+    const board = new BackgroundJobBoard();
+    const args: Record<string, unknown> = {
+      subagent_type: 'council',
+      description: 'Council synthesis',
+      prompt: 'Question?\n## Seat: alpha\nALPHA TEXT (pasted by the model)',
+      background: false,
+    };
+    const original = args.prompt;
+    await handleToolExecuteBefore(
+      { tool: 'task', sessionID: PARENT, callID: 'call_council' },
+      { args },
+      { ...deps(board), councilAssembly: false },
+    );
+    expect(args.prompt).toBe(original);
+  });
+
+  test('assembly disabled + malformed empty-refs Seats line passes through (no ref token ⇒ no refusal)', async () => {
+    const board = new BackgroundJobBoard();
+    const args: Record<string, unknown> = {
+      subagent_type: 'council',
+      description: 'Council synthesis',
+      prompt: 'Question?\nSeats: , ,',
       background: false,
     };
     const original = args.prompt;
@@ -436,7 +476,7 @@ describe('council seat assembly', () => {
     expect(args.prompt).toBe(prompt);
   });
 
-  test('a second pass over an already-assembled prompt is a no-op', async () => {
+  test('a second pass over an already-assembled prompt is a no-op; a re-sent call with a fresh Seats line attaches the new round', async () => {
     const board = new BackgroundJobBoard();
     seedCompleted(board, {
       taskID: 'ses_alpha',
@@ -452,12 +492,19 @@ describe('council seat assembly', () => {
     expect(assembled.match(/## Seat: /g)?.length).toBe(2);
     const second = await runCouncilCall(board, assembled);
     expect(second.prompt).toBe(assembled);
-    // The sentinel also guards a re-sent call that re-appends a Seats line.
+    // Retry-then-resynthesize: a fresh Seats line on an already-assembled
+    // prompt is CONSUMED (the sentinel is gone — it used to blanket-skip
+    // this and silently drop the retried seat's new text). The new section
+    // is appended; the earlier sections stay. Duplication is the accepted
+    // residual — visible, input-leg, never silent loss.
     const third = await runCouncilCall(
       board,
       `${assembled}\nSeats: councillor-1`,
     );
-    expect(third.prompt).toBe(`${assembled}\nSeats: councillor-1`);
+    const thirdPrompt = third.prompt as string;
+    expect(thirdPrompt).not.toContain('\nSeats: councillor-1\n');
+    expect(thirdPrompt.match(/## Seat: /g)?.length).toBe(3);
+    expect(thirdPrompt).toContain('ALPHA VERBATIM TEXT');
   });
 
   test('a 50KB seat result is inlined byte-identically (no truncation, no cap)', async () => {
@@ -510,7 +557,7 @@ describe('council seat assembly', () => {
     expect(prompt).not.toContain('Seats:');
   });
 
-  test('pasted responses plus a Seats line: the sentinel prevents doubling', async () => {
+  test('a quoted \\n## Seat: heading in the question never blocks assembly (sentinel removed)', async () => {
     const board = new BackgroundJobBoard();
     seedCompleted(board, {
       taskID: 'ses_alpha',
@@ -518,17 +565,51 @@ describe('council seat assembly', () => {
       alias: 'councillor-1',
       resultSummary: 'ALPHA VERBATIM TEXT',
     });
-    // A model that both pastes assembled-style sections and lists seats must
-    // not have its prompt rewritten a second time around those sections.
+    seedCompleted(board, {
+      taskID: 'ses_beta',
+      agent: 'councillor-beta',
+      alias: 'councillor-2',
+      resultSummary: 'BETA VERBATIM TEXT',
+    });
+    // The question quotes an assembled-looking section (a seat's own
+    // resultSummary can legitimately contain such headings — council.ts:81
+    // mandates the form). The old sentinel skipped assembly here and the
+    // tool-less council lost ALL answers; now the valid final trigger wins.
     const prompt = [
-      'Question?',
-      '',
+      'Question quoting round-1 material:',
       '## Seat: councillor-alpha',
-      'ALPHA PASTED RESPONSE',
-      'Seats: councillor-1',
+      'QUOTED OLD TEXT',
+      'Seats: councillor-1, councillor-2',
     ].join('\n');
     const args = await runCouncilCall(board, prompt);
-    expect(args.prompt).toBe(prompt);
-    expect((args.prompt as string).match(/## Seat: /g)?.length).toBe(1);
+    const out = args.prompt as string;
+    expect(out).toContain('QUOTED OLD TEXT');
+    expect(out).toContain('## Seat: councillor-alpha\nALPHA VERBATIM TEXT');
+    expect(out).toContain('## Seat: councillor-beta\nBETA VERBATIM TEXT');
+    expect(out.match(/## Seat: councillor-alpha/g)?.length).toBe(2);
+    expect(out).not.toContain('\nSeats: councillor-1, councillor-2');
+  });
+
+  test('a seat whose own resultSummary contains a ## Seat: heading still assembles', async () => {
+    const board = new BackgroundJobBoard();
+    seedCompleted(board, {
+      taskID: 'ses_alpha',
+      agent: 'councillor-alpha',
+      alias: 'councillor-1',
+      resultSummary:
+        'council.ts:81 says headings like ## Seat: are normal\nALPHA BODY',
+    });
+    const args = await runCouncilCall(board, 'Question?\nSeats: councillor-1');
+    const out = args.prompt as string;
+    expect(out).toContain('ALPHA BODY');
+    expect(out).not.toContain('\nSeats: councillor-1');
+  });
+
+  test('an empty-refs Seats line reports itself instead of passing through silently', async () => {
+    const board = new BackgroundJobBoard();
+    const args = await runCouncilCall(board, 'Question?\nSeats: , ,');
+    expect(args.prompt).toBe(
+      ['Question?', '', '[no seat references were provided]'].join('\n'),
+    );
   });
 });

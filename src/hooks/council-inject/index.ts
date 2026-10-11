@@ -99,7 +99,22 @@ export interface CouncilWording {
  * conversation calls for it"), so weaker models still run the procedure
  * on a genuine ask while stronger models can decline incidental mentions.
  */
-export function buildCouncilModeBlock(wording: CouncilWording): string {
+export function buildCouncilModeBlock(
+  wording: CouncilWording,
+  /**
+   * How seat responses reach the synthesizer. 'harness' (default): the
+   * orchestrator lists only the seat IDs it received and the harness
+   * attaches the stored responses. 'paste': the orchestrator pastes the
+   * responses itself — used when `council-assembly` is disabled, because the
+   * tool-less council has no way to fetch them. Resolved once at
+   * construction, never per call (the block is a cache-prefixed constant).
+   */
+  seatAttachment: 'harness' | 'paste',
+): string {
+  const synthesize =
+    seatAttachment === 'paste'
+      ? `4. Call ${wording.tool}(${wording.agentParam}='council', description='Synthesize council report', prompt=<question + all seat responses labeled by seat name and model — do not summarize them>) and present its report.`
+      : `4. Call ${wording.tool}(${wording.agentParam}='council', description='Council synthesis', prompt=<question + final 'Seats: <id, id>' line listing each seat's returned ${wording.resumeParam}>) — the harness attaches their responses; do not paste them.`;
   return [
     '## Council Mode',
     '',
@@ -107,13 +122,15 @@ export function buildCouncilModeBlock(wording: CouncilWording): string {
     '1. Embed a brief summary of needed context into each seat prompt (seats receive only their prompt).',
     `2. Dispatch the question to every council seat in parallel via ${wording.tool}() — one call per seat.`,
     '3. Collect all responses; retry an empty seat once; mark failed seats; do not wait on stragglers.',
-    `4. Call ${wording.tool}(${wording.agentParam}='council', description='Council synthesis', prompt=<question + final 'Seats: <id, id>' line listing each seat's returned ${wording.resumeParam}>) — the harness attaches their responses; do not paste them.`,
+    synthesize,
   ].join('\n');
 }
 
 interface CouncilInjectOptions {
   /** Native delegation wording for the host flavor (construction-time). */
   wording: CouncilWording;
+  /** Seat-response delivery mode; see buildCouncilModeBlock. */
+  seatAttachment: 'harness' | 'paste';
 }
 
 /**
@@ -125,7 +142,9 @@ interface CouncilInjectOptions {
  * transcript).
  */
 export function createCouncilInjectHook(options: CouncilInjectOptions) {
-  const block = formatSystemReminder(buildCouncilModeBlock(options.wording));
+  const block = formatSystemReminder(
+    buildCouncilModeBlock(options.wording, options.seatAttachment),
+  );
 
   return {
     'experimental.chat.messages.transform': async (

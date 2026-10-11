@@ -105,6 +105,7 @@ export function createPipeline(options: PipelineOptions = {}): Pipeline {
       agentParam: 'subagent_type',
       resumeParam: 'task_id',
     },
+    seatAttachment: 'harness',
   });
 
   // Goal pointer joins the mirror pipeline in src/index.ts order. Off by
