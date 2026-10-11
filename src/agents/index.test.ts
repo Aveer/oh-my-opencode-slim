@@ -1653,8 +1653,7 @@ describe('council agent model resolution', () => {
     expect(council?.config.model).toBe(DEFAULT_MODELS.council);
   });
 
-  test('deprecated council.master field is ignored', () => {
-    // Verify that the deprecated master field is reported but not applied.
+  test('deprecated council.master field is rejected', () => {
     const rawCouncilConfig = {
       master: { model: 'anthropic/claude-opus-4-6' },
       presets: {
@@ -1665,18 +1664,7 @@ describe('council agent model resolution', () => {
     };
 
     const parsed = CouncilConfigSchema.safeParse(rawCouncilConfig);
-    expect(parsed.success).toBe(true);
-
-    if (parsed.success) {
-      expect(parsed.data._deprecated).toEqual(['master']);
-      const config: PluginConfig = {
-        council: parsed.data,
-      };
-      const agents = createAgents(runtimeFor(config));
-      const council = agents.find((a) => a.name === 'council');
-      // Master is deprecated and no longer used for model fallback
-      expect(council?.config.model).toBe(DEFAULT_MODELS.council);
-    }
+    expect(parsed.success).toBe(false);
   });
 });
 

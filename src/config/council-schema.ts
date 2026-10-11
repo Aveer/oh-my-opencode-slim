@@ -68,9 +68,8 @@ export type CouncillorConfig = z.infer<typeof CouncillorConfigSchema>;
 /**
  * A named preset grouping several councillors.
  *
- * All keys are treated as councillor names mapping to councillor configs.
- * The reserved key `"master"` is silently ignored (legacy from when
- * council-master was a separate agent).
+ * All keys are treated as councillor names mapping to councillor configs;
+ * the legacy `master` key is rejected.
  */
 export const CouncilPresetSchema = z
   .record(z.string(), z.record(z.string(), z.unknown()))
@@ -78,31 +77,12 @@ export const CouncilPresetSchema = z
     const councillors: Record<string, CouncillorConfig> = {};
 
     for (const [key, raw] of Object.entries(entries)) {
-      // Silently skip the legacy "master" key - no longer parsed as a
-      // councillor. Old configs with per-preset master overrides won't
-      // error, but the override has no effect.
-      if (key === 'master') continue;
-
-      // Legacy nested format: old configs wrapped councillors in a
-      // "councillors" key inside each preset. Unwrap them into the
-      // parent so the config still works without migration.
-      if (key === 'councillors' && typeof raw === 'object' && raw !== null) {
-        for (const [innerKey, innerRaw] of Object.entries(
-          raw as Record<string, unknown>,
-        )) {
-          const innerParsed = CouncillorConfigSchema.safeParse(innerRaw);
-          if (!innerParsed.success) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: `Invalid councillor "${innerKey}" (nested under legacy "councillors" key): ${innerParsed.error.issues
-                .map((i) => i.message)
-                .join(', ')}`,
-            });
-            return z.NEVER;
-          }
-          councillors[innerKey] = innerParsed.data;
-        }
-        continue;
+      if (key === 'master') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'council.presets.<name>.master was removed',
+        });
+        return z.NEVER;
       }
 
       const parsed = CouncillorConfigSchema.safeParse(raw);
@@ -145,18 +125,18 @@ export const CouncilConfigSchema = z
   .object({
     presets: z.record(z.string(), CouncilPresetSchema),
     default_preset: z.string().default('default'),
+    master: z.never({ error: 'council.master was removed' }).optional(),
+    master_timeout: z
+      .never({ error: 'council.master_timeout was removed' })
+      .optional(),
+    master_fallback: z
+      .never({ error: 'council.master_fallback was removed' })
+      .optional(),
   })
   .passthrough()
-  .transform((data) => {
-    // Detect deprecated fields and attach warning for consumers
-    const deprecated: string[] = [];
-    if ('master' in data) deprecated.push('master');
-
-    return {
-      presets: data.presets,
-      default_preset: data.default_preset,
-      _deprecated: deprecated.length > 0 ? deprecated : undefined,
-    };
-  });
+  .transform((data) => ({
+    presets: data.presets,
+    default_preset: data.default_preset,
+  }));
 
 export type CouncilConfig = z.infer<typeof CouncilConfigSchema>;

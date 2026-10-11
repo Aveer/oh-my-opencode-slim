@@ -55,7 +55,6 @@ The config system follows a layered architecture:
 3. Merging Phase
     ├─ User config (base) + ancestor project configs (farthest to closest) → deep merge
    ├─ Preset resolution: preset → merge preset.agents with root agents
-   ├─ Legacy tmux → multiplexer migration for backward compatibility
    └─ Normalization: companion defaults, ACP agent defaults
 
 4. Runtime Phase
@@ -169,7 +168,6 @@ This allows consumers to import directly from `src/config` rather than individua
 - `disabled_commands`: List of slash commands to disable (`interview`, `deepwork`, `reflect`, `loop`)
 - Enum-backed disabled keys use whole-family replacement semantics: explicit `[]` overrides a lower layer, a mixed list replaces it with the valid subset, and a list containing only unknown names is treated as unset so the lower layer applies.
 - `multiplexer`: Unified pane management config (type, layout, sizes, viewer surface)
-- `tmux`: Legacy tmux configuration (migrated to multiplexer)
 - `interview`: Interview feature configuration
 - `backgroundJobs`: Background job configuration
 - `backgroundJobs.concurrency`: Optional default, provider, and model caps for native background task admission
@@ -199,7 +197,7 @@ This allows consumers to import directly from `src/config` rather than individua
 - `type`: "auto", "tmux", "zellij", "herdr", "cmux", "kitty", or "none" (client-local admission)
 - `layout`: Pane layout (main-horizontal, main-vertical, tiled, even-horizontal, even-vertical)
 - `main_pane_size`: Percentage for main pane (20-80), tmux main-* layouts only
-- `zellij_pane_mode`: **removed/deprecated** — stripped by `sanitizeMultiplexerConfig` with a once-per-process warning; zellij panes always open in the parent pane's tab
+- `zellij_pane_mode`: removed; rejected by schema
 
 ## Environment Variable Support
 
@@ -208,10 +206,8 @@ This allows consumers to import directly from `src/config` rather than individua
 
 ## Backward Compatibility
 
-- Legacy top-level `tmux` config key is **deprecated and ignored** (warning); use `multiplexer.*`
-- Deprecated `multiplexer.zellij_pane_mode` is stripped with a once-per-process warning; invalid `multiplexer` values disable pane management (`type: "none"`) with one diagnostic
-- Legacy nested `councillors` format in presets is automatically unwrapped
-- Legacy `master` field in council config is accepted but ignored (council agent synthesizes directly)
+- Top-level `tmux`, `multiplexer.zellij_pane_mode`, `council.master*`: removed; rejected by schema
+- Invalid `multiplexer` values disable pane management (`type: "none"`) with one diagnostic
 
 ## Error Handling
 

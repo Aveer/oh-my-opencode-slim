@@ -447,9 +447,6 @@ export class RuntimeConfig {
     const preset = this.council?.presets?.[presetName];
     if (preset) {
       for (const [seat, cfg] of Object.entries(preset)) {
-        if (seat === 'master') {
-          continue;
-        }
         const agentName = `councillor-${seat}`;
         if (disabled.has(agentName) || cfg.models.length <= 1) {
           continue;

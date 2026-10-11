@@ -1317,6 +1317,9 @@
             "tui",
             "mini"
           ]
+        },
+        "zellij_pane_mode": {
+          "not": {}
         }
       }
     },
@@ -1599,6 +1602,15 @@
             "retry-primary",
             "stick-to-fallback"
           ]
+        },
+        "timeoutMs": {
+          "not": {}
+        },
+        "retry_on_empty": {
+          "not": {}
+        },
+        "runtimeOverride": {
+          "not": {}
         }
       },
       "additionalProperties": false
@@ -1628,6 +1640,15 @@
         "default_preset": {
           "default": "default",
           "type": "string"
+        },
+        "master": {
+          "not": {}
+        },
+        "master_timeout": {
+          "not": {}
+        },
+        "master_fallback": {
+          "not": {}
         }
       },
       "required": [
@@ -1805,6 +1826,9 @@
         ],
         "additionalProperties": false
       }
+    },
+    "tmux": {
+      "not": {}
     }
   },
   "title": "oh-my-opencode-slim",
