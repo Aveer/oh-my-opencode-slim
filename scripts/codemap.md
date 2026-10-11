@@ -16,6 +16,12 @@ Maintain repository-level build, packaging, and release validation automation. G
     src/skills/codemap/SKILL.md, src/skills/simplify/SKILL.md, etc.).
   - Performs clean install smoke by importing the installed server entry with Node and the optional OpenTUI-backed
     ./tui entry with Bun in a temp project.
+- `check-companion-release.mjs`
+  - Queries the GitHub release API and verifies all five uploaded native archives.
+  - Retries 404/temporary HTTP and transport errors, but fails closed on
+    persistent API errors rather than triggering a spurious native patch build.
+  - Covered by `check-companion-release.test.ts` (complete, incomplete,
+    missing, transient failures, and authorization failures).
 - `verify-companion-source.mjs`
   - Compares release-affecting Rust/native assets and dependencies against the
     manifest's immutable Companion tag. Ignores only crate version stamps.
