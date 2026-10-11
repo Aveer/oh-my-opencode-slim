@@ -60,8 +60,7 @@ const targets = [
 const checksums = {};
 for (const target of targets) {
   const extension = target.includes('windows') ? 'zip' : 'tar.gz';
-  const archive =
-    `oh-my-opencode-slim-companion-v${version}-${target}.${extension}`;
+  const archive = `oh-my-opencode-slim-companion-v${version}-${target}.${extension}`;
   const path = join(assetsDir, archive);
   if (!existsSync(path)) {
     throw new Error(`Missing published Companion release asset: ${archive}`);
@@ -75,7 +74,7 @@ const manifestPath = 'src/companion/companion-manifest.json';
 const currentManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const manifest = {
   version,
-  tag: `companion-v${version}`, 
+  tag: `companion-v${version}`,
   repo: currentManifest.repo,
   checksums,
 };
