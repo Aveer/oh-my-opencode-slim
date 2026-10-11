@@ -16,6 +16,7 @@ on:
       - '.github/workflows/companion-auto-release.yml'
       - '.github/workflows/companion-release.yml'
       - 'scripts/verify-companion-source.mjs'
+      - 'scripts/check-companion-release.mjs'
       - 'scripts/prepare-companion-release.mjs'
   workflow_dispatch:
   # Recover incomplete uploads or pending manifest handoffs without manual polling.
@@ -73,32 +74,17 @@ jobs:
             exit "$source_status"
           fi
 
-          # Git tag creation and uploading five assets are separate operations.
-          # A crash in between MUST NOT be mistaken for a completed release.
-          complete=false
-          if release_json="$(gh release view "$tag" --json assets,isDraft 2>/dev/null)" &&
-             [ "$(printf '%s' "$release_json" | jq -r '.isDraft')" = "false" ]; then
-            mapfile -t published < <(printf '%s' "$release_json" | jq -r '.assets[].name')
-            complete=true
-            if [ "${#published[@]}" -ne 5 ]; then
-              complete=false
-            else
-              for target in \
-                aarch64-apple-darwin \
-                aarch64-unknown-linux-gnu \
-                x86_64-apple-darwin \
-                x86_64-pc-windows-msvc \
-                x86_64-unknown-linux-gnu; do
-                suffix=tar.gz
-                if [[ "$target" = *windows* ]]; then suffix=zip; fi
-                archive="oh-my-opencode-slim-companion-v${version}-${target}.${suffix}"
-                if ! printf '%s\n' "${published[@]}" | grep -Fxq "$archive"; then
-                  complete=false
-                  break
-                fi
-              done
-            fi
-          fi
+          # Release lookup must fail closed on GitHub API/transport errors.
+          # Only an actual missing or incomplete release triggers a new build.
+          release_state="$(node scripts/check-companion-release.mjs --tag="$tag")"
+          case "$release_state" in
+            complete) complete=true ;;
+            missing|incomplete) complete=false ;;
+            *)
+              echo "::error::Unrecognized Companion release state: $release_state"
+              exit 1
+              ;;
+          esac
 
           manifest_tag="$(node -p "JSON.parse(require('fs').readFileSync('src/companion/companion-manifest.json', 'utf8')).tag")"
           if [ "$source_status" -eq 2 ] || [ "$complete" != true ]; then
