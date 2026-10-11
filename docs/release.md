@@ -10,6 +10,62 @@ This project has two related release tracks:
 The companion uses separate versioning so the plugin can ship patches without
 rebuilding native binaries every time.
 
+## Automatic native Companion release (default)
+
+When native Companion sources change on `master`, the
+[`Companion Auto Release`](../.github/workflows/companion-auto-release.yml)
+workflow compares the tracked runtime inputs (including embedded animations)
+against the most recent `companion-vX.Y.Z` release tag. It also verifies that
+the release actually contains all five platform archives. When native sources
+are unchanged, the release is complete, and the packaged manifest is already
+aligned, the workflow does nothing.
+
+GitHub release lookup is fail-closed: missing or incomplete releases are
+handled as release work, but API outages, authentication errors, rate limits,
+and malformed responses do not trigger a new version. The lookup retries
+transient failures before reporting an error. An incomplete released tag is
+not overwritten; recovery uses a successor immutable patch.
+
+When native source changes require a release, the workflow automatically:
+
+1. Chooses the next Companion patch version and runs the reusable
+   [native release workflow](../.github/workflows/companion-release.yml) for
+   all five supported platforms.
+2. Stamps the release version into Cargo.toml/Cargo.lock in the build jobs
+   and into the immutable Git tag, so the tag identifies the actual sources.
+3. Publishes the GitHub release without overwriting an existing tag or binary.
+4. Downloads the **published** archives, computes SHA-256 hashes, and
+   generates matching JSON and TypeScript manifests along with the Cargo
+   version update.
+5. Runs release-manifest, native-source, lint, typecheck, and test validation,
+   then opens a bot PR with the synchronized manifest.
+
+**Crash recovery:** Every six hours (and on manual dispatch), the workflow
+rechecks the latest release. If a tag exists but its GitHub Release is missing
+or contains fewer than five archives, the next patch version is built rather
+than rewriting an immutable tag. If all archives are present but the manifest
+is still behind, the workflow resumes only the manifest stage; it reuses an
+existing sync branch/PR when available, avoiding repeated rebuilds.
+Native `cargo build` uses `--locked` on all five targets so dependency
+resolution agrees with the tagged `Cargo.lock`.
+
+Merge that generated PR before publishing the next plugin npm version.
+The normal `npm version` (via `preversion`) and `npm publish` (via
+`prepublishOnly`) paths both **fail closed** if any release-relevant native
+code, dependency, or bundled asset differs from the manifest's native tag.
+They also fail if the tag is unavailable (run `git fetch --tags origin`).
+This prevents another 0.1.3-to-0.1.4 or post-#1477 silent mismatch.
+
+**One-time repository prerequisite:** give GitHub Actions write permission to
+repository contents and enable **Allow GitHub Actions to create and approve
+pull requests** in Actions settings. If that permission is not enabled, the
+published native release remains available, but the bot's manifest branch is
+left for maintainers and the workflow reports a failure instead of pretending
+the handoff completed. Generated PRs require normal review and merge.
+
+The manual instructions below are for recovery or exceptional targeted builds,
+not a required routine step. A plugin-only change does not rebuild Companion.
+
 ## 1. Inspect the release diff
 
 Before writing release notes, inspect the actual changes between the previous
@@ -49,7 +105,7 @@ Use a plugin patch release for ordinary bug fixes and release-process fixes.
 Only bump the companion when the Rust companion changes or the plugin expects a
 new companion state protocol or asset set.
 
-## 3. Update companion references
+## 3. Update companion references (manual fallback)
 
 When releasing a new companion binary, update the packaged companion manifest:
 
@@ -103,7 +159,7 @@ oh-my-opencode-slim-companion-v0.1.3-aarch64-unknown-linux-gnu.tar.gz
 oh-my-opencode-slim-companion-v0.1.3-x86_64-pc-windows-msvc.zip
 ```
 
-## 4. Build and publish companion assets
+## 4. Build and publish companion assets (manual fallback)
 
 Trigger the manual workflow from the release-prep ref that contains the
 Companion changes. Building from the prep ref lets you publish the native
@@ -116,6 +172,10 @@ gh workflow run companion-release.yml \
   -f version=0.1.3 \
   -f targets=macos-arm64,macos-x64,linux-x64,linux-arm64,windows-x64
 ```
+
+The manual workflow publishes the GitHub release **only when all five targets**
+are built. Partial target runs are for debugging: they upload workflow artifacts
+but cannot create an incomplete immutable public Companion version.
 
 Watch the run:
 
@@ -154,8 +214,10 @@ bun run verify:companion-manifest
 
 The verifier fails if the Rust crate version, manifest version/tag, supported
 asset names, SHA256 values, or TypeScript fallback manifest drift apart.
-`npm publish` runs the same verification through `prepublishOnly`, so a plugin
-release cannot silently ship a stale Companion manifest.
+`npm publish` runs that manifest verification **and** `verify:companion-source`
+through `prepublishOnly`; `npm version` runs the source guard through
+`preversion`. Unlike the manifest-only check, the source guard detects native
+Rust/assets/dependency edits made after the release tag.
 
 ### Manual companion upload fallback
 
@@ -172,13 +234,8 @@ gh release create companion-v0.1.3 \
   /tmp/companion-v0.1.3-assets/*
 ```
 
-If the release already exists, upload with clobber:
-
-```bash
-gh release upload companion-v0.1.3 \
-  /tmp/companion-v0.1.3-assets/* \
-  --clobber
-```
+Never overwrite a published Companion version. If release assets are wrong,
+ship a new patch version with a new immutable tag instead.
 
 Then verify:
 
@@ -235,6 +292,7 @@ bun run typecheck
 bun test
 bun run build
 bun run verify:companion-manifest
+bun run verify:companion-source
 ```
 
 CI installs the Bun version pinned by `packageManager` in `package.json` and
