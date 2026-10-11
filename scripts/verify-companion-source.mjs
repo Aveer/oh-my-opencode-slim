@@ -13,6 +13,7 @@ function releaseRelevant(path) {
   return (
     path.startsWith('companion/src/') ||
     path.startsWith('companion/assets/') ||
+    path.startsWith('companion/animations/') ||
     path === 'companion/build.rs' ||
     path === 'companion/Cargo.toml' ||
     path === 'companion/Cargo.lock'
