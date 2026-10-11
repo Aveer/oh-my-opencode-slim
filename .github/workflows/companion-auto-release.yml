@@ -8,6 +8,7 @@ on:
     paths:
       - 'companion/src/**'
       - 'companion/assets/**'
+      - 'companion/animations/**'
       - 'companion/build.rs'
       - 'companion/Cargo.toml'
       - 'companion/Cargo.lock'
