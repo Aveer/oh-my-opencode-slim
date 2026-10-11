@@ -156,6 +156,10 @@ gh workflow run companion-release.yml \
   -f targets=macos-arm64,macos-x64,linux-x64,linux-arm64,windows-x64
 ```
 
+The manual workflow publishes the GitHub release **only when all five targets**
+are built. Partial target runs are for debugging: they upload workflow artifacts
+but cannot create an incomplete immutable public Companion version.
+
 Watch the run:
 
 ```bash
