@@ -82,8 +82,7 @@ for (const path of changed) {
     const released = git('show', `${tag}:${path}`);
     const current = existsSync(path) ? readFileSync(path, 'utf8').trim() : '';
     if (
-      withoutCrateVersion(path, released) !==
-      withoutCrateVersion(path, current)
+      withoutCrateVersion(path, released) !== withoutCrateVersion(path, current)
     ) {
       drift.push(path);
     }
