@@ -149,6 +149,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install locked dependencies
         run: bun ci
+      - name: Normalize generated manifest formatting
+        run: bunx biome format --write src/companion/updater.ts src/companion/companion-manifest.json
       - name: Verify generated release state
         run: |
           git fetch --tags origin
