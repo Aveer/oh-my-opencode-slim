@@ -49,26 +49,23 @@ function orchestratorPromptFor(hostFlavor?: string): string {
 }
 
 describe('delegationVocabulary', () => {
-  test("v2 → { tool: 'subagent', agentParam: 'agent', modelParam: 'model', resumeParam: 'sessionID' }", () => {
+  test("v2 → { tool: 'subagent', agentParam: 'agent', resumeParam: 'sessionID' }", () => {
     expect(delegationVocabulary('v2')).toEqual({
       tool: 'subagent',
       agentParam: 'agent',
-      modelParam: 'model',
       resumeParam: 'sessionID',
     });
   });
 
-  test("v1/default → { tool: 'task', agentParam: 'subagent_type', modelParam: undefined, resumeParam: 'task_id' }", () => {
+  test("v1/default → { tool: 'task', agentParam: 'subagent_type', resumeParam: 'task_id' }", () => {
     expect(delegationVocabulary(undefined)).toEqual({
       tool: 'task',
       agentParam: 'subagent_type',
-      modelParam: undefined,
       resumeParam: 'task_id',
     });
     expect(delegationVocabulary('v1')).toEqual({
       tool: 'task',
       agentParam: 'subagent_type',
-      modelParam: undefined,
       resumeParam: 'task_id',
     });
   });
@@ -113,7 +110,12 @@ describe('buildOrchestratorPrompt delegation vocabulary', () => {
       'Never use `task(..., task_id: ...)` to fetch output',
     );
     expect(prompt).toContain('any resume starts new model work');
-    expect(prompt).toContain('Prefer `task(..., background: true)`');
+    // The blanket prefer-background line is replaced by the two-channel rule;
+    // launch/poll mechanics stay with the host's tool description.
+    expect(prompt).toContain(
+      'Two-channel delegation: short work whose result feeds the next step → foreground',
+    );
+    expect(prompt).not.toContain('Prefer `task(..., background: true)`');
     expect(prompt).toContain('cannot receive another `task` call');
     expect(prompt).toContain(
       '`task_revive(task_id: "<task-id>", prompt: "...")`',
