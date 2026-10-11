@@ -100,7 +100,11 @@ export function createPipeline(options: PipelineOptions = {}): Pipeline {
   });
 
   const councilInject = createCouncilInjectHook({
-    wording: { tool: 'task', agentParam: 'subagent_type' },
+    wording: {
+      tool: 'task',
+      agentParam: 'subagent_type',
+      resumeParam: 'task_id',
+    },
   });
 
   // Goal pointer joins the mirror pipeline in src/index.ts order. Off by

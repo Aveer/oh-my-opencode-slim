@@ -431,10 +431,10 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
 ## Council Mode
 
 When the conversation calls for multi-model consensus, run this procedure:
-1. Embed a summary of any external sources into each councillor prompt (councillors cannot fetch).
+1. Embed a brief summary of needed context into each seat prompt (seats receive only their prompt).
 2. Dispatch the question to every council seat in parallel via task() — one call per seat.
 3. Collect all responses; retry an empty seat once; mark failed seats; do not wait on stragglers.
-4. Call task(subagent_type='council', description='Synthesize council report', prompt=<question + every seat response labeled by seat and model>) to synthesize, then present its report.
+4. Call task(subagent_type='council', description='Council synthesis', prompt=<question + final 'Seats: <id, id>' line listing each seat's returned task_id>) — the harness attaches their responses; do not paste them.
 </system-reminder>"
 ,
         "type": "text",

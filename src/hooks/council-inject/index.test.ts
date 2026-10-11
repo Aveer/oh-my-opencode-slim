@@ -97,6 +97,7 @@ describe('buildCouncilModeBlock', () => {
     const block = buildCouncilModeBlock({
       tool: 'subagent',
       agentParam: 'agent',
+      resumeParam: 'sessionID',
     });
 
     expect(block).toContain('## Council Mode');
@@ -112,6 +113,13 @@ describe('buildCouncilModeBlock', () => {
     expect(block).toMatch(
       /subagent\(agent='council', description='[^']+', prompt=/,
     );
+    // Harness assembly: the synthesis call carries only seat refs; the
+    // harness attaches the responses. Pinning both halves of the contract.
+    // Refs are the IDs the seat calls RETURN (P2: names would not resolve).
+    expect(block).toContain("'Seats: <id, id>' line");
+    expect(block).toContain(`each seat's returned sessionID`);
+    expect(block).toContain('the harness attaches their responses');
+    expect(block).toContain('do not paste them');
     // Seat names are not enumerated: the orchestrator's static seat pointer
     // already lists them, and duplicating them here invites drift.
     expect(block).not.toContain('councillor-a');
@@ -121,17 +129,84 @@ describe('buildCouncilModeBlock', () => {
     const block = buildCouncilModeBlock({
       tool: 'task',
       agentParam: 'subagent_type',
+      resumeParam: 'task_id',
     });
 
     expect(block).toContain('via task()');
     expect(block).toMatch(/task\(subagent_type='council', description=/);
     expect(block).not.toContain('subagent(');
+    // Same ref-passing contract as v2, in v1 vocabulary.
+    expect(block).toContain("'Seats: <id, id>' line");
+    expect(block).toContain(`each seat's returned task_id`);
+    expect(block).toContain('the harness attaches their responses');
+    expect(block).toContain('do not paste them');
+  });
+
+  test('ref-passing wording replaced the old paste-the-responses instruction', () => {
+    for (const wording of [
+      { tool: 'subagent', agentParam: 'agent', resumeParam: 'sessionID' },
+      { tool: 'task', agentParam: 'subagent_type', resumeParam: 'task_id' },
+    ]) {
+      const block = buildCouncilModeBlock(wording);
+      expect(block).not.toContain('every seat response labeled');
+      expect(block).not.toContain('Synthesize council report');
+    }
+  });
+
+  test('rendered block stays within the 599-character budget for both flavors', () => {
+    expect(
+      buildCouncilModeBlock({
+        tool: 'subagent',
+        agentParam: 'agent',
+        resumeParam: 'sessionID',
+      }).length,
+    ).toBeLessThanOrEqual(599);
+    expect(
+      buildCouncilModeBlock({
+        tool: 'task',
+        agentParam: 'subagent_type',
+        resumeParam: 'task_id',
+      }).length,
+    ).toBeLessThanOrEqual(599);
+  });
+
+  test('block bytes are pure and stable across repeated renders and transforms (cache safety)', async () => {
+    const wording = {
+      tool: 'subagent',
+      agentParam: 'agent',
+      resumeParam: 'sessionID',
+    };
+    // Pure function of the wording: repeated renders are byte-identical.
+    expect(buildCouncilModeBlock(wording)).toBe(buildCouncilModeBlock(wording));
+    const hook = createCouncilInjectHook({ wording });
+    const repeat = hook['experimental.chat.messages.transform'];
+    const render = () => ({
+      messages: [
+        {
+          info: { role: 'user', agent: 'orchestrator', sessionID: 's1' },
+          parts: [{ type: 'text', text: 'run a council on this' }],
+        },
+      ],
+    });
+    const first = render();
+    await repeat({}, first);
+    const second = render();
+    await repeat({}, second);
+    await repeat({}, second);
+    // Same bytes at the same position on every first hit, and a repeated
+    // transform on one payload never mutates them.
+    expect(second.messages[0].parts[1]).toEqual(first.messages[0].parts[1]);
+    expect(second.messages[0].parts[1].text).toContain('## Council Mode');
   });
 });
 
 describe('createCouncilInjectHook', () => {
   const hook = createCouncilInjectHook({
-    wording: { tool: 'subagent', agentParam: 'agent' },
+    wording: {
+      tool: 'subagent',
+      agentParam: 'agent',
+      resumeParam: 'sessionID',
+    },
   });
   const transform = hook['experimental.chat.messages.transform'];
 

@@ -80,6 +80,10 @@ export function matchesCouncilTrigger(text: string): boolean {
 export interface CouncilWording {
   tool: string;
   agentParam: string;
+  /** The session-ID parameter name the seat dispatches return (v2
+   * `sessionID`, v1 `task_id`) — step 4 names it so the model knows
+   * exactly which value to list on the Seats line. */
+  resumeParam: string;
 }
 
 /**
@@ -100,10 +104,10 @@ export function buildCouncilModeBlock(wording: CouncilWording): string {
     '## Council Mode',
     '',
     'When the conversation calls for multi-model consensus, run this procedure:',
-    '1. Embed a summary of any external sources into each councillor prompt (councillors cannot fetch).',
+    '1. Embed a brief summary of needed context into each seat prompt (seats receive only their prompt).',
     `2. Dispatch the question to every council seat in parallel via ${wording.tool}() — one call per seat.`,
     '3. Collect all responses; retry an empty seat once; mark failed seats; do not wait on stragglers.',
-    `4. Call ${wording.tool}(${wording.agentParam}='council', description='Synthesize council report', prompt=<question + every seat response labeled by seat and model>) to synthesize, then present its report.`,
+    `4. Call ${wording.tool}(${wording.agentParam}='council', description='Council synthesis', prompt=<question + final 'Seats: <id, id>' line listing each seat's returned ${wording.resumeParam}>) — the harness attaches their responses; do not paste them.`,
   ].join('\n');
 }
 
