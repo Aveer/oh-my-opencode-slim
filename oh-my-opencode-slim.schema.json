@@ -1633,7 +1633,9 @@
           "additionalProperties": {
             "type": "object",
             "propertyNames": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?!master$)",
+              "description": "Councillor name; the legacy \"master\" key was removed"
             },
             "additionalProperties": {
               "type": "object",

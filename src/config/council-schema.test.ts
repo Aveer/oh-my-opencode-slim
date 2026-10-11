@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { z } from 'zod';
 import {
   CouncilConfigSchema,
   type CouncillorConfig,
@@ -59,6 +60,15 @@ test('preset with legacy "master" key is rejected', () => {
 
   const result = CouncilConfigSchema.safeParse(config);
   expect(result.success).toBe(false);
+});
+
+test('published schema rejects the legacy "master" preset key (propertyNames)', () => {
+  // Greptile P2: the rejection must be visible to editors, not just the
+  // loader — the key-level regex renders as propertyNames.pattern.
+  const generated = z.toJSONSchema(CouncilPresetSchema, { io: 'input' }) as {
+    propertyNames: { pattern?: string };
+  };
+  expect(generated.propertyNames.pattern).toBe('^(?!master$)');
 });
 
 test('rejects empty model string', () => {

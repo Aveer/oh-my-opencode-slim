@@ -68,23 +68,28 @@ export type CouncillorConfig = z.infer<typeof CouncillorConfigSchema>;
 /**
  * A named preset grouping several councillors.
  *
- * All keys are treated as councillor names mapping to councillor configs;
- * the legacy `master` key is rejected.
+ * All keys are treated as councillor names mapping to councillor configs.
+ * The legacy `master` key is rejected at the key level, so the restriction
+ * is visible in the published JSON schema (propertyNames.pattern) too.
  */
 export const CouncilPresetSchema = z
-  .record(z.string(), z.record(z.string(), z.unknown()))
+  .record(
+    z
+      .string()
+      .regex(/^(?!master$)/)
+      .describe('Councillor name; the legacy "master" key was removed'),
+    z.record(z.string(), z.unknown()),
+    {
+      error: (iss) =>
+        iss.code === 'invalid_key'
+          ? 'the legacy "master" preset key was removed'
+          : undefined,
+    },
+  )
   .transform((entries, ctx) => {
     const councillors: Record<string, CouncillorConfig> = {};
 
     for (const [key, raw] of Object.entries(entries)) {
-      if (key === 'master') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'council.presets.<name>.master was removed',
-        });
-        return z.NEVER;
-      }
-
       const parsed = CouncillorConfigSchema.safeParse(raw);
       if (!parsed.success) {
         ctx.addIssue({
