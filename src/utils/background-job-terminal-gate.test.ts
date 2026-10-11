@@ -1853,3 +1853,108 @@ describe('terminal gate observability (INFO logs)', () => {
     }
   });
 });
+
+describe('outcome corroboration (log-only mirror)', () => {
+  function captureLogs() {
+    const entries: Array<{ message: string; data: unknown }> = [];
+    const spy = spyOn(loggerModule, 'log').mockImplementation(
+      (message: string, data?: unknown) => {
+        entries.push({ message, data });
+      },
+    );
+    return {
+      entries,
+      of: (message: string) =>
+        entries.filter((entry) => entry.message === message),
+      restore: () => spy.mockRestore(),
+    };
+  }
+
+  test('divergent host outcome is logged and never changes publication', async () => {
+    const capture = captureLogs();
+    try {
+      const h = harness({
+        baselineFor: () => undefined,
+        readTerminalEvidence: async () => ({ data: [] }),
+      });
+      const token = h.gate.capture(h.run);
+      if (!token) throw new Error('missing observation');
+      h.gate.observe(token, {
+        kind: 'quiescent',
+        origin: 'host-outcome',
+        readStartedAt: token.readStartedAt,
+        stable: true,
+        terminalOutcome: 'failed',
+      });
+      h.advance(20);
+      const lease = h.board.acquireCancellationLease(
+        h.run.taskID,
+        h.run.generation,
+      );
+      if (!lease) throw new Error('missing cancellation lease');
+      const result = await h.gate.reconcile(h.run, {
+        kind: 'cancel',
+        lease,
+        reason: 'user requested',
+      });
+      expect(result.kind).toBe('committed');
+      expect(h.board.get(h.run.taskID)?.state).toBe('cancelled');
+      const entries = capture.of('[terminal-gate] outcome corroboration');
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.data).toMatchObject({
+        taskID: h.run.taskID,
+        generation: h.run.generation,
+        published: 'cancelled',
+        attribution: 'event',
+        hostOutcome: 'failed',
+        hostImpliedState: 'error',
+      });
+    } finally {
+      capture.restore();
+    }
+  });
+
+  test('agreeing host outcome publishes silently', async () => {
+    const capture = captureLogs();
+    try {
+      const h = harness({
+        hostOutcomeClock: 'shared-unix-ms',
+        baselineFor: () => undefined,
+        readTerminalEvidence: async () => ({ data: [] }),
+        input: {
+          client: {
+            session: {
+              get: async () => ({
+                data: { outcome: 'failed', time: { idle: 50 } },
+              }),
+            },
+          },
+        } as never,
+      });
+      h.observe('quiescent');
+      h.advance(61);
+      await h.gate.reconcile(h.run);
+      expect(h.board.get(h.run.taskID)?.state).toBe('error');
+      expect(capture.of('[terminal-gate] outcome corroboration')).toHaveLength(
+        0,
+      );
+    } finally {
+      capture.restore();
+    }
+  });
+
+  test('a host without session.get never produces a corroboration entry', async () => {
+    const capture = captureLogs();
+    try {
+      const h = harness();
+      h.observe('quiescent');
+      await h.gate.reconcile(h.run);
+      expect(h.board.get(h.run.taskID)?.state).toBe('completed');
+      expect(capture.of('[terminal-gate] outcome corroboration')).toHaveLength(
+        0,
+      );
+    } finally {
+      capture.restore();
+    }
+  });
+});
