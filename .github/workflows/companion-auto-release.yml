@@ -1,0 +1,144 @@
+name: Companion Auto Release
+
+# Native sources may land between npm releases, but npm must never ship an older
+# Companion binary than the native sources included in that plugin release.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'companion/src/**'
+      - 'companion/assets/**'
+      - 'companion/build.rs'
+      - 'companion/Cargo.toml'
+      - 'companion/Cargo.lock'
+      # Bootstrap immediately when this workflow is first merged.
+      - '.github/workflows/companion-auto-release.yml'
+      - '.github/workflows/companion-release.yml'
+      - 'scripts/verify-companion-source.mjs'
+      - 'scripts/prepare-companion-release.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Do not race two releases against the same last published Companion tag.
+concurrency:
+  group: companion-native-release
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      next_version: ${{ steps.check.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect native changes since the published binary
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(git tag -l 'companion-v[0-9]*' | sort -V | tail -n 1)"
+          if [ -z "$tag" ]; then
+            echo "::error::No native Companion release tag found."
+            exit 1
+          fi
+
+          set +e
+          node scripts/verify-companion-source.mjs --tag="$tag"
+          status=$?
+          set -e
+          case "$status" in
+            0)
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            2) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+          version="${tag#companion-v}"
+          IFS='.' read -r major minor patch <<< "$version"
+          if [[ ! "$major" =~ ^[0-9]+$ ||
+                ! "$minor" =~ ^[0-9]+$ ||
+                ! "$patch" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unexpected Companion tag: $tag"
+            exit 1
+          fi
+          echo "next_version=$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
+
+  native_release:
+    needs: detect
+    if: ${{ needs.detect.outputs.changed == 'true' }}
+    uses: ./.github/workflows/companion-release.yml
+    with:
+      version: ${{ needs.detect.outputs.next_version }}
+      targets: macos-arm64,macos-x64,linux-x64,linux-arm64,windows-x64
+    permissions:
+      contents: write
+
+  sync_manifest:
+    needs: [detect, native_release]
+    if: ${{ needs.native_release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download published native release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "companion-v$VERSION" --dir release-assets
+
+      - name: Generate Cargo version and both manifest copies from published assets
+        env:
+          VERSION: ${{ needs.detect.outputs.next_version }}
+        run: node scripts/prepare-companion-release.mjs --version="$VERSION" --assets-dir=release-assets
+
+      - uses: oven-sh/setup-bun@v2
+      - name: Install locked dependencies
+        run: bun ci
+      - name: Verify generated release state
+        run: |
+          git fetch --tags origin
+          bun run verify:companion-manifest
+          bun run verify:companion-source
+          bun run check:ci
+          bun run typecheck
+          bun test
+
+      - name: Open release synchronization PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          branch="chore/companion-v$VERSION-manifest"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add companion/Cargo.toml companion/Cargo.lock \
+            src/companion/companion-manifest.json src/companion/updater.ts
+          git commit -m "chore(companion): sync published native v$VERSION"
+          git push origin "$branch"
+
+          body="Generated from the *published* companion-v$VERSION release assets.\n\nNative code provenance is verified against the release tag; SHA-256 hashes were calculated from the uploaded archives.\n\nThe official OMO Slim npm release is blocked until this PR is merged.\n\nRefs #1427."
+          if ! gh pr create --base master --head "$branch" \
+            --title "chore(companion): sync native v$VERSION release" \
+            --body "$(printf '%b' "$body")"; then
+            echo "::error::Release assets are published, but the manifest PR could not be opened. Enable GitHub Actions PR creation under Actions settings; the prepared branch remains available."
+            exit 1
+          fi
