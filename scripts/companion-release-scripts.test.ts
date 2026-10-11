@@ -63,7 +63,10 @@ test('native source check rejects post-release Rust changes', () => {
   const root = fixture();
   try {
     expect(check(root).status).toBe(0);
-    writeFileSync(join(root, 'companion', 'src', 'main.rs'), 'fn main() { println!("new"); }\n');
+    writeFileSync(
+      join(root, 'companion', 'src', 'main.rs'),
+      'fn main() { println!("new"); }\n',
+    );
     const result = check(root);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('main.rs');
@@ -95,7 +98,7 @@ test('native source check rejects dependency changes and missing tags', () => {
     const cargoPath = join(root, 'companion', 'Cargo.toml');
     writeFileSync(
       cargoPath,
-      readFileSync(cargoPath, 'utf8') + 'winit = "0.30"\n',
+      `${readFileSync(cargoPath, 'utf8')}winit = "0.30"\n`,
     );
     expect(check(root).status).toBe(2);
     git(root, 'tag', '-d', 'companion-v0.1.4');
@@ -121,9 +124,9 @@ test('release preparation reads real archive hashes and synchronizes both manife
         join(
           root,
           'assets',
-          'oh-my-opencode-slim-companion-v0.1.5-' + target + '.' + suffix,
+          `oh-my-opencode-slim-companion-v0.1.5-${target}.${suffix}`,
         ),
-        'archive bytes for ' + target,
+        `archive bytes for ${target}`,
       );
     }
 
@@ -148,9 +151,9 @@ test('release preparation reads real archive hashes and synchronizes both manife
     expect(
       readFileSync(join(root, 'src', 'companion', 'updater.ts'), 'utf8'),
     ).toContain(digest);
-    expect(readFileSync(join(root, 'companion', 'Cargo.lock'), 'utf8')).toContain(
-      'version = "0.1.5"',
-    );
+    expect(
+      readFileSync(join(root, 'companion', 'Cargo.lock'), 'utf8'),
+    ).toContain('version = "0.1.5"');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
