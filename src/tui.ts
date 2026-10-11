@@ -540,6 +540,20 @@ export interface SidebarSessionTarget {
   agentName: string;
   alias?: string;
   status?: 'busy' | 'retry' | 'reusable' | 'stopped';
+  /**
+   * 1-based position among the active sessions of the same agent sharing
+   * this session's parent scope. Present only when that scope runs more
+   * than one: parallel same-agent dispatches read as siblings, not nesting.
+   */
+  siblingOrdinal?: number;
+  /** Active same-agent sibling count of this session's parent scope. */
+  siblingTotal?: number;
+  /**
+   * Display name of the intermediate parent when this row is nested
+   * depth-2 (its parent is itself a managed child session, e.g. a
+   * specialist rather than the orchestrator). Human-facing only.
+   */
+  viaParent?: string;
 }
 
 export interface SidebarAgentTargets {
@@ -585,9 +599,83 @@ export function getSidebarAgentTargets(
   return [...byAgent.entries()].map(([agentName, sessions]) => ({
     agentName,
     sessions: disambiguateDuplicateAliases(
-      sessions.sort(compareSidebarTargets),
+      annotateSiblingAttribution(
+        snapshot,
+        sessions.sort(compareSidebarTargets),
+      ),
     ),
   }));
+}
+
+/**
+ * Sibling attribution for parallel same-agent dispatches (human-facing
+ * display only; never injected into model context). Within one agent
+ * group, ACTIVE sessions sharing a parent scope get 1-based ordinals when
+ * that scope runs more than one ("explorer 1/2"), and a session whose
+ * parent is itself a managed child session (depth-2 nesting, e.g.
+ * dispatched by a specialist rather than the orchestrator) gets a
+ * "via <parent>" marker so true nesting stays visibly distinct from
+ * sibling dispatch. Terminal history rows never join a sibling count.
+ */
+function annotateSiblingAttribution(
+  snapshot: TuiSnapshot,
+  sessions: SidebarSessionTarget[],
+): SidebarSessionTarget[] {
+  const isActive = (session: SidebarSessionTarget): boolean =>
+    session.status !== 'reusable' && session.status !== 'stopped';
+  const totals = new Map<string, number>();
+  for (const session of sessions) {
+    if (!isActive(session)) continue;
+    const parent = snapshot.sessionParents[session.sessionID];
+    if (parent !== undefined) totals.set(parent, (totals.get(parent) ?? 0) + 1);
+  }
+  const ordinals = new Map<string, number>();
+  return sessions.map((session) => {
+    const parent = snapshot.sessionParents[session.sessionID];
+    const next: SidebarSessionTarget = { ...session };
+    delete next.siblingOrdinal;
+    delete next.siblingTotal;
+    delete next.viaParent;
+    if (parent === undefined) return next;
+    const total = totals.get(parent);
+    if (isActive(session) && total !== undefined && total > 1) {
+      const ordinal = (ordinals.get(parent) ?? 0) + 1;
+      ordinals.set(parent, ordinal);
+      next.siblingOrdinal = ordinal;
+      next.siblingTotal = total;
+    }
+    const grandparent = snapshot.sessionParents[parent];
+    if (grandparent !== undefined && grandparent !== parent) {
+      // Same display name the parent's own row uses: live board alias, else
+      // the board alias from the grandparent's reusable list (the parent may
+      // be idle by the time the child row renders), else the short id suffix
+      // (already the distinguishing tail, never the shared prefix).
+      const boardAlias = Object.values(
+        snapshot.reusableByAgent[grandparent] ?? {},
+      )
+        .flat()
+        .find((entry) => entry.taskID === parent)?.alias;
+      next.viaParent =
+        snapshot.sessionDetails[parent]?.alias ??
+        boardAlias ??
+        shortSessionID(parent);
+    }
+    return next;
+  });
+}
+
+/** "1/2" sibling ordinal plus the depth-2 "via <parent>" nesting marker,
+ * joined for the sidebar row annotation. Undefined when neither applies. */
+export function sidebarSiblingAnnotation(
+  target: SidebarSessionTarget,
+): string | undefined {
+  const parts = [
+    target.siblingOrdinal !== undefined && target.siblingTotal !== undefined
+      ? `${target.siblingOrdinal}/${target.siblingTotal}`
+      : undefined,
+    target.viaParent !== undefined ? `via ${target.viaParent}` : undefined,
+  ].filter((part) => part !== undefined);
+  return parts.length > 0 ? parts.join(' ') : undefined;
 }
 
 /** When two sessions share an alias (nested branches), append a short id. */
@@ -1179,6 +1267,7 @@ function sessionTargetRow(
   hasSelectedText?: () => boolean,
 ): JSX.Element {
   const label = target.alias ?? shortSessionID(target.sessionID);
+  const annotation = sidebarSiblingAnnotation(target);
   const reusable = target.status === 'reusable';
   const stopped = target.status === 'stopped';
   const indicatorColor =
@@ -1218,6 +1307,19 @@ function sessionTargetRow(
         },
         [label],
       ),
+      ...(annotation !== undefined
+        ? [
+            text(
+              {
+                fg: theme.textMuted,
+                flexShrink: 1,
+                wrapMode: 'none',
+                truncate: true,
+              },
+              [` ${annotation}`],
+            ),
+          ]
+        : []),
     ],
   );
   return decorateInteractiveRow(row, {
@@ -1400,17 +1502,23 @@ export function renderSidebar(
                         : 'reusable',
                 }),
               );
-            const allTargets = [...sessions, ...reusableTargets];
+            const mergedTargets = [...sessions, ...reusableTargets];
             const history = reusableTargets.some(
               (target) =>
                 target.status === 'reusable' || target.status === 'stopped',
             );
             const clickable =
-              interaction?.navigate !== undefined && allTargets.length > 0;
+              interaction?.navigate !== undefined && mergedTargets.length > 0;
             const expanded =
-              allTargets.length > 1 &&
+              mergedTargets.length > 1 &&
               clickable &&
               expandedAgents.has(agentName);
+            // Only annotate when the rows are actually rendered: a collapsed
+            // agent row never reaches sessionTargetRow, so computing the
+            // sibling/via annotation there is wasted work on every tick.
+            const allTargets = expanded
+              ? annotateSiblingAttribution(snapshot, mergedTargets)
+              : mergedTargets;
             const onAgentClick = clickable
               ? () => {
                   if (allTargets.length === 1) {
