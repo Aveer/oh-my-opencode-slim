@@ -55,7 +55,7 @@ function fixture(): string {
   return root;
 }
 
-function check(root: string): ReturnType<typeof spawnSync> {
+function check(root: string) {
   return spawnSync('node', [sourceCheck], { cwd: root, encoding: 'utf8' });
 }
 
