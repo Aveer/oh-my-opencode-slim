@@ -23,6 +23,7 @@ function git(cwd: string, ...args: string[]): void {
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'omo-companion-release-'));
   mkdirSync(join(root, 'companion', 'src'), { recursive: true });
+  mkdirSync(join(root, 'companion', 'animations'), { recursive: true });
   mkdirSync(join(root, 'src', 'companion'), { recursive: true });
   writeFileSync(
     join(root, 'companion', 'Cargo.toml'),
@@ -33,6 +34,7 @@ function fixture(): string {
     '[[package]]\nname = "oh-my-opencode-slim-companion"\nversion = "0.1.4"\n',
   );
   writeFileSync(join(root, 'companion', 'src', 'main.rs'), 'fn main() {}\n');
+  writeFileSync(join(root, 'companion', 'animations', 'intro.jpg'), 'frame-v1');
   writeFileSync(
     join(root, 'src', 'companion', 'companion-manifest.json'),
     JSON.stringify({
@@ -70,6 +72,22 @@ test('native source check rejects post-release Rust changes', () => {
     const result = check(root);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('main.rs');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('native source check detects changes to embedded Companion sprites', () => {
+  const root = fixture();
+  try {
+    expect(check(root).status).toBe(0);
+    writeFileSync(
+      join(root, 'companion', 'animations', 'intro.jpg'),
+      'frame-v2',
+    );
+    const result = check(root);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('animations/intro.jpg');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
