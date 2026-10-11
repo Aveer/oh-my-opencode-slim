@@ -14,11 +14,13 @@ rebuilding native binaries every time.
 
 When native Companion sources change on `master`, the
 [`Companion Auto Release`](../.github/workflows/companion-auto-release.yml)
-workflow compares the tracked runtime inputs against the most recent
-`companion-vX.Y.Z` release tag. If the actual native source is unchanged
-(for example only `Cargo.toml`'s crate version changed), it does nothing.
+workflow compares the tracked runtime inputs (including embedded animations)
+against the most recent `companion-vX.Y.Z` release tag. It also verifies that
+the release actually contains all five platform archives. When native sources
+are unchanged, the release is complete, and the packaged manifest is already
+aligned, the workflow does nothing.
 
-When the native source **has** changed, the workflow automatically:
+When native source changes require a release, the workflow automatically:
 
 1. Chooses the next Companion patch version and runs the reusable
    [native release workflow](../.github/workflows/companion-release.yml) for
@@ -31,6 +33,15 @@ When the native source **has** changed, the workflow automatically:
    version update.
 5. Runs release-manifest, native-source, lint, typecheck, and test validation,
    then opens a bot PR with the synchronized manifest.
+
+**Crash recovery:** Every six hours (and on manual dispatch), the workflow
+rechecks the latest release. If a tag exists but its GitHub Release is missing
+or contains fewer than five archives, the next patch version is built rather
+than rewriting an immutable tag. If all archives are present but the manifest
+is still behind, the workflow resumes only the manifest stage; it reuses an
+existing sync branch/PR when available, avoiding repeated rebuilds.
+Native `cargo build` uses `--locked` on all five targets so dependency
+resolution agrees with the tagged `Cargo.lock`.
 
 Merge that generated PR before publishing the next plugin npm version.
 The normal `npm version` (via `preversion`) and `npm publish` (via
