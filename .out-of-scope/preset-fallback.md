@@ -27,4 +27,4 @@ The maintainer chose not to take on that design/implementation as `wontfix`
 
 ## Prior requests
 
-- #638 — "Support preset fallback and document preset-scoped mode"
+- #638 — "Support preset fallback and document preset-scoped model chains"
