@@ -1,6 +1,6 @@
 # Restricting or Wrapping OpenCode Core Tools
 
-This project does not wrap, hide, or restrict OpenCode core tools, such as preventing agents from disabling autocontinue.
+This project does not globally wrap, hide, or disable OpenCode core tools, such as preventing agents from disabling autocontinue. Per-agent deny rules (e.g. the council agent's synthesis-only permissions) remain supported.
 
 ## Why this is out of scope
 
