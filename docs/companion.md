@@ -341,8 +341,10 @@ linux-arm64
 windows-x64
 ```
 
-The manual workflow creates a new immutable `companion-v<version>` release and
-uploads the selected archives; it refuses to overwrite an existing version.
+The manual workflow publishes a new immutable `companion-v<version>` release
+only when **all five supported targets** are built. Single-target test runs
+produce workflow artifacts only, never an incomplete public release. Existing
+release versions/tags are not overwritten.
 
 ### 3. Verify release assets
 
