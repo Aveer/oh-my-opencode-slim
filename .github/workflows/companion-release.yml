@@ -1,6 +1,14 @@
 name: Companion Release
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      targets:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       version:
@@ -20,10 +28,12 @@ permissions:
 jobs:
   macos-arm64:
     name: macOS arm64
-    if: contains(github.event.inputs.targets, 'macos-arm64')
+    if: contains(inputs.targets, 'macos-arm64')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Companion crate version for this release
+        run: node scripts/prepare-companion-release.mjs --version="${{ inputs.version }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
@@ -33,7 +43,7 @@ jobs:
       - name: Package companion
         run: |
           set -euo pipefail
-          version='${{ github.event.inputs.version }}'
+          version='${{ inputs.version }}'
           target='aarch64-apple-darwin'
           name="oh-my-opencode-slim-companion-v${version}-${target}"
           mkdir -p dist
@@ -46,10 +56,12 @@ jobs:
 
   macos-x64:
     name: macOS x64
-    if: contains(github.event.inputs.targets, 'macos-x64')
+    if: contains(inputs.targets, 'macos-x64')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Companion crate version for this release
+        run: node scripts/prepare-companion-release.mjs --version="${{ inputs.version }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
@@ -59,7 +71,7 @@ jobs:
       - name: Package companion
         run: |
           set -euo pipefail
-          version='${{ github.event.inputs.version }}'
+          version='${{ inputs.version }}'
           target='x86_64-apple-darwin'
           name="oh-my-opencode-slim-companion-v${version}-${target}"
           mkdir -p dist
@@ -72,10 +84,12 @@ jobs:
 
   linux-x64:
     name: Linux x64
-    if: contains(github.event.inputs.targets, 'linux-x64')
+    if: contains(inputs.targets, 'linux-x64')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Companion crate version for this release
+        run: node scripts/prepare-companion-release.mjs --version="${{ inputs.version }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
@@ -89,7 +103,7 @@ jobs:
       - name: Package companion
         run: |
           set -euo pipefail
-          version='${{ github.event.inputs.version }}'
+          version='${{ inputs.version }}'
           target='x86_64-unknown-linux-gnu'
           name="oh-my-opencode-slim-companion-v${version}-${target}"
           mkdir -p dist
@@ -102,10 +116,12 @@ jobs:
 
   linux-arm64:
     name: Linux arm64
-    if: contains(github.event.inputs.targets, 'linux-arm64')
+    if: contains(inputs.targets, 'linux-arm64')
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+      - name: Set Companion crate version for this release
+        run: node scripts/prepare-companion-release.mjs --version="${{ inputs.version }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-unknown-linux-gnu
@@ -119,7 +135,7 @@ jobs:
       - name: Package companion
         run: |
           set -euo pipefail
-          version='${{ github.event.inputs.version }}'
+          version='${{ inputs.version }}'
           target='aarch64-unknown-linux-gnu'
           name="oh-my-opencode-slim-companion-v${version}-${target}"
           mkdir -p dist
@@ -132,10 +148,12 @@ jobs:
 
   windows-x64:
     name: Windows x64
-    if: contains(github.event.inputs.targets, 'windows-x64')
+    if: contains(inputs.targets, 'windows-x64')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Companion crate version for this release
+        run: node scripts/prepare-companion-release.mjs --version="${{ inputs.version }}"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -145,7 +163,7 @@ jobs:
       - name: Package companion
         shell: pwsh
         run: |
-          $version = '${{ github.event.inputs.version }}'
+          $version = '${{ inputs.version }}'
           $target = 'x86_64-pc-windows-msvc'
           $name = "oh-my-opencode-slim-companion-v$version-$target"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
@@ -175,14 +193,16 @@ jobs:
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event.inputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           tag="companion-v${VERSION}"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
-              --target "$GITHUB_SHA" \
-              --title "Companion v${VERSION}" \
-              --notes "Manual companion binary release for oh-my-opencode-slim."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Refusing to replace immutable Companion release: $tag" >&2
+            exit 1
           fi
-          gh release upload "$tag" artifacts/* --clobber
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "Companion v${VERSION}" \
+            --notes "Native companion binary release for oh-my-opencode-slim."
+          gh release upload "$tag" artifacts/*
