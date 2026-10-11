@@ -60,6 +60,10 @@ test('missing, draft, zero-size and not-yet-uploaded assets are incomplete', () 
   const queued = publishedRelease();
   queued.assets[0].state = 'new';
   expect(classifyCompanionRelease(queued, tag)).toBe('incomplete');
+
+  const malformed = publishedRelease();
+  malformed.assets[0].size = undefined;
+  expect(classifyCompanionRelease(malformed, tag)).toBe('incomplete');
 });
 
 test('successful GitHub API lookup returns complete without a rebuild', async () => {
