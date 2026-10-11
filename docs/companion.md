@@ -243,6 +243,14 @@ Automatic native updates only use release archives listed in the packaged
 companion manifest, and every archive must have a matching SHA256 checksum.
 Custom binaries configured with `companion.binaryPath` are never overwritten.
 
+On merged changes to native Companion sources, the upstream release automation
+builds the five platform archives, publishes a new immutable native release,
+and proposes a generated manifest update. `npm version` and `npm publish` are
+blocked whenever tracked native sources are newer than the manifest's release
+tag. After the generated manifest PR is merged and a new npm plugin release is
+published, managed Companion installs update without any manual `.exe` or
+`.exe.json` manipulation. See [release process](release.md).
+
 ---
 
 ## V2 Release Strategy
@@ -333,8 +341,8 @@ linux-arm64
 windows-x64
 ```
 
-The workflow creates or updates the `companion-v<version>` release and uploads
-the selected archives.
+The manual workflow creates a new immutable `companion-v<version>` release and
+uploads the selected archives; it refuses to overwrite an existing version.
 
 ### 3. Verify release assets
 
@@ -369,7 +377,11 @@ continues without enabling Companion.
 
 ### Cost controls
 
-- The workflow uses `workflow_dispatch` only. It never runs on push, PR, or tag.
-- Build a single target while testing.
-- Reuse one companion release across many plugin betas.
-- Add more targets only when you are ready to support those users.
+- The automatic workflow runs only on `master` after a native runtime source
+  change, or when explicitly dispatched. It checks for actual source drift
+  before building so version-only synchronization commits do not trigger
+  another release.
+- A new public native release builds all five platforms for consistent coverage.
+- Plugin-only releases reuse the most recent native release without rebuilding.
+- The manual workflow still supports selected targets for exceptional debugging;
+  it refuses to overwrite an already published release/tag.
