@@ -1,18 +1,22 @@
 # Plugin-Side Agent & Prompt Hot-Reloading
 
-This project does not implement plugin-level live reloading or file watching for agent configurations and prompts.
+This project does not implement plugin-level live reloading or file watching for structural agent definitions, system prompts, or tool rosters.
 
 ## Why this is out of scope
 
-Agent definitions, tools, and system prompts are compiled and bundled into `dist/index.js`, registered synchronously once during OpenCode's plugin initialization phase (`src/index.ts`, `src/agents/index.ts`).
+Issue #95 requested live editing of agents, sub-agents, and prompts without restarting OpenCode (e.g. tweaking orchestrator delegation prompts, editing agent instructions, or adding new sub-agents on the fly).
 
-Adding live hot-reloading (watching `oh-my-opencode-slim.json` or custom prompt files and updating agent definitions without restarting OpenCode) faces hard technical barriers in OpenCode's plugin architecture:
+### What OpenCode v2 supports vs. what remains out of scope
 
-- OpenCode's plugin SDK (`@opencode-ai/plugin`) provides no hook for partial agent re-registration or dynamic agent schema updates.
-- The only reload path available to plugins (`client.config.update()`) disposes the existing instance without re-executing the full plugin bootstrap that registers agents, causing custom agents to vanish from the autocomplete list.
-- Mutating system prompts mid-session violates prompt-cache stability. Any modification to an active session's system prompt or toolset invalidates provider prefix caches across all subsequent turns.
+OpenCode v2 introduced `ctx.agent.reload()` and `AgentDraft.update()` in `@opencode-ai/plugin` v2. On v2 hosts, `oh-my-opencode-slim` takes advantage of this for **runtime profiles only** (`src/v2/config-watch.ts` and `src/v2/runtime-profiles.ts`):
 
-Proper instance reloading must be handled upstream by OpenCode core (such as native `/reload` slash commands that re-instantiate plugin processes cleanly, tracked in `anomalyco/opencode#9871` and `#8751`). The plugin will not monkey-patch file watchers or mutable prompt caches to work around host lifecycle boundaries.
+- When a user changes presets or edits `oh-my-opencode-slim.json`, the plugin hot-refreshes **inference fields** (models, variants, temperature, provider options) for **new child sessions** and updates the TUI sidebar projection without a restart.
+
+However, hot-reloading **agent prompts, tools, routing rules, permissions, or structural rosters** remains strictly out of scope for architectural reasons:
+
+1. **Prompt Cache Safety**: Provider prompt caches (Claude, OpenAI, Gemini) are exact byte-prefix matches over the rendered request (`tools → system → messages`). Any byte that changes in the system prompt or tool definitions invalidates the cache for all subsequent requests in that session, re-paying full input token cost and latency. Repository guidelines strictly mandate: *Keep system prompts and tool sets frozen for the lifetime of a session.*
+2. **Session Consistency**: Actively running or resumed child sessions rely on immutable capabilities and role contracts. Mutating tool sets, permissions, or system prompts mid-session causes state desync and races between the orchestrator and delegated subagents. Per `src/v2/codemap.md`: *Definitions are registered exactly once — config changes never re-register or reload them.*
+3. **Host Lifecycle Boundary**: In v1, the plugin SDK provided no hook for partial agent re-registration (`client.config.update()` disposed instances without re-running agent bootstrap). While v2 adds `agent.reload()`, full structural reloading (refreshing the complete prompt text, tool bindings, and `@` agent catalog) belongs to a clean host restart or host-level instance reload (such as OpenCode's native `/reload` slash command), not plugin-side mutable prompt watchers.
 
 ## Prior requests
 
