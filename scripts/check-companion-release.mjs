@@ -38,7 +38,11 @@ export function classifyCompanionRelease(release, tag) {
     const extension = target.includes('windows') ? 'zip' : 'tar.gz';
     const name = `oh-my-opencode-slim-companion-v${version}-${target}.${extension}`;
     const asset = assets.get(name);
-    if (!asset || asset.state !== 'uploaded' || asset.size <= 0) {
+    if (
+      asset?.state !== 'uploaded' ||
+      !Number.isSafeInteger(asset?.size) ||
+      asset.size <= 0
+    ) {
       return 'incomplete';
     }
   }
@@ -54,7 +58,9 @@ export async function checkPublishedCompanionRelease(tag, options = {}) {
   const repository = options.repository ?? process.env.GITHUB_REPOSITORY;
   const token = options.token ?? process.env.GH_TOKEN;
   if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository) || !token) {
-    throw new Error('Companion lookup requires GITHUB_REPOSITORY and GH_TOKEN.');
+    throw new Error(
+      'Companion lookup requires GITHUB_REPOSITORY and GH_TOKEN.',
+    );
   }
 
   const request = options.request ?? fetch;
@@ -76,9 +82,12 @@ export async function checkPublishedCompanionRelease(tag, options = {}) {
       });
     } catch (error) {
       if (attempt === MAX_ATTEMPTS) {
-        throw new Error('GitHub Companion release lookup failed after retries.', {
-          cause: error,
-        });
+        throw new Error(
+          'GitHub Companion release lookup failed after retries.',
+          {
+            cause: error,
+          },
+        );
       }
       await pause(attempt * 1_000);
       continue;
