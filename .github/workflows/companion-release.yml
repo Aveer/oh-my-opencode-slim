@@ -182,7 +182,15 @@ jobs:
       - linux-x64
       - linux-arm64
       - windows-x64
-    if: always() && !cancelled() && !failure()
+    # A partial manual build produces workflow artifacts only. Never publish an
+    # immutable public release missing supported platforms.
+    if: >-
+      always() && !cancelled() && !failure() &&
+      contains(inputs.targets, 'macos-arm64') &&
+      contains(inputs.targets, 'macos-x64') &&
+      contains(inputs.targets, 'linux-arm64') &&
+      contains(inputs.targets, 'linux-x64') &&
+      contains(inputs.targets, 'windows-x64')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
