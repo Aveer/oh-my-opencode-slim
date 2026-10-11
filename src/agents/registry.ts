@@ -49,7 +49,10 @@ export interface ResolvedAgentRegistry {
     Record<string, ReturnType<typeof compilePermissionPolicy>>
   >;
   /** Reapply owned ceilings to authoritative host-expanded rules, without
-   * replaying the pre-host-finalization permission baseline. */
+   * replaying the pre-host-finalization permission baseline. The agent's
+   * registered delegation stance (v1 `task` → v2 `subagent` rules) is
+   * re-appended as the final rules so a host-side trailing global allow
+   * cannot defeat it under last-match-wins evaluation. */
   compileChildPermissions(
     agent: string,
     rules: readonly V2PermissionRule[],
@@ -309,6 +312,43 @@ function marketplaceHostRules(
   return [...rules];
 }
 
+/**
+ * The plugin-authored delegation-stance rules for one agent: the `task`
+ * permission entry of its finalized permission map, as compiled by
+ * `adaptPermissions` into the registered policy baseline (v1 `task` → v2
+ * `subagent`, insertion order preserved — the `'*'` deny first, any specific
+ * allow last). Empty for agents without a stance (the orchestrator): no tail
+ * is ever invented here.
+ */
+function delegationStanceTail(
+  baselineRules: readonly V2PermissionRule[],
+): V2PermissionRule[] {
+  return baselineRules
+    .filter((rule) => rule.action === 'subagent')
+    .map((rule) => ({ ...rule }));
+}
+
+/**
+ * Whether `rules` already end with exactly `tail` (the stance tail is the
+ * literal suffix, so nothing follows it that a host could evaluate after the
+ * stance). Used to keep the child-payload stance tail idempotent.
+ */
+function rulesEndWithStanceTail(
+  rules: readonly V2PermissionRule[],
+  tail: readonly V2PermissionRule[],
+): boolean {
+  if (rules.length < tail.length) return false;
+  const offset = rules.length - tail.length;
+  return tail.every((rule, index) => {
+    const existing = rules[offset + index];
+    return (
+      existing.action === rule.action &&
+      existing.resource === rule.resource &&
+      existing.effect === rule.effect
+    );
+  });
+}
+
 function appendMarketplaceRouting(
   config: Record<string, unknown>,
   definitions: readonly AgentDefinition[],
@@ -545,6 +585,7 @@ export function buildResolvedAgentRegistry(
     string,
     { ceilings?: PermissionCeilings }
   > = {};
+  const childStanceTails: Record<string, V2PermissionRule[]> = {};
 
   // User/host entries win over plugin-injected built-ins on a key
   // collision (issue #1290).
@@ -925,6 +966,7 @@ export function buildResolvedAgentRegistry(
         : hostRuleSet,
       ...childPolicyConstraints[name],
     });
+    childStanceTails[name] = delegationStanceTail(baselineRules);
     finalAgentConfig[name] = clone(finalEntry);
     sdk[name] = clone(finalEntry) as SDKAgentConfig & Record<string, unknown>;
   }
@@ -937,6 +979,8 @@ export function buildResolvedAgentRegistry(
     if (policyMap[canonical]) policyMap[alias] = policyMap[canonical];
     if (childPolicyConstraints[canonical])
       childPolicyConstraints[alias] = childPolicyConstraints[canonical];
+    if (childStanceTails[canonical])
+      childStanceTails[alias] = childStanceTails[canonical];
   }
   for (const definition of definitions) {
     const display = identities[definition.name];
@@ -1104,6 +1148,7 @@ export function buildResolvedAgentRegistry(
           : visibleRules,
         ...childPolicyConstraints[display],
       });
+      childStanceTails[display] = delegationStanceTail(visibleBaselineRules);
       if (definition.name === 'orchestrator') {
         appendMarketplaceRouting(
           { orchestrator: visibleConfig },
@@ -1129,6 +1174,7 @@ export function buildResolvedAgentRegistry(
   const frozenIdentities = freeze(clone(identities));
   const frozenPolicies = Object.freeze({ ...policyMap });
   const frozenChildConstraints = freeze(clone(childPolicyConstraints));
+  const frozenStanceTails = freeze(clone(childStanceTails));
   const frozenMcps = freeze(clone(mcpConfig));
   const frozenPluginMcps = freeze(clone(pluginMcps));
   const managedAgentConfig: Record<string, unknown> = {};
@@ -1188,11 +1234,47 @@ export function buildResolvedAgentRegistry(
           `child permission constraints unavailable for '${agent}'`,
         );
       }
-      return compilePermissionPolicy({
+      const policy = compilePermissionPolicy({
         baselineRules: [],
         hostRules: rules,
         ...constraints,
-      }).rules;
+      });
+      const compiled = policy.rules;
+      // The host appends the user's global (and per-agent) config rules AFTER
+      // the plugin's agent permissions (#1374), and v2 evaluates with
+      // findLast (last matching rule wins). A trailing `{'*','*',allow}` from
+      // the user's global config therefore defeats the agent's delegation
+      // stance stored earlier in the payload — the verified production
+      // incident where stance-carrying children (explorer→explorer,
+      // observer→observer, oracle→explorer) spawned nested subagents despite
+      // an explicit `subagent/*:deny` in their stored payloads. Re-append the
+      // stance as the FINAL rules of every compiled plugin child payload so
+      // findLast always terminates on it. Derived from the same registered
+      // permission map the static policy was compiled from — never hardcoded
+      // per agent; empty for stance-less agents (the orchestrator), whose
+      // payloads pass through untouched. Idempotent: a payload that already
+      // ends with the tail is not duplicated.
+      //
+      // A deny tail is a monotone ceiling — appending it can only narrow what
+      // the host granted, so it is always safe. An ALLOW tail is a capability
+      // grant: appended last it would silently outrank a stricter host
+      // decision (deny/ask) for the same target — the guest plugin
+      // resurrecting a capability the user explicitly withheld. So each grant
+      // is emitted at meet(grant, host-effective): allow stays allow, ask is
+      // preserved, and deny is dropped (the deny ceiling already covers it).
+      // The host-effective decision needs no rule provenance — findLast over
+      // the actual compiled array encodes the user's last word.
+      const stanceTail = frozenStanceTails[agent];
+      if (!stanceTail || stanceTail.length === 0) return compiled;
+      const tail = stanceTail.flatMap((rule) => {
+        if (rule.effect !== 'allow') return [rule];
+        const effective = policy.decide(rule.action, rule.resource);
+        if (effective === 'deny') return [];
+        return [{ ...rule, effect: effective }];
+      });
+      if (tail.length === 0) return compiled;
+      if (rulesEndWithStanceTail(compiled, tail)) return compiled;
+      return [...compiled, ...tail];
     },
     mcpConfig: frozenMcps,
     managedMcpConfig: frozenPluginMcps,
