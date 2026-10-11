@@ -86,6 +86,10 @@ test('native source check permits crate version-only synchronization', () => {
       join(root, 'companion', 'Cargo.lock'),
       '[[package]]\nname = "oh-my-opencode-slim-companion"\nversion = "0.1.5"\n',
     );
+    for (const name of ['Cargo.toml', 'Cargo.lock']) {
+      const file = join(root, 'companion', name);
+      writeFileSync(file, readFileSync(file, 'utf8').replaceAll('\n', '\r\n'));
+    }
     expect(check(root).status).toBe(0);
   } finally {
     rmSync(root, { recursive: true, force: true });
