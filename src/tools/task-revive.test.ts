@@ -1322,7 +1322,6 @@ describe('task_revive tool', () => {
         );
         observation.resolve(false);
         await expect(pending).rejects.toThrow('revive became stale');
-        expect(replacement).toContain('generation: 3');
         expect(replacement).toContain('status: started');
         expect(board.get('ses_1')).toMatchObject({
           generation: 3,

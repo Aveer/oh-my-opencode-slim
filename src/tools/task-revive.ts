@@ -600,7 +600,6 @@ function renderReviveOutput(
       : record.state;
   const lines = [
     `${idParam}: ${record.taskID}`,
-    `generation: ${record.generation}`,
     `state: ${state}`,
     `status: ${admissionUnknown ? 'admission_unknown' : state === 'running' ? 'started' : state}`,
   ];

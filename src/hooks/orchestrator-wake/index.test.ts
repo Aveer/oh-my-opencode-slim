@@ -640,7 +640,6 @@ describe('orchestrator wake scheduler', () => {
     expect(call?.body.parts[0]?.text).toContain('alias: ora-7');
     expect(call?.body.parts[0]?.text).toContain('task: ses_x');
     expect(call?.body.parts[0]?.text).toContain('state: stopped');
-    expect(call?.body.parts[0]?.text).toContain('generation: 3');
     expect(call?.body.parts[0]?.text).toContain(
       'reason: stopped without a terminal result',
     );

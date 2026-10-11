@@ -512,7 +512,6 @@ describe('task controls through the real v2 client shim', () => {
       idle.resolve();
       const output = String(await pending);
       expect(h.baseline).toHaveBeenCalledTimes(1);
-      expect(output).toContain('generation: 2');
       expect(output).toContain('status: started');
       expect(h.host.prompt).toHaveBeenCalledWith({
         sessionID: 'ses_child',
