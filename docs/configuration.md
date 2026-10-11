@@ -118,6 +118,23 @@ When a `preset` is active, the plugin checks preset directories before falling b
 
 Both `{agent}.md` and `{agent}_append.md` can coexist - the full replacement takes effect first, then the append. If neither exists, the built-in default prompt is used.
 
+**Agent identity vs. routing in custom orchestrator prompts.** Both host
+flavors append a native roster to the delegation tool's description — v2
+hosts add `Available subagents:`, v1 hosts add `Available agent types and the
+tools they have access to:` — with one `- name: description` line per
+dispatchable agent. The plugin cannot remove these appends (they happen in
+host code after plugin tool hooks). Agent `description` values are one-liners
+by design: routing criteria live in the orchestrator prompt's `<Agents>`
+block, descriptions only identify agents for the native roster (override
+them via `agents.<name>.description`). When writing a custom
+`orchestrator.md`, keep only routing deltas (when to delegate to whom) in
+your agent section — identity lines duplicate the native roster and go stale
+when agents are disabled (`disabled_agents` removes them from the roster
+automatically, but not from your file). `routingBlock: false` applies the
+same trim to the built-in v2 prompt by removing the stock `<Agents>` block
+entirely, which also removes stock routing claims that drift against
+`agents.<name>.prompt` customizations (see the option reference).
+
 > **Prompt text is verbatim for delegation vocabulary.** The plugin never
 > rewrites delegation calls in prompts, so any delegation calls you write must
 > use the running host's vocabulary — v1 `task`/`subagent_type`/`task_id`, v2
@@ -170,6 +187,7 @@ All config files support **JSONC** (JSON with Comments):
 | `preset` | string | - | Active preset name (e.g. `"openai"`, `"best"`) |
 | `setDefaultAgent` | boolean | `true` | When `true`, sets OpenCode's `default_agent` to the orchestrator if unset or pointing at a subagent; `false` leaves it untouched |
 | `stripOrchestratorModel` | boolean | `false` | Preserve a runtime `/model` selection for the orchestrator after subagent dispatch by omitting its configured model from the SDK config. A selected preset's explicit `orchestrator.model` is retained. Without a runtime selection, this opt-in delegates the initial orchestrator choice to OpenCode's session default. |
+| `routingBlock` | boolean | `true` | When false, removes the `<Agents>` routing block from the v2 orchestrator prompt. The host's native delegation-tool roster still lists every enabled agent with its one-line description, but it carries no Delegate/Don't routing criteria — the block's routing guidance (~300 tokens) has no roster equivalent, so `false` trades routing quality for tokens, or drops stock routing claims that drift against custom agent prompts (`agents.<name>.prompt`). v2 hosts only: on v1 the flag is ignored with a warning (the v1 orchestrator prompt renders the same slim routing lines as v2 (frozen wording elsewhere in the template) — use an orchestrator.md override to change routing there). No effect when an orchestrator.md override already replaces the whole prompt. |
 | `presets` | object | - | Named preset configurations. New preset names are limited to letters, digits, `-`, and `_`; `__omo_*` and JavaScript reserved property names (`__proto__`, `constructor`, `prototype`) are rejected for new presets (pre-existing entries with other names stay visible and applicable) |
 | `presets.<name>.extends` | string | - | Optional single parent preset. The parent is resolved before the child; multiple parents are not supported |
 | `presets.<name>.<agent>.model` | string \| array | - | Model ID in `provider/model` format, or a non-empty ordered fallback chain (array of IDs or `{ id, variant }`) |
@@ -243,7 +261,7 @@ All config files support **JSONC** (JSON with Comments):
 | `webfetch.enabled` | boolean | `true` | When `false`, the enhanced `webfetch` is not registered and OpenCode's built-in is used. See [Webfetch](webfetch.md) |
 | `webfetch.model` | string \| array | - | Dedicated summarization model(s), same shape as agent `model`. See [Webfetch](webfetch.md) |
 | `fallback.enabled` | boolean | `true` | Enable Slim's foreground model-chain failover. It does not configure OpenCode provider/AI-SDK retries. On **v2 hosts** the replay path (abort + re-prompt) stays disabled — the v2 `switchModel` has no per-turn/atomic conditional form, so an in-flight replay could commit after a newer user turn has taken over — while the retry-hook steering path runs: host retry events are absorbed up to `fallback.maxRetries`, then the model is switched in place via the host `session.switchModel` and the host retries the current turn on the new model. The same switch disables both paths. |
-| `fallback.maxRetries` | integer | `3` | Number of host retry events Slim absorbs before advancing the foreground model chain. The budget stays spent across model switches; a completed successful assistant response, an observed return to the configured primary for a fresh descent, or session deletion re-arms it. Terminal `session.error` and `message.updated` failures advance immediately without charging it. On v1, three distinct consecutive completed, error-free `finish: 'unknown'` messages with verified tool-free parts also trigger request-scoped abort and replay without charging retries. `0` advances on the first retry event. This does not configure OpenCode provider or background subagent retries. |
+| `fallback.maxRetries` | integer | `3` | Number of host retry events Slim absorbs before advancing the foreground model chain. The budget stays spent across model switches. Recovery re-arms it: a completed successful assistant response on v1, or a raw `session.step.ended` with `finish` `stop`, `tool-calls` or `length`, or `session.execution.succeeded` on v2. A confirmed new v1 user turn, an observed return to the configured primary outside our committed fallback for a fresh descent, or session deletion also re-arms it. A new v2 user turn alone does not reset the budget; an explicit model change is recorded so returning to the configured primary can re-arm the descent. Landing on the configured head through a committed fallback does not re-arm this budget, including for inherit+chain agents. Terminal `session.error` and `message.updated` failures advance immediately without charging it. On v1, three distinct consecutive completed, error-free `finish: 'unknown'` messages with verified tool-free parts also trigger request-scoped abort and replay without charging retries. `0` advances on the first retry event. This does not configure OpenCode provider or background subagent retries. |
 | `fallback.initialRetryDelayMs` | number | `0` | Delay in milliseconds before triggering the first fallback on a failover-worthy error. Gives intercepting plugins time to recover the current model before the fallback chain advances. 0 disables. |
 | `fallback.retryDelayMs` | number | `500` | Delay in milliseconds between consecutive fallback attempts after the initial trigger. 0 disables. |
 | `fallback.continuationPolicy` | `"retry-primary"` \| `"stick-to-fallback"` | `"retry-primary"` | OpenCode v1 policy for unpinned internal continuations after a confirmed fallback. `"retry-primary"` lets background-completion and lifecycle turns try the configured primary again; `"stick-to-fallback"` keeps them on the confirmed fallback until the next external user turn. |
@@ -477,6 +495,16 @@ unaffected. Set the keys explicitly (`"boardInjection": true`,
 `"periodicWakeEnabled": true`) to restore the v1-style behavior on v2; v1
 hosts are unchanged.
 
+`routingBlock` deliberately gets **no** v2-derived default. Unlike the board
+injection, the `<Agents>` block is not duplicated by a native channel: the
+roster carries agent identity only (~20 tokens of the block overlap with it),
+while the block's Delegate/Don't routing criteria have no native equivalent.
+A derived `false` would be a silent routing downgrade dressed up as
+deduplication, so the trade-off stays behind an explicit opt-in. As of this
+prompt refresh, v1 and v2 render identical `<Agents>` routing lines; the
+switch itself still only takes effect on v2 — v1's non-`<Agents>` wording
+remains the frozen template.
+
 Board-off behavioral notes: the consumption bookkeeping that retires
 completed/error/cancelled jobs registers on orchestrator turns driven by a
 real user message (pure event-wake turns are internal-initiator and do not
@@ -600,6 +628,17 @@ OpenCode's provider retry policy. A value of `0` allows no host retry events
 before foreground failover; it does not prevent OpenCode from retrying a
 provider request in a child session.
 
+Both fallback paths scan the chain from its head, skipping models already tried
+and providers abandoned by this session or its parent. Starting on a later entry
+does not skip the untried entries before it. A provider is excluded only after a
+provider-level failure switches the session away from it, so other models on the
+current provider remain eligible for the immediate next pick. On v1 the
+exclusion lasts until the next turn or continuation on a different model; on v2
+it lasts while the switched model stays selected. When no eligible
+entry remains, Slim retries the last chain entry once, ignoring provider
+exclusions and retaining the tried set; another failure ends intervention
+(v1 aborts once, while v2 leaves the host's retry decision unchanged).
+
 On v2 hosts, the two fallback paths are gated separately. The replay path
 (abort + re-prompt driven by `session.error`, `message.updated` and
 `session.status` retry) stays disabled: the v2 `switchModel` has no
@@ -610,14 +649,25 @@ decision points, Slim absorbs host retries up to `fallback.maxRetries`, then
 switches the model in place via `session.switchModel` and mutates the retry
 decision so the host retries the current turn on the new model — no
 transcript replay, so the per-turn race cannot occur. Descent bookkeeping
-stays live on v2 (turn detection, agent/model tracking, and the resets on a
-successful response or a new user turn), so a later episode in the same
-session starts a fresh descent instead of inheriting the previous one.
+stays live on v2: a raw `session.step.ended` with `finish` `stop`, `tool-calls`
+or `length`, or `session.execution.succeeded`, resets tried models, exhaustion
+and the retry budget. Usage telemetry, synthesized completed-assistant messages
+and other step finishes do not prove recovery. A new v2 user turn alone does
+not reset the descent. When its model differs from the confirmed fallback,
+Slim records the selected model and clears that fallback; returning to the
+configured primary lets the existing re-arm start a fresh descent.
 `fallback.initialRetryDelayMs` has no effect on the steering path (there is
 no replay to delay; the host's own retry backoff is the recovery window) —
 a one-time log line notes the divergence. Both paths share the same user
 switches: `fallback.enabled` and `disabled_hooks: ["foreground-fallback"]`
 disable steering too.
+
+On v2, `provider.content-filter` is a request-scoped failover error even when
+the host sets `decision.retry` to `false`. Slim advances to the next eligible
+model without adding the rejected request's provider to the abandoned set.
+A model switch that times out but later succeeds is reconciled if the observed
+model is still the failed source or already the switch target; a different
+observed selection is left untouched.
 
 ### Agent Display Names
 
@@ -684,6 +734,8 @@ entry in the child's own chain outside those providers, with no preference for
 the parent's model/provider. Policy/content-filter failures, retired or unknown
 models, and manual selections leave independent children unchanged; so does a
 chain with no healthy provider.
+On later failures, the child's own fallback scans from the head and skips
+providers abandoned by either the child or its parent.
 OpenCode v2 uses the native per-call subagent model override. On v1, the child's
 first prompt claims a delegation intention using the host's parent link and empty
 transcript; a `task_id` resume instead targets that child's next prompt. Slim
@@ -745,8 +797,8 @@ but still survive that model dying (rate limit, quota, outage):
 At launch the agent inherits the session model instead of the chain head.
 When a failover-worthy error hits, the runtime chain is
 `[<current session model>, ...configured chain]`: the live model is never
-re-picked, the first configured entry takes over, and later entries follow in
-order. Chain exhaustion stays bounded — after the whole chain fails once, one
+re-picked, the first eligible configured entry takes over, and later entries
+follow in order. Chain exhaustion stays bounded — after the whole chain fails once, one
 re-fallback round runs on the last entry, then the session aborts instead of
 looping. A `/model` pick on such an agent is its follow target; it never
 disables the fallback chain.

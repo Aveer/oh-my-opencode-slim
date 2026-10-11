@@ -147,7 +147,9 @@ describe('v1 prompt byte parity (frozen template)', () => {
   test('default render is byte-identical across invocations and host flavors', () => {
     const noFlavor = buildOrchestratorPrompt();
     // 'v1' and unknown flavors must not move a byte from the no-flavor
-    // (v1 default) render — the slim v2 template must never leak in.
+    // (v1 default) render — v1 now renders the same ROLE_ROUTING_SLIM_LINES
+    // content as v2, but through its own frozen wrapper template — the v2
+    // wrapper (`<Role>`/`<Workflow>` wording) must still never leak in.
     expect(
       buildOrchestratorPrompt(undefined, undefined, true, true, 'v1'),
     ).toBe(noFlavor);
@@ -185,6 +187,47 @@ describe('v1 prompt byte parity (frozen template)', () => {
       'v1',
     );
     expect(explicitV1.config.prompt).toBe(buildOrchestratorPrompt());
+  });
+
+  test('default v1 render sources its <Agents> block from the slim routing lines', () => {
+    const prompt = buildOrchestratorPrompt();
+
+    for (const line of Object.values(ROLE_ROUTING_SLIM_LINES)) {
+      expect(prompt).toContain(line);
+    }
+    // The full routing block is gone: Stats/Capabilities are prose the
+    // orchestrator can never execute, and the Delegate/Don't criteria —
+    // the only routing-bearing content — survive in the slim lines.
+    expect(prompt).not.toContain('Stats:');
+    expect(prompt).not.toContain('Capabilities:');
+    expect(prompt).not.toContain('- Lane:');
+  });
+
+  test('default v1 render keeps a well-formed <Agents> wrapper around the slim lines', () => {
+    const prompt = buildOrchestratorPrompt();
+
+    const agentsBlock = /<Agents>([\s\S]*?)<\/Agents>/.exec(prompt);
+    expect(agentsBlock).not.toBeNull();
+    expect(agentsBlock![1].trim()).toContain(ROLE_ROUTING_SLIM_LINES.designer);
+    // Exactly one wrapper element — no duplicated or unclosed tag.
+    expect(prompt.match(/<Agents>/g)?.length).toBe(1);
+    expect(prompt.match(/<\/Agents>/g)?.length).toBe(1);
+  });
+
+  test('v1 and v2 render the same <Agents> routing content', () => {
+    const v1Block = /<Agents>([\s\S]*?)<\/Agents>/.exec(
+      buildOrchestratorPrompt(),
+    );
+    const v2Block = /<Agents>([\s\S]*?)<\/Agents>/.exec(
+      buildOrchestratorPromptV2(),
+    );
+    expect(v1Block).not.toBeNull();
+    expect(v2Block).not.toBeNull();
+    // Both builders join the same ROLE_ROUTING_SLIM_LINES values with
+    // '\n\n'. Only the wrapper padding differs: v1 uses
+    // `<Agents>\n\n${enabledAgents}\n\n</Agents>` (frozen template wording),
+    // v2 uses `<Agents>\n${enabledAgents}\n</Agents>` — hence the trim.
+    expect(v1Block![1].trim()).toBe(v2Block![1].trim());
   });
 });
 
@@ -305,6 +348,140 @@ describe('v2 slim prompt (buildOrchestratorPromptV2)', () => {
     expect(
       buildOrchestratorPromptV2(undefined, undefined, false),
     ).toMatchSnapshot();
+  });
+});
+
+describe('routingBlock (v2-only <Agents> removal)', () => {
+  test('v2 off removes the whole <Agents> element and nothing else', () => {
+    const on = buildOrchestratorPromptV2();
+    const off = buildOrchestratorPromptV2(
+      undefined,
+      undefined,
+      true,
+      true,
+      false,
+    );
+    expect(off).not.toContain('<Agents>');
+    expect(off).not.toContain('</Agents>');
+    // No slim-line routing content survives; identity stays in the host's
+    // native subagent roster, which the roster appends to the subagent
+    // tool description.
+    expect(off).not.toContain('read-only codebase recon');
+    expect(off).not.toContain('an escalation, not a default verification step');
+    // Byte-exact surgery: splicing the <Agents> element out of the default
+    // render yields exactly the off render.
+    const [head, tail] = on.split('<Agents>');
+    expect(off).toBe(`${head}${tail.split('</Agents>\n\n')[1]}`);
+  });
+
+  test('v2 default and explicit true stay byte-frozen', () => {
+    const on = buildOrchestratorPromptV2(
+      undefined,
+      undefined,
+      true,
+      true,
+      true,
+    );
+    expect(on).toBe(buildOrchestratorPromptV2());
+    expect(on).toContain('<Agents>');
+  });
+
+  test('createOrchestratorAgent v2 honors routingBlock=false (10th positional param pinned)', () => {
+    const v2 = createOrchestratorAgent(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+      'v2',
+      true,
+      false,
+    );
+    expect(v2.config.prompt).not.toContain('<Agents>');
+    expect(v2.config.prompt).toBe(
+      buildOrchestratorPromptV2(undefined, undefined, true, true, false),
+    );
+  });
+
+  test('v1 ignores routingBlock=false and warns once (warn AND ignore)', () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message: unknown) => {
+      warnings.push(String(message));
+    };
+    try {
+      const v1Off = createOrchestratorAgent(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        undefined,
+        true,
+        false,
+      );
+      const v1Default = createOrchestratorAgent(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        undefined,
+      );
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('routingBlock');
+      expect(warnings[0]).toContain('orchestrator.md');
+      // Not a half-application: bytes identical to the default render.
+      expect(v1Off.config.prompt).toBe(v1Default.config.prompt);
+      expect(v1Off.config.prompt).toContain('<Agents>');
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test('v1 builder-level flag is a no-op (frozen bytes)', () => {
+    expect(
+      buildOrchestratorPrompt(
+        undefined,
+        undefined,
+        true,
+        true,
+        undefined,
+        true,
+        false,
+      ),
+    ).toBe(buildOrchestratorPrompt());
+    expect(
+      buildOrchestratorPrompt(
+        undefined,
+        undefined,
+        true,
+        true,
+        'v1',
+        true,
+        false,
+      ),
+    ).toBe(buildOrchestratorPrompt());
+  });
+
+  test('disabledAgents/excludeDescriptions keep their meaning with routingBlock=false', () => {
+    const off = buildOrchestratorPromptV2(
+      new Set(['explorer']),
+      ['council'],
+      true,
+      true,
+      false,
+    );
+    expect(off).not.toContain('<Agents>');
+    const on = buildOrchestratorPromptV2(new Set(['explorer']), ['council']);
+    expect(on).not.toContain('@explorer —');
+    expect(on).not.toContain('@council —');
   });
 });
 

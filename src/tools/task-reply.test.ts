@@ -367,6 +367,8 @@ describe('task_reply', () => {
       backgroundJobBoard: board,
     });
 
+    expect(Object.keys(task_reply.args)).toContain('answers');
+
     const output = await task_reply.execute(
       {
         task_id: 'ses_child1',
@@ -410,12 +412,14 @@ describe('task_reply', () => {
     });
 
     expect(Object.keys(task_reply.args)).toContain('sessionID');
-    // The tool description must keep the v2-form caveat: forms are not
-    // answerable here, and callers are redirected to the host UI/cancel.
-    expect(task_reply.description).toMatch(/v2 forms?/i);
-    expect(task_reply.description).toMatch(/cannot be answered/i);
-    expect(task_reply.description).toMatch(/host UI/i);
-    expect(task_reply.description).toContain('task_cancel');
+    // v2 advertises only what it can do: the pinned plugin context has no
+    // form.reply, so the answers arg is absent there and the description
+    // carries no caveat to offset it — the execute gate below refuses
+    // forms with the host-UI/cancel redirect.
+    expect(Object.keys(task_reply.args)).not.toContain('answers');
+    expect(task_reply.description).toBe(
+      'Reply to a tracked child request by task ID/alias and request ID.',
+    );
 
     // C4: both identifier forms still resolve the task and its open ask on
     // v2, but the question path refuses before any transport attempt — the
@@ -619,6 +623,104 @@ describe('task_reply', () => {
         sessionID: 'parent-2',
       } as never),
     ).rejects.toThrow('Unknown task ID or alias');
+  });
+
+  test('a board-missed settled child gets recovery guidance, not bare unknown', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client: {} } as never,
+      backgroundJobBoard: board,
+    });
+    // No launch registered: the board lost the child (restart or retention
+    // trim) while the host session still exists and is owned.
+    const error = (await task_reply
+      .execute({ task_id: 'ses_child1', request_id: 'que_1' }, {
+        sessionID: 'parent-1',
+      } as never)
+      .catch((e: Error) => e)) as Error;
+    expect(error.message).toContain('Unknown task ID or alias: ses_child1');
+    expect(error.message).toContain('not tracked');
+    // v1 routing names the host-flavor resume param and the target ID.
+    expect(error.message).toContain('task_revive and task_id: "ses_child1"');
+    expect(error.message).toContain('do not launch a duplicate');
+  });
+
+  test('a board-missed settled child on v2 routes with the sessionID param', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client: {}, hostFlavor: 'v2' } as never,
+      backgroundJobBoard: board,
+    });
+    const error = (await task_reply
+      .execute({ task_id: 'ses_child1', request_id: 'que_1' }, {
+        sessionID: 'parent-1',
+      } as never)
+      .catch((e: Error) => e)) as Error;
+    expect(error.message).toContain('task_revive and sessionID: "ses_child1"');
+  });
+
+  test('a board-missed alias keeps the bare unknown error', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client: {} } as never,
+      backgroundJobBoard: board,
+    });
+    // An alias is board-scoped: without a board record it has no host
+    // existence, so the error stays bare — no settled-session guidance.
+    const error = (await task_reply
+      .execute({ task_id: 'exp-9', request_id: 'que_1' }, {
+        sessionID: 'parent-1',
+      } as never)
+      .catch((e: Error) => e)) as Error;
+    expect(error.message).toBe('Unknown task ID or alias: exp-9');
+  });
+
+  test('a session tracked by another parent keeps the bare unknown error', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    // Canonical resolution maps the ref to the session ID and board.get is
+    // not parent-scoped, so a foreign parent's record is visible here. The
+    // settled-session advice must not fire: task_revive would reject the
+    // same ownership mismatch, so the error stays bare.
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client: {} } as never,
+      backgroundJobBoard: board,
+      resolveCanonicalTaskRef: async () =>
+        ({
+          kind: 'exact',
+          taskID: 'ses_child1',
+        }) as never,
+    });
+    const error = (await task_reply
+      .execute({ task_id: 'ses_child1', request_id: 'que_1' }, {
+        sessionID: 'parent-2',
+      } as never)
+      .catch((e: Error) => e)) as Error;
+    expect(error.message).toBe('Unknown task ID or alias: ses_child1');
+  });
+
+  test('a disposal landing after the helper check still stops the send', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    // The helper's disposed check passes (call 1); the plugin is torn down
+    // while the resolution await is in flight; execute's post-await
+    // re-check (call 2) must refuse to send.
+    let disposedCalls = 0;
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client: {} } as never,
+      backgroundJobBoard: board,
+      isDisposed: () => ++disposedCalls > 1,
+    });
+    await expect(
+      task_reply.execute({ task_id: 'ses_child1', request_id: 'que_1' }, {
+        sessionID: 'parent-1',
+      } as never),
+    ).rejects.toThrow('The plugin instance was disposed');
   });
 
   test('answers an open permission request through permission.reply', async () => {

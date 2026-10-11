@@ -27,11 +27,16 @@ import {
   isInternalInitiatorPart,
 } from '../utils/internal-initiator';
 import { log } from '../utils/logger';
+import { withTimeout } from '../utils/session';
 import {
   createInternalSyntheticMessageID,
   recordInternalAdmission,
 } from './internal-admissions';
 import type { V2Context } from './types';
+
+const HISTORY_PAGE_SIZE = 100;
+const MAX_HISTORY_PAGES = 10;
+const HISTORY_READ_TIMEOUT_MS = 4_000;
 
 /** v2 model reference accepted by `ctx.generate.text`. */
 export interface V2GenerateModelRef {
@@ -449,6 +454,77 @@ export function buildPluginInput(
                   message.type === 'compaction' &&
                   message.status === 'completed',
               );
+              // Compaction removes continuation baselines from context. Keep
+              // the terminal gate's identity fence by reading persisted history
+              // instead of attributing the newest answer without its baseline.
+              if (
+                cut &&
+                typeof args.historyBoundary === 'string' &&
+                args.historyBoundary.length > 0 &&
+                !raw.some((message) => message.id === args.historyBoundary) &&
+                typeof s.messages === 'function'
+              ) {
+                const history: Record<string, unknown>[] = [];
+                const cursors = new Set<string>();
+                const deadline = performance.now() + HISTORY_READ_TIMEOUT_MS;
+                const budgetError =
+                  '[v2] session.messages history read budget exceeded';
+                let pages = 0;
+                let cursor: string | undefined;
+                do {
+                  const remainingMs = deadline - performance.now();
+                  if (pages >= MAX_HISTORY_PAGES || remainingMs <= 0) {
+                    throw new Error(budgetError);
+                  }
+                  pages++;
+                  const page = await withTimeout(
+                    s.messages({
+                      sessionID: sessionIDOf(args),
+                      limit: HISTORY_PAGE_SIZE,
+                      order: 'desc',
+                      ...(cursor ? { cursor } : {}),
+                    }),
+                    remainingMs,
+                    budgetError,
+                  );
+                  if (performance.now() >= deadline) {
+                    throw new Error(budgetError);
+                  }
+                  if (
+                    !isRecord(page) ||
+                    !Array.isArray(page.data) ||
+                    page.data.length > HISTORY_PAGE_SIZE ||
+                    !page.data.every(isRecord)
+                  ) {
+                    throw new Error(
+                      '[v2] session.messages did not return a valid history page',
+                    );
+                  }
+                  history.push(...page.data);
+                  cursor =
+                    page.data.length > 0 &&
+                    isRecord(page.cursor) &&
+                    typeof page.cursor.next === 'string' &&
+                    page.cursor.next.length > 0
+                      ? page.cursor.next
+                      : undefined;
+                  if (
+                    page.data.some(
+                      (message) => message.id === args.historyBoundary,
+                    )
+                  ) {
+                    break;
+                  }
+                  if (cursor && cursors.has(cursor)) {
+                    throw new Error('[v2] session.messages repeated a cursor');
+                  }
+                  if (cursor) cursors.add(cursor);
+                } while (cursor);
+                return {
+                  data: history.reverse().map(toV1Message),
+                  page: { source: 'session.messages', complete: !cursor },
+                };
+              }
               return {
                 data: raw.map(toV1Message),
                 page: { source: 'session.context', complete: !cut },
