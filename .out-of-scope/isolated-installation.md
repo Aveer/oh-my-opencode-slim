@@ -12,7 +12,7 @@ This was rejected as unnecessary complexity because OpenCode and the environment
   ```bash
   OPENCODE_CONFIG_DIR=~/.config/ohmyocs opencode
   ```
-- This isolates configs, plugins, and state cleanly without modifying the default `~/.config/opencode/` directory or requiring custom code in the plugin installer.
+- This separates configuration files without modifying the default `~/.config/opencode/` directory or requiring custom code in the plugin installer. It does not isolate all plugin state: saved session-board state still uses `XDG_DATA_HOME`, and cached plugin packages still use `XDG_CACHE_HOME`.
 - Adding custom installer flags, prompts, path-aliasing logic, and wrapper binaries introduces moving parts and shell maintenance overhead that duplicate standard Unix environment variable mechanisms.
 
 Users who want isolated profiles or multiple parallel configurations can use `OPENCODE_CONFIG_DIR` in shell aliases or wrapper scripts.
