@@ -20,16 +20,17 @@ function releaseRelevant(path) {
 }
 
 function withoutCrateVersion(path, text) {
+  const normalized = text.replace(/\r\n/g, '\n');
   if (path === 'companion/Cargo.toml') {
-    return text.replace(/(^version\s*=\s*")[^"]+(")/m, '$1<version>$2');
+    return normalized.replace(/(^version\s*=\s*")[^"]+(")/m, '$1<version>$2');
   }
   if (path === 'companion/Cargo.lock') {
-    return text.replace(
+    return normalized.replace(
       /(\[\[package\]\]\r?\nname = "oh-my-opencode-slim-companion"\r?\nversion = ")[^"]+(")/,
       '$1<version>$2',
     );
   }
-  return text;
+  return normalized;
 }
 
 function fail(message, code = 1) {
