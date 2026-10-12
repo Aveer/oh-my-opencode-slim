@@ -45,8 +45,13 @@ a directly selectable preset list. The popup has three project views:
 Opening the popup pins the current animation session. Selecting a project for
 preset editing **does not change the animation's session or window position**.
 Clicking a project in the list changes only the editor target, and background
-activity cannot steal that target until the menu is closed. Press Escape, use
-Close, or move focus outside the popup to dismiss it.
+activity cannot steal that target until the menu is closed. If the selected
+live project exits (or a remembered entry is evicted) while the menu remains
+open, its identity is retained but preset editing is disabled with an explicit
+warning. No request silently falls back to the displayed project. A project
+with multiple OpenCode instances stays in Active while any one instance is
+working or awaiting input. Press Escape, use Close, or move focus outside the
+popup to dismiss it.
 
 Choose the explicit **Project / Global** scope, then select a preset by name
 from the dropdown. Project scope offers **Inherit**. When a remembered project
