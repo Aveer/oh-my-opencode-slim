@@ -446,6 +446,170 @@ describe('createV2Setup e2e', () => {
     }
   }, 20_000);
 
+  test('background-default flip arms on registry replay, not registration', async () => {
+    // The v2 registry replays transforms on the next read after a change,
+    // never at registration (the skills test below relies on the same
+    // contract). The flip must therefore arm inside the replayed callback;
+    // a registration-time probe would always read false and never arm.
+    const { ctx, calls } = makeMockV2Context(projectDir);
+    const setupCtx = ctx as unknown as {
+      tool: {
+        transform: (
+          callback: (draft: unknown) => void,
+        ) => Promise<{ dispose: () => void }>;
+      };
+    };
+    let replay: ((draft: unknown) => void) | undefined;
+    setupCtx.tool.transform = async (callback) => {
+      replay = callback;
+      return { dispose: () => {} };
+    };
+    const nativeTool = { description: 'Foreground (default) native wording' };
+    let toolPresent = true;
+    const draft = () => ({
+      update: (_id: string, fn: (tool: typeof nativeTool) => void) => {
+        if (toolPresent) fn(nativeTool);
+      },
+      get: (id: string) =>
+        id === 'subagent' && toolPresent ? nativeTool : undefined,
+    });
+    let callSeq = 0;
+    const sendLaunch = async (background?: boolean) => {
+      const event = {
+        tool: 'subagent',
+        sessionID: 'ses_flip_parent',
+        agent: 'orchestrator',
+        messageID: 'msg_flip',
+        id: `call_flip_${++callSeq}`,
+        input: {
+          agent: 'fixer',
+          description: 'flip probe',
+          prompt: 'Work',
+          ...(background === undefined ? {} : { background }),
+        },
+      };
+      const hook = calls.toolBeforeCb;
+      if (!hook) throw new Error('tool:execute.before not captured');
+      await hook(event);
+      return event.input;
+    };
+
+    const cleanup = await createV2Setup()(ctx);
+    try {
+      // (1) Setup settled, registry not replayed yet: an omitted
+      // background stays omitted (native foreground default).
+      expect(replay).toBeDefined();
+      expect(await sendLaunch()).not.toHaveProperty('background');
+      await flushLoggerForTesting();
+      expect(readPluginLog()).not.toContain('v2 background default applied');
+
+      // (2) First replay lands the rewrite: the mechanism half arms and
+      // the same omitted call flips to background.
+      replay?.(draft());
+      expect((await sendLaunch()).background).toBe(true);
+      await flushLoggerForTesting();
+      expect(readPluginLog()).toContain('v2 background default applied');
+
+      // (3) Explicit values pass through untouched in both lanes.
+      expect((await sendLaunch(true)).background).toBe(true);
+      expect((await sendLaunch(false)).background).toBe(false);
+      await flushLoggerForTesting();
+      expect(readPluginLog()).toContain(
+        '[task-session-manager] v2 background explicit',
+      );
+
+      // (4) A later replay without the native tool disarms again, and a
+      // subsequent replay with it re-arms (replays are idempotent).
+      toolPresent = false;
+      replay?.(draft());
+      expect(await sendLaunch()).not.toHaveProperty('background');
+      await flushLoggerForTesting();
+      expect(readPluginLog()).toContain(
+        '[v2] subagent description flip missed (tool absent)',
+      );
+      toolPresent = true;
+      replay?.(draft());
+      expect((await sendLaunch()).background).toBe(true);
+
+      // (5) A throwing replay must not leave a stale arm behind.
+      replay?.({
+        update: () => {
+          throw new Error('boom');
+        },
+        get: () => undefined,
+      });
+      expect(await sendLaunch()).not.toHaveProperty('background');
+      await flushLoggerForTesting();
+      expect(readPluginLog()).toContain(
+        '[v2] subagent description flip failed',
+      );
+    } finally {
+      await cleanup();
+    }
+  }, 20_000);
+
+  test('background-default flip disarms on setup disposal', async () => {
+    const { ctx, calls } = makeMockV2Context(projectDir);
+    const setupCtx = ctx as unknown as {
+      tool: {
+        transform: (
+          callback: (draft: unknown) => void,
+        ) => Promise<{ dispose: () => void }>;
+      };
+    };
+    let replay: ((draft: unknown) => void) | undefined;
+    setupCtx.tool.transform = async (callback) => {
+      replay = callback;
+      return { dispose: () => {} };
+    };
+    const nativeTool = { description: 'Foreground (default) native wording' };
+    const launch = () => ({
+      tool: 'subagent',
+      sessionID: 'ses_flip_dispose',
+      agent: 'orchestrator',
+      messageID: 'msg_flip_dispose',
+      id: 'call_flip_dispose',
+      input: {
+        agent: 'fixer',
+        description: 'dispose probe',
+        prompt: 'Work',
+      },
+    });
+
+    const cleanup = await createV2Setup()(ctx);
+    // Land the rewrite and prove the flip is armed before disposal: the
+    // omitted background flips and the armed log is on record. Without
+    // this precondition the disarm assertions below would prove nothing.
+    replay?.({
+      update: (_id: string, fn: (tool: typeof nativeTool) => void) => {
+        fn(nativeTool);
+      },
+      get: (id: string) => (id === 'subagent' ? nativeTool : undefined),
+    });
+    const armedLaunch = launch();
+    const hook = calls.toolBeforeCb;
+    if (!hook) throw new Error('tool:execute.before not captured');
+    await hook(armedLaunch);
+    expect(armedLaunch.input.background).toBe(true);
+    await flushLoggerForTesting();
+    expect(readPluginLog()).toContain('[v2] background-default flip armed');
+    expect(readPluginLog()).not.toContain(
+      '[v2] background-default flip disarmed',
+    );
+
+    await cleanup();
+    await flushLoggerForTesting();
+    // Disposal must disarm the flip itself. A disposed instance also
+    // rejects further execute.before calls, but that rejection happens
+    // before any flip consultation, so only the disarmed log proves the
+    // state transition (removing disarm() from the disposer fails here).
+    expect(readPluginLog()).toContain('[v2] background-default flip disarmed');
+
+    const rejected = launch();
+    await expect(hook(rejected)).rejects.toThrow(/disposed/);
+    expect(rejected.input).not.toHaveProperty('background');
+  }, 20_000);
+
   test('bundled skills register through a lazily replayed draft', async () => {
     // Deferred execution previously prevented setup from retaining the
     // registration's explicit cleanup handle.

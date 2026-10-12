@@ -1085,6 +1085,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       readContextMinLines: runtime.backgroundJobs.readContextMinLines,
       readContextMaxFiles: runtime.backgroundJobs.readContextMaxFiles,
       boardInjection: runtime.backgroundJobs.boardInjection,
+      disabledHooks: [...runtime.disabledHooks],
       backgroundJobBoard: backgroundJobCoordinator,
       backgroundJobSupervisor,
       backgroundTaskConcurrency,
@@ -1392,7 +1393,16 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         .filter((a) => a.name.startsWith('councillor-'))
         .map((a) => a.name);
       if (councilSeats.length > 0) {
-        councilInject = createCouncilInjectHook({ wording: delegation });
+        // One resolution, two consumers: the block's delivery mode and the
+        // assembly gate must never disagree (a harness-mode block with the
+        // assembly branch inert would leave the tool-less council holding
+        // bare IDs). Read once here — both sites are construction-time.
+        const councilAssemblyEnabled =
+          !runtime.disabledHooks.has('council-assembly');
+        councilInject = createCouncilInjectHook({
+          wording: delegation,
+          seatAttachment: councilAssemblyEnabled ? 'harness' : 'paste',
+        });
       }
     }
 

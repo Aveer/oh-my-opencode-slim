@@ -629,11 +629,10 @@ currently break this plugin:
   `system[0]` and collapses all parts into one — locked by a regression
   test in `src/index.test.ts`.
 - **Subagent `model` param.** The built-in `subagent` tool takes an
-  optional `model` argument (`"providerID/modelID"`). The delegation
-  vocabulary exposes it (`modelParam`) and the orchestrator/council
-  prompts carry a one-sentence guardrail: only set it when the user
-  explicitly asks for a specific model or variant; never guess the ID —
-  look it up with the models tool first.
+  optional `model` argument (`"providerID/modelID"`). The v2 slim
+  orchestrator prompt carries a one-sentence guardrail: only set it when
+  the user explicitly asks for a specific model or variant; never guess
+  the ID — look it up with the models tool first.
 
 ## Installing on v2
 
@@ -1065,6 +1064,37 @@ Related: when a job whose terminal report the parent already consumed
 (reconciled) reopens to running, the board injection appends exactly one
 corrective trailing notice ("previously reported terminal, now running
 again; the earlier report is superseded") in the cache-safe tail zone.
+
+### Host outcome quirks the terminal gate defends against
+
+Two v2 host behaviors (verified against v2.0.26) shape how the terminal
+gate handles host outcomes:
+
+- **`idle_outcome` is never cleared.** The host writes Session.Info
+  `outcome` once, at the run's terminal transition, and nothing resets
+  it when the same session starts a new run — a later read returns the
+  PREVIOUS run's outcome until the next terminal transition overwrites
+  it. The gate therefore never trusts a session-level outcome alone:
+  `attributableHostOutcome` accepts an outcome only when its `time.idle`
+  falls inside the current run's read window (the
+  `idle-not-after-window-lower` rejection reason is this defense logging
+  itself), and the transcript classifier treats a session-level outcome
+  as corroborating evidence, never as the primary criterion.
+- **Committed-but-stale reads.** A host read can observe a state older
+  than an already-committed write (pinned by the terminal-gate test
+  suite). The gate reads evidence, never invariants such as
+  "outcome present ⇒ terminal", and simply re-reads on the next attempt
+  when a read lags a commit.
+
+The publication path additionally runs a **log-only corroboration**:
+when a window-attributed host outcome is in hand at commit time, the
+published state is compared against the state that outcome would imply
+(`succeeded` → completed, `failed` → error,
+`interrupted`/`cancelled` → stopped; verified-cancel publications are
+stop-family normalized so they never log), and disagreements land in
+`[terminal-gate] outcome corroboration` log lines. The mirror never
+gates behavior — promoting it to a decision signal requires a fresh
+review — and a host without `session.get` produces no entries.
 
 ### Environment caveats
 

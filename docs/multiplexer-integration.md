@@ -566,7 +566,13 @@ removed or changed behavior, with migration guidance:
 3. `admission-mismatch` → the configured adapter is not the one the client is
    inside (for example `type: "zellij"` while running in tmux).
 4. `host-unreachable` → on v1 the host has no reachable listener; restart with
-   `--port` or use `serve` + `attach`. On v2 shared or `--server` hosts the
+   `--port` or use `serve` + `attach`. For a v1 server started with
+   `OPENCODE_SERVER_PASSWORD`, the client authenticates its probe and session
+   reads with the same basic auth `opencode attach` uses: the header from
+   `attach -p/--password` (and `-u/--username`), or else
+   `OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_USERNAME` in the TUI's
+   environment. A 401 therefore means neither was provided or they do not
+   match the server. On v2 shared or `--server` hosts the
    authenticated `server.info()` probe failed; check the shared service or the
    `--server` URL.
 5. `readiness-timeout` → the child never became visible in `/session/status`

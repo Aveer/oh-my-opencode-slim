@@ -193,7 +193,6 @@ Review available agents and lane rules. Before beginning non-trivial work, ident
 - Reference paths/lines, don't paste files (\`src/app.ts:42\` not full contents)
 - Brief user on delegation goal before each call
 - Record task IDs, state, and advisory ownership/dependency labels
-- Do not immediately wait after spawning independent background tasks unless the next step truly depends on their result
 - Reconcile results, resolve conflicts, and gate dependent lanes
 
 ${WRITABLE_FILE_OPERATIONS_RULES}
@@ -212,7 +211,7 @@ When the routing threshold calls for delegation, build a short work graph before
 - Preserve existing todo order, statuses, and priorities unless the user explicitly asks to reprioritize, cancel, or replace them.
 - Finish the current in-progress task before starting the newly appended task unless the current task is blocked or the user explicitly overrides the order.
 
-Can tasks be split into background specialist work?
+Can independent lanes run in parallel?
 ${enabledParallelExamples}
 
 Balance: respect dependencies, avoid parallelizing what must be sequential, and avoid overlapping write ownership.
@@ -223,17 +222,13 @@ Balance: respect dependencies, avoid parallelizing what must be sequential, and 
 ${liveTaskMessageInstruction}
 - Use \`task_cancel\` only when the user asks, or when a running lane is obsolete, wrong, or conflicts with a safer replacement plan. Cancellation retains the child session and rolls nothing back — inspect and reconcile partial changes before any replacement or follow-up.
 - ${continueExistingSentence} \`task_revive\` may cancel a tracked running generation and start a new generation in that same child; recovered host work is never aborted merely because it was imported. It returns a tracked continuation, not a synchronous native result. Inspect it with \`task_status\` or \`task_result\`; do not use it as a status check or claim the new prompt was seen until a result arrives.
-- Prefer \`${vocab.tool}(..., background: true)\` for delegated work that can run independently, and launch independent specialist lanes in the background so the orchestrator stays unblocked and can reconcile results when they return.${
-    vocab.modelParam
-      ? ` The ${vocab.tool} tool also accepts an optional \`${vocab.modelParam}\` argument ("providerID/modelID"). Only set it when the user explicitly asks for a specific model or variant; never guess the ID — look it up with the models tool first, filtering to your own provider.`
-      : ''
-  } Never reissue an unchanged task to the same specialist after a rejection; adjust its scope or context before retrying. Continue orchestration only on non-overlapping work; otherwise briefly report what was launched and stop. Before local edits or another writer task, compare against running task scopes — parallel background tasks are allowed only when their write scopes do not conflict.
+- Two-channel delegation: short work whose result feeds the next step → foreground (parallel calls in one message when independent); work that runs independently or is long → background, then end the turn or continue non-overlapping work. Never reissue an unchanged task to the same specialist after a rejection; adjust its scope or context before retrying. Before local edits or another writer task, compare against running task scopes — parallel tasks are allowed only when their write scopes do not conflict.
 - A cancelled generation does not cancel the required review or validation. If a lane was cancelled during implementation or review, inspect its partial work and resume it with \`task_revive\` or launch a clearly scoped replacement; do not mark the lane complete or abandon required review merely because the prior generation was cancelled.
 
 ${
   wakeSchedulerEnabled
     ? `#### End Turn After Background Tasks
-After spawning independent background tasks and remaining non-overlapping work, end the turn with a brief status: completion hooks and the wake scheduler resume you automatically. Do not call \`wait_for_user\` to await background task completion and do not poll for status with repeated tool calls; the correct flow is launch → brief status → end turn → resume → reconcile. ${
+After spawning independent background tasks and remaining non-overlapping work, the correct flow is launch → brief status → end turn → resume → reconcile: completion hooks and the wake scheduler resume you automatically. ${
         boardInjectionEnabled
           ? 'The board is ambient status'
           : 'Background status is ambient'
