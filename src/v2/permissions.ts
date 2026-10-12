@@ -387,7 +387,7 @@ function cloneRule(rule: V2PermissionRule): V2PermissionRule {
 /** Mirrors the host matcher: slash normalization, `?`, `*`, and `git *`. */
 function patternMatches(pattern: string, value: string): boolean {
   const normalizedPattern = normalizePattern(pattern);
-  const normalizedValue = value.replaceAll('\\', '/');
+  const normalizedValue = normalizePattern(value);
   return sourceVariants(normalizedPattern).some((variant) => {
     const expression = variant
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
