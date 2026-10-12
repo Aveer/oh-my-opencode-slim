@@ -4,9 +4,9 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  statSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import * as os from 'node:os';
