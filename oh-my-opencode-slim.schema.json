@@ -1322,6 +1322,9 @@
             "tui",
             "mini"
           ]
+        },
+        "zellij_pane_mode": {
+          "not": {}
         }
       }
     },
@@ -1565,6 +1568,9 @@
           "default": false,
           "description": "When true, removes the host child session when a retention trim evicts its terminal or retained-stopped record, only for background children this plugin launched itself (never foreground, unattributed placeholder, adopted, or restored sessions) and only after a host read confirms the session still belongs to the record parent. Never fires for parent deletion or explicit drops. v1 hosts only for now (v2 has no live session-status map, so every prune is skipped). Default disabled.",
           "type": "boolean"
+        },
+        "continueOnIdle": {
+          "not": {}
         }
       }
     },
@@ -1604,6 +1610,15 @@
             "retry-primary",
             "stick-to-fallback"
           ]
+        },
+        "timeoutMs": {
+          "not": {}
+        },
+        "retry_on_empty": {
+          "not": {}
+        },
+        "runtimeOverride": {
+          "not": {}
         }
       },
       "additionalProperties": false
@@ -1619,7 +1634,9 @@
           "additionalProperties": {
             "type": "object",
             "propertyNames": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^(?!master$)",
+              "description": "Councillor name; the legacy \"master\" key was removed"
             },
             "additionalProperties": {
               "type": "object",
@@ -1633,6 +1650,15 @@
         "default_preset": {
           "default": "default",
           "type": "string"
+        },
+        "master": {
+          "not": {}
+        },
+        "master_timeout": {
+          "not": {}
+        },
+        "master_fallback": {
+          "not": {}
         }
       },
       "required": [
@@ -1810,6 +1836,9 @@
         ],
         "additionalProperties": false
       }
+    },
+    "tmux": {
+      "not": {}
     }
   },
   "title": "oh-my-opencode-slim",

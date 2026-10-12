@@ -311,21 +311,20 @@ describe('v2 profile refresh hook', () => {
     });
   });
 
-  test('warning-only kinds (missing preset, deprecated key) do not fail the refresh', async () => {
+  test('warning-only kinds (missing preset) do not fail the refresh', async () => {
     env.writeUserConfig(CHEAP_DEEPSEEK);
 
     await withFactory(async ({ refresh }) => {
       env.writeUserConfig({
         preset: 'ghost', // missing-preset warning, not a hard failure
-        tmux: { enabled: true }, // deprecated-key warning, ignored
         presets: {
           cheap: { explorer: { model: 'anthropic/claude-sonnet-4-5' } },
         },
       });
       const refreshed = await refresh();
 
-      // The selected preset is missing (defaults apply) and a deprecated key
-      // was ignored — both are warnings, not malformed config.
+      // The selected preset is missing (defaults apply) — a warning, not
+      // malformed config.
       expect(refreshed.ok).toBe(true);
     });
   });

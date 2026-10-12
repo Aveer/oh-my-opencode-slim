@@ -1673,9 +1673,8 @@ export function readConfigState(
     silent: true,
     onWarning: (warning) => {
       // Only genuinely broken configs (parse/load/schema failures) mark the
-      // sidebar invalid. Benign deprecation notices (deprecated-key) and
-      // missing-preset do not, otherwise a config that loads fine would be
-      // shown as "Config invalid".
+      // sidebar invalid. Benign missing-preset notices do not, otherwise a
+      // config that loads fine would be shown as "Config invalid".
       if (
         warning.kind === 'invalid-json' ||
         warning.kind === 'invalid-schema' ||

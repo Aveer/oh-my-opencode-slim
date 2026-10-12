@@ -408,9 +408,8 @@ Council responses include:
 
 ### Removed `master` fields
 
-The `council.master` field and other `master`-prefixed fields have been
-removed. A deprecation warning is logged this release if a config still
-contains them, but they no longer have any effect.
+The `council.master*` keys were removed: ignored with a warning (see
+[Removed config keys](configuration.md#removed-config-keys)).
 
 Prefer this instead:
 
@@ -426,9 +425,10 @@ Prefer this instead:
 
 ### Reserved keys inside presets
 
-- A preset key named `master` is ignored
-- Legacy nested `councillors` objects are still accepted for backward
-  compatibility
+- A preset key named `master` was removed: the entry is ignored with a warning.
+- Nested legacy `councillors` objects were removed: the wrapper and the
+  councillors inside it are ignored with a warning. Put councillors directly
+  under the preset.
 
 ---
 
