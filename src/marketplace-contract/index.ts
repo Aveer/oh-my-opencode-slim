@@ -97,6 +97,8 @@ export const DEFAULT_MARKETPLACE_REGISTRY_URL =
   'https://registry.ohmyopencodeslim.com/v2/' as const;
 export const DEFAULT_MARKETPLACE_REGISTRY_V3_URL =
   'https://registry.ohmyopencodeslim.com/v3/' as const;
+export const DEFAULT_MARKETPLACE_REGISTRY_URL_V3 =
+  DEFAULT_MARKETPLACE_REGISTRY_V3_URL;
 export const MARKETPLACE_REGISTRY_V3_SCHEMA_VERSION = 3 as const;
 
 // The v2 endpoint intentionally remains v2-only. In particular, changing the
@@ -243,6 +245,8 @@ const MarketplaceRegistryIndexV2EndpointSchema = z
 
 export const MarketplaceRegistryIndexSchema =
   MarketplaceRegistryIndexV2EndpointSchema;
+export const MarketplaceRegistryEntryV2Schema = MarketplaceRegistryEntrySchema;
+export const MarketplaceRegistryIndexV2Schema = MarketplaceRegistryIndexSchema;
 
 export const MarketplaceRegistryIndexV3Schema = z
   .object({
@@ -264,15 +268,23 @@ export type MarketplaceManifestSummaryV3 = z.infer<
 export type MarketplaceRegistryEntry = z.infer<
   typeof MarketplaceRegistryEntrySchema
 >;
+export type MarketplaceRegistryEntryV2 = MarketplaceRegistryEntry;
 export type MarketplaceRegistryEntryV3 = z.infer<
   typeof MarketplaceRegistryEntryV3Schema
 >;
 export type MarketplaceRegistryIndex = z.infer<
   typeof MarketplaceRegistryIndexSchema
 >;
+export type MarketplaceRegistryIndexV2 = MarketplaceRegistryIndex;
 export type MarketplaceRegistryIndexV3 = z.infer<
   typeof MarketplaceRegistryIndexV3Schema
 >;
+
+export function canonicalizeMarketplaceRegistryIndex(
+  index: MarketplaceRegistryIndex,
+): string {
+  return canonicalizeMarketplaceValue(index);
+}
 
 export function registryArtifactPath(id: string, version: string): string {
   const [publisher, name] = id.split('/');
@@ -378,6 +390,8 @@ export function parseMarketplaceRegistryIndex(
   }
   return result.data;
 }
+
+export const parseMarketplaceRegistryIndexV2 = parseMarketplaceRegistryIndex;
 
 export function parseMarketplaceRegistryIndexV3(
   value: unknown,
