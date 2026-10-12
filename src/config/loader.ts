@@ -12,6 +12,7 @@ import {
   PresetResolutionError,
   resolvePresetDefinition,
 } from './presets';
+import { stripRemovedConfigKeys } from './removed-keys';
 import {
   type BackgroundJobsConfig,
   BackgroundJobsConfigSchema,
@@ -46,7 +47,8 @@ export type ConfigLoadWarningKind =
   | 'invalid-schema'
   | 'read-error'
   | 'missing-preset'
-  | 'normalized';
+  | 'normalized'
+  | 'removed-key';
 
 /**
  * A warning emitted while loading plugin configuration.
@@ -403,6 +405,20 @@ export function loadRawPluginConfigFromPath(
       }
       return null;
     }
+    // Drop keys removed in this version before schema validation: a stale
+    // removed key must not invalidate the whole file (and silently discard
+    // every other user setting). Reported per key, not migrated.
+    stripRemovedConfigKeys(rawConfig, (message) => {
+      options?.onWarning?.({
+        path: configPath,
+        kind: 'removed-key',
+        message,
+      });
+      if (!options?.silent) {
+        console.warn(`[oh-my-opencode-slim] ${message}`);
+      }
+    });
+
     // Normalize disabled_* config keys before schema validation so a
     // non-array value does not reject the whole config object (which would
     // silently discard every other user setting). Reported with the

@@ -2892,3 +2892,127 @@ describe('env variable interpolation', () => {
     expect(config.agents?.oracle?.model).toBe('foo/bar');
   });
 });
+
+describe('removed config keys', () => {
+  let tempDir: string;
+  let originalEnv: typeof process.env;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'loader-removed-'));
+    originalEnv = { ...process.env };
+    delete process.env.OPENCODE_CONFIG_DIR;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'user-config');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    process.env = originalEnv;
+  });
+
+  function load(extra: Record<string, unknown>) {
+    const projectDir = path.join(tempDir, 'project');
+    const configDir = path.join(projectDir, '.opencode');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'oh-my-opencode-slim.json'),
+      JSON.stringify({
+        preset: 'mine',
+        presets: { mine: { oracle: { model: 'test/preset-oracle' } } },
+        ...extra,
+      }),
+    );
+    const warnings: ConfigLoadWarning[] = [];
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const config = loadPluginConfig(projectDir, {
+        onWarning: (warning) => warnings.push(warning),
+      });
+      return { config, warnings };
+    } finally {
+      warn.mockRestore();
+    }
+  }
+
+  const councillor = { model: 'test/councillor' };
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['tmux', { tmux: { enabled: true } }],
+    [
+      'council.master',
+      { council: { presets: { p: { a: councillor } }, master: {} } },
+    ],
+    [
+      'council.master_timeout',
+      { council: { presets: { p: { a: councillor } }, master_timeout: 1 } },
+    ],
+    [
+      'council.master_fallback',
+      {
+        council: { presets: { p: { a: councillor } }, master_fallback: [] },
+      },
+    ],
+    [
+      'council.presets.p.master',
+      { council: { presets: { p: { a: councillor, master: councillor } } } },
+    ],
+    [
+      'council.presets.p.councillors',
+      {
+        council: {
+          presets: { p: { a: councillor, councillors: { b: councillor } } },
+        },
+      },
+    ],
+    [
+      'backgroundJobs.continueOnIdle',
+      { backgroundJobs: { continueOnIdle: true } },
+    ],
+    ['fallback.timeoutMs', { fallback: { timeoutMs: 15000 } }],
+    ['fallback.retry_on_empty', { fallback: { retry_on_empty: true } }],
+    ['fallback.runtimeOverride', { fallback: { runtimeOverride: true } }],
+    [
+      'multiplexer.zellij_pane_mode',
+      { multiplexer: { type: 'zellij', zellij_pane_mode: 'agent-tab' } },
+    ],
+  ];
+
+  for (const [key, extra] of cases) {
+    test(`"${key}" is dropped with a warning; other settings still load`, () => {
+      const { config, warnings } = load(extra);
+
+      expect(config.agents?.oracle?.model).toBe('test/preset-oracle');
+      expect(warnings.map((w) => w.kind)).toEqual(['removed-key']);
+      expect(warnings[0]?.message).toBe(
+        `Config key "${key}" was removed in this version and is ignored; see docs/configuration.md`,
+      );
+      if (key.startsWith('council.')) {
+        expect(config.council?.presets.p?.a?.model).toBe('test/councillor');
+        expect(Object.keys(config.council?.presets.p ?? {})).toEqual(['a']);
+      }
+      if (key === 'multiplexer.zellij_pane_mode') {
+        expect(config.multiplexer?.type).toBe('zellij');
+      }
+    });
+  }
+
+  test('reports every removed key in one file', () => {
+    const { config, warnings } = load({
+      tmux: {},
+      fallback: { timeoutMs: 1, runtimeOverride: true, maxRetries: 2 },
+    });
+
+    expect(config.agents?.oracle?.model).toBe('test/preset-oracle');
+    expect(config.fallback?.maxRetries).toBe(2);
+    expect(warnings.map((w) => w.message)).toEqual([
+      'Config key "tmux" was removed in this version and is ignored; see docs/configuration.md',
+      'Config key "fallback.timeoutMs" was removed in this version and is ignored; see docs/configuration.md',
+      'Config key "fallback.runtimeOverride" was removed in this version and is ignored; see docs/configuration.md',
+    ]);
+  });
+
+  test('unknown invalid keys still reject the file', () => {
+    const { config, warnings } = load({ fallback: { bogus: true } });
+
+    expect(config.agents?.oracle?.model).toBeUndefined();
+    expect(warnings.map((w) => w.kind)).toEqual(['invalid-schema']);
+  });
+});

@@ -202,7 +202,7 @@ interface MultiplexerConfig {
 }
 ```
 
-`zellij_pane_mode` is removed; rejected by schema. Invalid
+`zellij_pane_mode` is removed; the loader strips it with a warning. Invalid
 `type`/`layout`/`main_pane_size`/`cmux_tui_binary`/`viewer` values disable
 pane management with a once-per-process diagnostic.
 

@@ -197,7 +197,7 @@ This allows consumers to import directly from `src/config` rather than individua
 - `type`: "auto", "tmux", "zellij", "herdr", "cmux", "kitty", or "none" (client-local admission)
 - `layout`: Pane layout (main-horizontal, main-vertical, tiled, even-horizontal, even-vertical)
 - `main_pane_size`: Percentage for main pane (20-80), tmux main-* layouts only
-- `zellij_pane_mode`: removed; rejected by schema
+- `zellij_pane_mode`: removed; stripped with a warning by the loader
 
 ## Environment Variable Support
 
@@ -206,7 +206,7 @@ This allows consumers to import directly from `src/config` rather than individua
 
 ## Backward Compatibility
 
-- Top-level `tmux`, `multiplexer.zellij_pane_mode`, `council.master*`: removed; rejected by schema
+- Removed keys (`REMOVED_CONFIG_KEYS` in `removed-keys.ts`: top-level `tmux`, `council.master*`, council preset `master` / `councillors`, `backgroundJobs.continueOnIdle`, `fallback.timeoutMs|retry_on_empty|runtimeOverride`, `multiplexer.zellij_pane_mode`): stripped from each raw layer before validation with a `removed-key` warning; the schema itself still rejects them
 - Invalid `multiplexer` values disable pane management (`type: "none"`) with one diagnostic
 
 ## Error Handling

@@ -227,8 +227,8 @@ All config files support **JSONC** (JSON with Comments):
 | `multiplexer.main_pane_size` | number | `60` | Main pane size as percentage (20–80) for tmux main layouts; ignored by Zellij, Herdr, kitty, and cmux-tui See [Multiplexer Integration](multiplexer-integration.md#layouts). |
 | `multiplexer.cmux_tui_binary` | string | omitted | Explicit path to the cmux-tui binary. When omitted, the client resolves `cmux-tui` first, then `cmux`, on `PATH` See [Multiplexer Integration](multiplexer-integration.md). |
 | `multiplexer.viewer` | string | `"tui"` on v1, `"mini"` on v2 | Subagent pane surface: `"tui"` (full interface) or `"mini"` (lightweight interface). Explicit values override the host default. On v1, `"mini"` requires OpenCode >= 1.17.10 and runs `attach ... --dir <dir> --mini`; on v2 it runs `opencode mini` without a positional directory. Changes take effect on the next opencode start. See [Multiplexer Integration](multiplexer-integration.md). |
-| `multiplexer.zellij_pane_mode` | — | — | Removed. Config containing this key is rejected. |
-| `tmux` (top-level) | — | — | Removed. Config containing this key is rejected. |
+| `multiplexer.zellij_pane_mode` | — | — | Removed: ignored with a warning. See [Removed config keys](#removed-config-keys). |
+| `tmux` (top-level) | — | — | Removed: ignored with a warning. Use `multiplexer.*`. See [Removed config keys](#removed-config-keys). |
 | `backgroundJobs.maxSessionsPerAgent` | integer | `2` | Maximum completed/reconciled reusable child sessions per specialist type in the current orchestrator session (1–10) See [Background Job Management](#background-job-management). |
 | `backgroundJobs.maxContextLines` | integer | `50000` | Maximum total context lines (sum of all tracked file line counts) for a session to remain reusable. Sessions exceeding this threshold are evicted from the reusable pool on completion See [Background Job Management](#background-job-management). |
 | `backgroundJobs.readContextMinLines` | integer | `10` | Minimum number of lines read from a file before it appears in reusable background-job context (0–1000) See [Background Job Management](#background-job-management). |
@@ -290,6 +290,27 @@ The plugin's `agents.<agent>.mcps` setting controls which configured plugin MCP
 servers its policy allows. It is not a host-native `agent.mcps` property and
 does not replace host permission rules: an explicit host permission denial for
 an MCP tool remains authoritative.
+
+### Removed config keys
+
+These keys were removed. A config file that still contains one keeps loading:
+the key is dropped before validation and a warning names it, for example
+`Config key "fallback.timeoutMs" was removed in this version and is ignored;
+see docs/configuration.md`. Values are **not** migrated, so set the
+replacement yourself where one exists.
+
+| Removed key | Use instead |
+|-------------|-------------|
+| `tmux` (top-level block) | `multiplexer.type: "tmux"` plus `multiplexer.layout` / `multiplexer.main_pane_size` |
+| `council.master`, `council.master_timeout`, `council.master_fallback` | Configure the Council agent like any agent, e.g. `presets.<name>.council.model` |
+| `council.presets.<name>.master` (councillor named `master`) | None; rename the councillor if you still want it |
+| `council.presets.<name>.councillors` (nested wrapper) | Put councillors directly under `council.presets.<name>` (the wrapped entries are dropped) |
+| `backgroundJobs.continueOnIdle` | `backgroundJobs.orchestratorWake.enabled` |
+| `fallback.timeoutMs`, `fallback.retry_on_empty`, `fallback.runtimeOverride` | None; tune `fallback.maxRetries` / `fallback.retryDelayMs` |
+| `multiplexer.zellij_pane_mode` | None; Zellij panes always open in the parent pane's tab |
+
+Other unknown or invalid keys are not covered by this list and still make the
+config file invalid.
 
 ### Runtime Preset Switching
 
@@ -417,7 +438,8 @@ subprocess.
   `presets.<name>.council.model`.
 - The **councillor models** are configured separately under
   `council.presets.<name>.<councillor>.model`.
-- `council.master*` keys are rejected.
+- `council.master*` keys were removed: ignored with a warning (see
+  [Removed config keys](#removed-config-keys)).
 
 ```jsonc
 {
@@ -614,8 +636,8 @@ Two behaviors to know about when concurrency is enabled:
   `concurrency`, pair it with an opt-in `wallClockTimeoutMs` so stalled
   tasks are eventually forced to a terminal state and release their slots.
 
-`backgroundJobs.continueOnIdle` was removed; the key is rejected. Use
-`orchestratorWake.enabled`.
+`backgroundJobs.continueOnIdle` was removed: it is ignored with a warning and
+its value is not migrated. Use `orchestratorWake.enabled`.
 
 `wallClockTimeoutMs` is a hard deadline that only supervises explicitly
 background native task calls; foreground calls or calls with `background`
