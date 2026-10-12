@@ -13,6 +13,7 @@ import {
 import { getAgentMcpList } from '../config/agent-mcps';
 import type { HostAgentConfig, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
+import { legacyAliasFor } from '../config/utils';
 import { escapeRegExp, normalizeAgentName } from '../utils/agent-variant';
 import { delegationVocabulary, parseModelRef } from '../v2/adapters';
 
@@ -93,13 +94,7 @@ function getOverrideFromAgents(
   agents: Record<string, AgentOverrideConfig>,
   name: string,
 ): AgentOverrideConfig | undefined {
-  return (
-    agents[name] ??
-    agents[
-      Object.keys(AGENT_ALIASES).find((key) => AGENT_ALIASES[key] === name) ??
-        ''
-    ]
-  );
+  return agents[name] ?? agents[legacyAliasFor(name) ?? ''];
 }
 
 function buildAcpAgentDefinition(

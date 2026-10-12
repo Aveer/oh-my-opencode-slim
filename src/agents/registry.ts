@@ -4,6 +4,7 @@ import { parseList } from '../config/agent-mcps';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
+import { legacyAliasFor } from '../config/utils';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
 import { resolveMarketplaceActivation } from '../marketplace/activation';
 import {
@@ -358,9 +359,7 @@ function presetForAgent(
   name: string,
 ) {
   if (!preset) return undefined;
-  const alias = Object.keys(AGENT_ALIASES).find(
-    (key) => AGENT_ALIASES[key] === name,
-  );
+  const alias = legacyAliasFor(name);
   return preset[name] ?? (alias ? preset[alias] : undefined);
 }
 
@@ -553,9 +552,7 @@ export function buildResolvedAgentRegistry(
   const preset = resolvedPreset(runtime);
   const runtimeAgentOverrides = runtime.agents();
   const overrideFor = (name: string) => {
-    const legacy = Object.keys(AGENT_ALIASES).find(
-      (alias) => AGENT_ALIASES[alias] === name,
-    );
+    const legacy = legacyAliasFor(name);
     return (
       runtimeAgentOverrides[name] ??
       (legacy ? runtimeAgentOverrides[legacy] : undefined)
