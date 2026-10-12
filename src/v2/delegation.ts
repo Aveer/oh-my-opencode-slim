@@ -3,7 +3,7 @@
  * translates names/args so the whole v1 pipeline (task-session-manager,
  * job board, task_* tools) is reused with zero changes. */
 
-import { delegationVocabulary } from './adapters';
+import { type DelegationVocabulary, delegationVocabulary } from './adapters';
 
 export const DELEGATION_TOOL_V2 = 'subagent';
 export const DELEGATION_TOOL_V1 = 'task';
@@ -58,17 +58,14 @@ export function v1ArgsToSubagent(
   return out;
 }
 
-/** Host-aware delegation wording for model-visible guidance. Returns the
- * native delegation tool plus its agent-selector and existing-session
- * parameters, derived from `delegationVocabulary` so the v1/v2 mapping has a
- * single source: v2 → `subagent` / `agent` / `sessionID`; v1 and any unknown
+/** Host-aware delegation wording for model-visible guidance: the native
+ * delegation tool plus its agent-selector and existing-session parameters,
+ * derived from `delegationVocabulary` so the v1/v2 mapping has a single
+ * source: v2 → `subagent` / `agent` / `sessionID`; v1 and any unknown
  * flavor → `task` / `subagent_type` / `task_id`. The control tools (`task_*`)
- * share the same identifier param (`controlParamName`). */
-export interface DelegationWording {
-  tool: string;
-  agentParam: string;
-  resumeParam: string;
-}
+ * share the same identifier param (`controlParamName`). The host's model
+ * param is vocabulary-internal and never reaches model-visible guidance. */
+export type DelegationWording = Omit<DelegationVocabulary, 'modelParam'>;
 
 export function delegationWording(
   hostFlavor: string | undefined,
