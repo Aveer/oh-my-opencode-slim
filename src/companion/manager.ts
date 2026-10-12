@@ -525,32 +525,36 @@ export class CompanionManager {
         : request.scope === 'project'
           ? 'project'
           : 'effective';
-    const result = !targetAvailable || targetCwd === null
-      ? {
+    const result = (() => {
+      if (targetCwd === null || !targetAvailable) {
+        return {
           ok: false,
           presetName: '',
           message: 'Project is not a known accessible Companion workspace.',
           summary: [],
-        }
-      : (() => {
-          const config = loadPluginConfig(targetCwd, {
-            silent: true,
-            hostFlavor: this.hostFlavor,
-          });
-          return scope === 'project' && request.inherit === true
-            ? clearProjectPresetOnDisk(targetCwd, this.hostFlavor)
-            : typeof request.preset === 'string' && request.preset.trim()
-              ? switchPresetOnDisk(targetCwd, request.preset, config, {
-                  scope,
-                  hostFlavor: this.hostFlavor,
-                })
-              : {
-                  ok: false,
-                  presetName: '',
-                  message: 'Preset request is missing a preset name.',
-                  summary: [],
-                };
-        })();
+        };
+      }
+
+      const config = loadPluginConfig(targetCwd, {
+        silent: true,
+        hostFlavor: this.hostFlavor,
+      });
+      if (scope === 'project' && request.inherit === true) {
+        return clearProjectPresetOnDisk(targetCwd, this.hostFlavor);
+      }
+      if (typeof request.preset !== 'string' || !request.preset.trim()) {
+        return {
+          ok: false,
+          presetName: '',
+          message: 'Preset request is missing a preset name.',
+          summary: [],
+        };
+      }
+      return switchPresetOnDisk(targetCwd, request.preset, config, {
+        scope,
+        hostFlavor: this.hostFlavor,
+      });
+    })();
 
     // The native UI may edit a remembered project without a running manager.
     // Publish updated feedback/catalog through the TS-owned state, never Rust JSONC.
@@ -558,7 +562,8 @@ export class CompanionManager {
       const next = getPresetSelectionState(targetCwd, this.hostFlavor);
       writeState((state) => {
         const known = state.known_projects?.find(
-          (project) => knownProjectKey(project.cwd) === knownProjectKey(targetCwd),
+          (project) =>
+            knownProjectKey(project.cwd) === knownProjectKey(targetCwd),
         );
         if (!known) return;
         known.preset = {
