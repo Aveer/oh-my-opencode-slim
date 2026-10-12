@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { createTaskSessionManagerHook } from '../hooks/task-session-manager';
 import {
   clearChildInputWait,
@@ -14,6 +14,13 @@ import { mapV2EventToV1 } from '../v2/event-adapter';
 import type { V2Context } from '../v2/types';
 import { createTaskReplyTool } from './task-reply';
 import { createTaskStatusTool } from './task-status';
+
+// The child-input wait registry and user-wait gate are process-global; a
+// leftover entry leaks into later files (task_status reads it).
+afterEach(() => {
+  resetChildInputWaitForTests();
+  resetUserWaitGateForTests();
+});
 
 mock.module('../utils/opencode-client', () => ({
   getClient: (input: { client: unknown }) => input.client as never,
