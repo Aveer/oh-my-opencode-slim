@@ -1906,4 +1906,75 @@ describe('CompanionManager', () => {
       result_ok: false,
     });
   });
+
+  it('refuses to rewrite malformed offline project JSONC and reports failure', () => {
+    const projectDir = path.join(TEST_DIR, 'malformed-known');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    mkdirSync(projectConfigDir, { recursive: true });
+    const projectFile = path.join(
+      projectConfigDir,
+      'oh-my-opencode-slim.jsonc',
+    );
+    const original = '{ // Invalid project JSONC\\n "preset": }';
+    writeFileSync(projectFile, original);
+    const manager = make('malformed-relay', path.join(TEST_DIR, 'relay'));
+    manager.onLoad();
+    const state = readState();
+    rememberKnownCompanionProject(state, projectDir, undefined);
+    state.preset_requests = [
+      {
+        request_id: 'malformed-request',
+        session_id: 'malformed-relay',
+        target_cwd: projectDir,
+        scope: 'project',
+        preset: 'cheap',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      manager as unknown as { consumePresetRequest: () => boolean }
+    ).consumePresetRequest();
+
+    expect(readFileSync(projectFile, 'utf8')).toBe(original);
+    const known = readState().known_projects.find(
+      (entry: { cwd: string }) => entry.cwd === projectDir,
+    );
+    expect(known?.preset).toMatchObject({
+      last_request_id: 'malformed-request',
+      result_ok: false,
+      message: expect.stringContaining('cannot be read or validated'),
+    });
+  });
+
+  it('reports a deleted remembered project without touching the relay', () => {
+    const missing = path.join(TEST_DIR, 'deleted-project');
+    const live = path.join(TEST_DIR, 'live');
+    mkdirSync(live, { recursive: true });
+    const manager = make('missing-relay', live);
+    manager.onLoad();
+    const state = readState();
+    rememberKnownCompanionProject(state, missing, undefined);
+    state.preset_requests = [
+      {
+        request_id: 'missing-request',
+        session_id: 'missing-relay',
+        target_cwd: missing,
+        scope: 'project',
+        preset: 'cheap',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      manager as unknown as { consumePresetRequest: () => boolean }
+    ).consumePresetRequest();
+    const next = readState();
+    expect(next.known_projects.find(
+      (entry: { cwd: string }) => entry.cwd === missing,
+    )?.preset).toMatchObject({
+      last_request_id: 'missing-request',
+      result_ok: false,
+      message: expect.stringContaining('not a known accessible'),
+    });
+    expect(next.sessions[0].cwd).toBe(live);
+  });
 });
