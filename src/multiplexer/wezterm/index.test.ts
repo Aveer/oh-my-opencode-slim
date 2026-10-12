@@ -296,6 +296,53 @@ describe('WeztermMultiplexer', () => {
     ]);
   }, 10_000);
 
+  test('a hung focus restore times out, keeps the pane and frees the mutex', async () => {
+    let killed = false;
+    installMock((command) =>
+      command.includes('activate-pane')
+        ? {
+            exited: new Promise<number>(() => {}),
+            stdout: () => new Promise<string>(() => {}),
+            stderr: () => Promise.resolve(''),
+            kill: () => {
+              killed = true;
+              return true;
+            },
+            exitCode: null,
+            proc: {} as never,
+          }
+        : undefined,
+    );
+    const { WeztermMultiplexer } = await importFreshWezterm();
+    const wezterm = new WeztermMultiplexer();
+    const [first, second] = await Promise.all([
+      spawnWith(wezterm, 'ses_a'),
+      spawnWith(wezterm, 'ses_b'),
+    ]);
+
+    expect(first).toEqual({ success: true, paneId: '100' });
+    expect(second).toEqual({ success: true, paneId: '101' });
+    expect(killed).toBe(true);
+  }, 10_000);
+
+  test('a throwing focus restore still reports the split pane', async () => {
+    installMock((command) => {
+      if (command.includes('activate-pane')) throw new Error('spawn EPIPE');
+      return undefined;
+    });
+    const { WeztermMultiplexer } = await importFreshWezterm();
+    const wezterm = new WeztermMultiplexer();
+
+    expect(await spawnWith(wezterm, 'ses_a')).toEqual({
+      success: true,
+      paneId: '100',
+    });
+    expect(await spawnWith(wezterm, 'ses_b')).toEqual({
+      success: true,
+      paneId: '101',
+    });
+  });
+
   test('main-vertical: later children stack below inside the agent pane', async () => {
     const { WeztermMultiplexer } = await importFreshWezterm();
     const wezterm = new WeztermMultiplexer('main-vertical', 60);

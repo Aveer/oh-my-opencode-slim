@@ -81,8 +81,8 @@ type SplitResult =
   | { ok: true; paneId: string }
   | { ok: false; targetGone: boolean };
 
-/** Upper bound for the best-effort focus read before each spawn. */
-const LIST_CLIENTS_TIMEOUT_MS = 2000;
+/** Upper bound for the best-effort focus read and restore around a spawn. */
+const FOCUS_TIMEOUT_MS = 2000;
 
 /** WezTerm's error when a `--pane-id` no longer exists. */
 const PANE_GONE_PATTERN = /pane_id \d+ invalid/;
@@ -271,11 +271,7 @@ export class WeztermMultiplexer implements Multiplexer {
       }
 
       // split-pane focuses the new pane; give focus back to where it was.
-      await this.runWezterm(wezterm, [
-        'activate-pane',
-        '--pane-id',
-        focusedPaneId ?? anchorPaneId,
-      ]);
+      await this.restoreFocus(wezterm, focusedPaneId ?? anchorPaneId);
 
       log('[wezterm] spawnPane: SUCCESS', { paneId, description });
       return { success: true, paneId };
@@ -379,7 +375,7 @@ export class WeztermMultiplexer implements Multiplexer {
         timer = setTimeout(() => {
           proc.kill();
           resolve(null);
-        }, LIST_CLIENTS_TIMEOUT_MS);
+        }, FOCUS_TIMEOUT_MS);
       });
       const read = Promise.all([proc.exited, proc.stdout()]).then(
         ([exitCode, stdout]) =>
@@ -397,24 +393,50 @@ export class WeztermMultiplexer implements Multiplexer {
     }
   }
 
-  private async runWezterm(wezterm: string, args: string[]): Promise<number> {
-    const proc = crossSpawn([wezterm, ...cliArgs(args)], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [exitCode, , stderr] = await Promise.all([
-      proc.exited,
-      proc.stdout(),
-      proc.stderr(),
-    ]);
-    if (exitCode !== 0) {
-      log('[wezterm] command failed', {
-        command: args[0],
-        exitCode,
-        stderr: stderr.trim(),
+  /**
+   * Best-effort refocus after a split. The pane already exists, so a failure
+   * or hang here must neither lose it nor hold the spawn mutex: bounded by
+   * the same timeout as the focus read, and never throws.
+   */
+  private async restoreFocus(wezterm: string, paneId: string): Promise<void> {
+    try {
+      const proc = crossSpawn(
+        [wezterm, ...cliArgs(['activate-pane', '--pane-id', paneId])],
+        { stdout: 'pipe', stderr: 'pipe' },
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<number | null>((resolve) => {
+        timer = setTimeout(() => {
+          proc.kill();
+          resolve(null);
+        }, FOCUS_TIMEOUT_MS);
       });
+      const run = Promise.all([proc.exited, proc.stdout(), proc.stderr()]);
+      // The timeout can win the race; never surface the losing rejection.
+      run.catch(() => {});
+      try {
+        const exitCode = await Promise.race([
+          run.then(([code, , stderr]) => {
+            if (code !== 0) {
+              log('[wezterm] command failed', {
+                command: 'activate-pane',
+                exitCode: code,
+                stderr: stderr.trim(),
+              });
+            }
+            return code;
+          }),
+          timedOut,
+        ]);
+        if (exitCode === null) {
+          log('[wezterm] activate-pane timed out', { paneId });
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      log('[wezterm] activate-pane failed', { error: String(err) });
     }
-    return exitCode;
   }
 
   private async getBinary(): Promise<string | null> {
