@@ -1191,25 +1191,23 @@ export function createAgents(
     updatedPrompt = `${updatedPrompt}\n\n${rewrittenAcps.join('\n\n')}`;
   }
 
-  // Static pointer, not the full procedure: the Council Mode dispatch block
-  // is injected by the council-inject hook on the FIRST council keyword and
-  // then stays in history as a standing procedure (later triggers do not
-  // re-inject). The seat list lives here because v2's native subagent
-  // roster filters hidden agents out — on v2 this line is the
-  // orchestrator's only always-present source of seat IDs. v1 applies no
+  // Static pointer = roster only. The seat list lives here because v2's
+  // native subagent roster filters hidden agents out — on v2 this line is
+  // the orchestrator's only always-present source of seat IDs. v1 applies no
   // hidden filter (as of opencode 1.18.35, `agents.list()` and the task
   // tool's describeTask carry no hidden check), so hidden councillors do
-  // surface in the v1 task roster — a host-side gap outside omos's
-  // control. Wording tracks the hook state: no auto-inject promise when
-  // the hook is disabled.
+  // surface in the v1 task roster — a host-side gap outside omos's control.
+  // The dispatch procedure is NOT mirrored here (it reads every turn): the
+  // council-inject hook carries it, injected on the FIRST council keyword
+  // and then standing in history. The disabled variant keeps a one-line
+  // manual hint because with the hook off no block will ever appear.
   if (councillorAgents.length > 0) {
     const seatList = councillorAgents
       .map((a: AgentDefinition) => a.name)
       .join(', ');
-    const injectNote = runtime.disabledHooks.has('council-inject')
-      ? `dispatch via ${vocab.tool}() when the user asks for consensus (keyword injection disabled; dispatch seats and synthesize manually).`
-      : `dispatch via ${vocab.tool}() when the user asks for consensus; the full procedure is injected once by the council-inject hook, at the first council keyword, and stays in effect.`;
-    updatedPrompt = `${updatedPrompt}\n\n## Council\nSeats: ${seatList} — ${injectNote}`;
+    updatedPrompt = runtime.disabledHooks.has('council-inject')
+      ? `${updatedPrompt}\n\n## Council\nSeats: ${seatList} — dispatch via ${vocab.tool}() when the user asks for consensus.`
+      : `${updatedPrompt}\n\n## Council\nSeats: ${seatList}`;
   }
 
   orchestrator.config.prompt = updatedPrompt;

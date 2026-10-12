@@ -146,8 +146,8 @@ export function isGenuineOperatorMessage(
  * first snapshot the parent sees after the wake reflects a board state from
  * BEFORE the job stopped. A wake that says "check the board" with no board
  * entry behind it leaves the parent guessing. The delta carries the facts
- * of the triggering stop inline: alias, task id, run generation, state, and
- * why it stopped. Deduplicated per execution by the caller. */
+ * of the triggering stop inline: alias, task id, state, and why it stopped.
+ * Deduplicated per execution by the caller. */
 export function formatStoppedJobDelta(record: {
   alias: string;
   taskID: string;
@@ -155,7 +155,7 @@ export function formatStoppedJobDelta(record: {
   state: string;
   reason: string;
 }): string {
-  return `<stopped-job>\nalias: ${record.alias}\ntask: ${record.taskID}\ngeneration: ${record.generation}\nstate: ${record.state}\nreason: ${record.reason}\n</stopped-job>`;
+  return `<stopped-job>\nalias: ${record.alias}\ntask: ${record.taskID}\nstate: ${record.state}\nreason: ${record.reason}\n</stopped-job>`;
 }
 
 /** Host-attributed stop outcome (shared with the stopped-recovery wake
