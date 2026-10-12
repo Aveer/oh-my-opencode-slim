@@ -535,10 +535,25 @@ export class CompanionManager {
         };
       }
 
+      let invalidConfig = false;
       const config = loadPluginConfig(targetCwd, {
         silent: true,
         hostFlavor: this.hostFlavor,
+        onWarning: (warning) => {
+          if (HARD_PRESET_REFRESH_WARNING_KINDS.has(warning.kind)) {
+            invalidConfig = true;
+          }
+        },
       });
+      if (invalidConfig) {
+        return {
+          ok: false,
+          presetName: '',
+          message:
+            'Cannot edit preset: project configuration cannot be read or validated. No files were changed.',
+          summary: [],
+        };
+      }
       if (scope === 'project' && request.inherit === true) {
         return clearProjectPresetOnDisk(targetCwd, this.hostFlavor);
       }
@@ -556,10 +571,13 @@ export class CompanionManager {
       });
     })();
 
-    // The native UI may edit a remembered project without a running manager.
-    // Publish updated feedback/catalog through the TS-owned state, never Rust JSONC.
-    if (offlineTarget && targetAvailable && targetCwd) {
-      const next = getPresetSelectionState(targetCwd, this.hostFlavor);
+    // Only the TypeScript manager edits JSONC. On failure retain the last
+    // known preset catalog and publish explicit feedback, even if the folder
+    // became inaccessible since its last live OpenCode session.
+    if (offlineTarget && targetCwd) {
+      const next = result.ok
+        ? getPresetSelectionState(targetCwd, this.hostFlavor)
+        : null;
       writeState((state) => {
         const known = state.known_projects?.find(
           (project) =>
@@ -567,13 +585,16 @@ export class CompanionManager {
         );
         if (!known) return;
         known.preset = {
-          current: next.effective,
-          available: next.projectAvailable,
-          effective: next.effective,
-          project: next.project,
-          global: next.global,
-          project_available: next.projectAvailable,
-          global_available: next.globalAvailable,
+          current: next?.effective ?? known.preset?.current,
+          available:
+            next?.projectAvailable ?? known.preset?.available ?? [],
+          effective: next?.effective ?? known.preset?.effective,
+          project: next?.project ?? known.preset?.project,
+          global: next?.global ?? known.preset?.global,
+          project_available:
+            next?.projectAvailable ?? known.preset?.project_available ?? [],
+          global_available:
+            next?.globalAvailable ?? known.preset?.global_available ?? [],
           message: result.message,
           last_request_id: request.request_id,
           result_ok: result.ok,
