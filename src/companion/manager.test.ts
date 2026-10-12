@@ -14,7 +14,9 @@ import {
   CompanionManager,
   companionSessionIdForDirectory,
   normalizeCompanionSessionStatus,
+  rememberKnownCompanionProject,
   resolveCompanionBinaryPath,
+  resolveKnownCompanionProject,
   stateFilePath,
 } from './manager';
 
@@ -1779,5 +1781,107 @@ describe('CompanionManager', () => {
     // Must not propagate the kill() exception
     expect(() => m.onExit()).not.toThrow();
     expect(existsSync(pidFile)).toBe(false);
+  });
+
+  it('persists only bounded known workspaces registered by plugin managers', () => {
+    const m = make('known-root', path.join(TEST_DIR, 'known-root'));
+    m.onLoad();
+    const state = readState();
+    expect(state.known_projects).toHaveLength(1);
+    expect(state.known_projects[0].cwd).toBe(
+      path.join(TEST_DIR, 'known-root'),
+    );
+    expect(resolveKnownCompanionProject(state, '/tmp/unregistered')).toBeNull();
+    expect(resolveKnownCompanionProject(state, '../relative')).toBeNull();
+
+    for (let index = 0; index < 80; index++) {
+      rememberKnownCompanionProject(
+        state,
+        path.join(TEST_DIR, `remembered-${index}`),
+        undefined,
+        index,
+      );
+    }
+    expect(state.known_projects).toHaveLength(64);
+    expect(state.known_projects[63].last_seen).toBe(79);
+  });
+
+  it('updates a remembered offline project without changing the relay project', () => {
+    const liveDir = path.join(TEST_DIR, 'running');
+    const closedDir = path.join(TEST_DIR, 'remembered');
+    mkdirSync(path.join(liveDir, '.opencode'), { recursive: true });
+    mkdirSync(path.join(closedDir, '.opencode'), { recursive: true });
+    const liveFile = path.join(liveDir, '.opencode', 'oh-my-opencode-slim.jsonc');
+    const closedFile = path.join(closedDir, '.opencode', 'oh-my-opencode-slim.jsonc');
+    writeFileSync(liveFile, '{ "preset": "old" }');
+    writeFileSync(
+      closedFile,
+      '{\n  // Keep the offline project comment.\n  "preset": "old",\n}',
+    );
+    const globalPath = path.join(TEST_DIR, 'config', 'opencode', 'oh-my-opencode-slim.json');
+    writeFileSync(
+      globalPath,
+      JSON.stringify({
+        preset: 'old',
+        presets: {
+          old: { orchestrator: { model: 'old-model' } },
+          cheap: { orchestrator: { model: 'cheap-model' } },
+        },
+      }),
+    );
+
+    const relay = make('live-relay', liveDir);
+    relay.onLoad();
+    const state = readState();
+    rememberKnownCompanionProject(state, closedDir, state.sessions[0].preset);
+    state.preset_requests = [
+      {
+        request_id: 'offline-1',
+        session_id: 'live-relay',
+        target_cwd: closedDir,
+        scope: 'project',
+        preset: 'cheap',
+      },
+    ];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      relay as unknown as { consumePresetRequest: () => boolean }
+    ).consumePresetRequest();
+
+    expect(readFileSync(closedFile, 'utf8')).toContain('// Keep the offline project');
+    expect(readFileSync(closedFile, 'utf8')).toContain('"preset": "cheap"');
+    expect(readFileSync(liveFile, 'utf8')).toContain('"preset": "old"');
+    expect(readState().known_projects.find((p: { cwd: string }) => p.cwd === closedDir)
+      .preset).toMatchObject({
+      project: 'cheap',
+      last_request_id: 'offline-1',
+      result_ok: true,
+    });
+  });
+
+  it('rejects unregistered offline target without modifying its JSONC', () => {
+    const knownDir = path.join(TEST_DIR, 'unknown-target');
+    mkdirSync(path.join(knownDir, '.opencode'), { recursive: true });
+    const targetFile = path.join(knownDir, '.opencode', 'oh-my-opencode-slim.jsonc');
+    writeFileSync(targetFile, '{ "preset": "old" }');
+    const manager = make('reject-relay', path.join(TEST_DIR, 'relay'));
+    manager.onLoad();
+    const state = readState();
+    state.preset_requests = [{
+      request_id: 'invalid-target',
+      session_id: 'reject-relay',
+      target_cwd: knownDir,
+      scope: 'project',
+      preset: 'cheap',
+    }];
+    writeFileSync(stateFilePath(), JSON.stringify(state));
+    (
+      manager as unknown as { consumePresetRequest: () => boolean }
+    ).consumePresetRequest();
+    expect(readFileSync(targetFile, 'utf8')).toBe('{ "preset": "old" }');
+    expect(readState().sessions[0].preset).toMatchObject({
+      last_request_id: 'invalid-target',
+      result_ok: false,
+    });
   });
 });
