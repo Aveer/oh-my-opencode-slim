@@ -68,7 +68,7 @@ conservatively passes the path through. Disable with
 | `task_message` | Send a non-interrupting message and return `queued` (v2: steering acceptance with `delivery: "steer"`) |
 | `task_cancel` | Stop a generation while retaining its session |
 | `task_revive` | Resume a retained session with a new instruction |
-| `wait_for_user` | Pause automatic orchestrator wake prompts until the next distinct external user message |
+| `wait_for_user` | Pause automatic orchestrator wake prompts until the next distinct external user message (v1 only; not registered on v2 — use the native `question` tool there) |
 
 The task controls use the task ID or Background Job Board alias for the task being
 managed. `task_message` does not interrupt the current generation. `task_cancel`
