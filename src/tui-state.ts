@@ -442,28 +442,10 @@ function statSnapshotFile(statePath: string): {
 }
 
 function cloneSnapshot(snapshot: TuiSnapshot): TuiSnapshot {
-  return {
-    version: snapshot.version,
-    updatedAt: snapshot.updatedAt,
-    agentModels: { ...snapshot.agentModels },
-    agentVariants: { ...snapshot.agentVariants },
-    activeSessions: { ...snapshot.activeSessions },
-    activityPids: { ...snapshot.activityPids },
-    sessionParents: { ...snapshot.sessionParents },
-    sessionDetails: Object.fromEntries(
-      Object.entries(snapshot.sessionDetails).map(([key, details]) => [
-        key,
-        { ...details },
-      ]),
-    ),
-    reusableByAgent: Object.fromEntries(
-      Object.entries(snapshot.reusableByAgent).map(([key, agents]) => [
-        key,
-        { ...agents },
-      ]),
-    ),
-    reusableOwners: { ...snapshot.reusableOwners },
-  };
+  // Plain JSON throughout (records of strings/numbers and reusable-session
+  // records), so the structural clone also copies the reusableByAgent entry
+  // arrays the field-wise shallow copy used to share.
+  return structuredClone(snapshot);
 }
 
 export function snapshotSectionsEqual(a: TuiSnapshot, b: TuiSnapshot): boolean {
