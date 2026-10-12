@@ -160,25 +160,10 @@ function applyMarketplaceOwnerOverride(
     };
   }
   if (override.permission) {
-    const merged = clone(override.permission);
-    // A permission override replaces the whole map; keep the agent's
-    // nested-dispatch stance when the override doesn't address `task`,
-    // otherwise the override would silently strip it. String shorthands
-    // stay untouched — they are an explicit take-over of every tool.
-    if (
-      merged !== null &&
-      typeof merged === 'object' &&
-      !Array.isArray(merged) &&
-      (merged as Record<string, unknown>).task === undefined
-    ) {
-      const stance = (
-        definition.config.permission as Record<string, unknown> | undefined
-      )?.task;
-      if (stance !== undefined) {
-        (merged as Record<string, unknown>).task = clone(stance);
-      }
-    }
-    definition.config.permission = merged;
+    definition.config.permission = mergeTaskStance(
+      clone(override.permission),
+      definition.config.permission,
+    );
   }
 }
 
