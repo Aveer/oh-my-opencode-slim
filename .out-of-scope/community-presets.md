@@ -14,7 +14,10 @@ no preset. The project has no review capacity for that upkeep, so the
 sustainable surface is Discussions (e.g. the OpenCode Go preset thread,
 #558), where the community reviews and updates configs without the project
 owning their maintenance. alvinunreal on PR #618: *"we can't maintain many
-presets, for now keeping 2 ; opencode-go already hard to keep updated"*.
+presets, for now keeping 2 ; opencode-go already hard to keep updated"*, and
+on discussion #558: *"it hard for me to makntain it since i dont use it - if
+someone owns who uses this oreset and updates"* — a preset needs an owner who
+uses it, which community threads provide and the project cannot.
 
 ## Handoff convention
 
