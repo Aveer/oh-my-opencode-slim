@@ -1113,6 +1113,7 @@ interface AgentRowOptions {
   theme: AgentRowTheme;
   sessionCount?: number;
   expanded: boolean;
+  annotation?: string;
   onClick?: () => void;
   hoverBackground?: unknown;
   hasSelectedText?: () => boolean;
@@ -1126,6 +1127,7 @@ function agentHeaderCells({
   theme,
   sessionCount,
   expanded,
+  annotation,
   hasHistory,
 }: AgentRowOptions): JSX.Element[] {
   return [
@@ -1139,6 +1141,19 @@ function agentHeaderCells({
       },
       [label],
     ),
+    ...(annotation !== undefined
+      ? [
+          text(
+            {
+              fg: theme.textMuted,
+              flexShrink: 1,
+              wrapMode: 'none',
+              truncate: true,
+            },
+            [` ${annotation}`],
+          ),
+        ]
+      : []),
     ...(sessionCount !== undefined && sessionCount > 1
       ? [
           text({ fg: theme.textMuted, wrapMode: 'none', flexShrink: 0 }, [
@@ -1227,7 +1242,7 @@ function compactAgentRow(options: AgentRowOptions): JSX.Element {
     [
       box(
         {
-          width: 16,
+          width: options.annotation !== undefined ? 24 : 16,
           flexShrink: 0,
           flexDirection: 'row',
           shouldFill: false,
@@ -1528,6 +1543,10 @@ export function renderSidebar(
                   }
                 }
               : undefined;
+            const singleAnnotation =
+              !expanded && mergedTargets.length === 1 && sessions.length === 1
+                ? sidebarSiblingAnnotation(sessions[0])
+                : undefined;
             const rowOptions: AgentRowOptions = {
               label: agentName,
               model,
@@ -1543,6 +1562,7 @@ export function renderSidebar(
               hasSelectedText: interaction?.hasSelectedText,
               hasHistory: !active && history,
             };
+            rowOptions.annotation = singleAnnotation;
             const agentRowEl = compactSidebar
               ? compactAgentRow(rowOptions)
               : agentRow(rowOptions);

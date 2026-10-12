@@ -1301,6 +1301,119 @@ describe('clickable sidebar sessions', () => {
     expect(frame).toContain('exp-2 2/2 via fix-1');
   });
 
+  test('collapsed single depth-2 target marks via parent on the agent row', async () => {
+    const snapshot = createSnapshot({
+      agentModels: { explorer: 'openai/gpt-6' },
+      activeSessions: { exp_a: 'explorer' },
+      sessionParents: { exp_a: 'fix_ses', fix_ses: 'conv-1' },
+      sessionDetails: {
+        exp_a: { alias: 'exp-1' },
+        fix_ses: { alias: 'fix-1' },
+      },
+    });
+    const navigated: string[] = [];
+    const collapsedInteraction = (): Parameters<typeof renderSidebar>[7] => ({
+      navigate: (id: string) => navigated.push(id),
+      isOpen: () => true,
+      toggleOpen: () => {},
+      expandedAgents: () => new Set<string>(),
+      toggleAgent: () => {},
+      syncScope: () => {},
+    });
+    const frame = await renderAttributionFrame(() =>
+      renderSidebar(
+        snapshot,
+        'test',
+        attributionTheme,
+        false,
+        false,
+        () => 0,
+        'conv-1',
+        collapsedInteraction(),
+      ),
+    );
+    const explorerLine =
+      frame.split('\n').find((l) => l.includes('explorer')) ?? '';
+    expect(explorerLine).toContain('via fix-1');
+    // Collapsed: the child session row itself is absent.
+    expect(frame).not.toContain('exp-1');
+
+    // Clicking the collapsed agent row navigates straight to its session.
+    const setup = await testRender(
+      () =>
+        renderSidebar(
+          snapshot,
+          'test',
+          attributionTheme,
+          false,
+          false,
+          () => 0,
+          'conv-1',
+          collapsedInteraction(),
+        ) as never,
+      { width: 60, height: 24 },
+    );
+    try {
+      await setup.renderOnce();
+      const lines = setup.captureCharFrame().split('\n');
+      const row = lines.findIndex((l) => l.includes('explorer'));
+      expect(row).toBeGreaterThan(-1);
+      const col = Math.max(lines[row].indexOf('explorer'), 0);
+      await setup.mockMouse.click(col + 2, row);
+      expect(navigated).toEqual(['exp_a']);
+    } finally {
+      setup.renderer.destroy();
+    }
+
+    // Compact mode keeps the marker on the agent row.
+    const compactSetup = await testRender(
+      () =>
+        renderSidebar(
+          snapshot,
+          'test',
+          attributionTheme,
+          false,
+          true,
+          () => 0,
+          'conv-1',
+          collapsedInteraction(),
+        ) as never,
+      { width: 36, height: 24 },
+    );
+    try {
+      await compactSetup.renderOnce();
+      const compactLine =
+        compactSetup
+          .captureCharFrame()
+          .split('\n')
+          .find((l) => l.includes('explorer')) ?? '';
+      expect(compactLine).toContain('via fix-1');
+    } finally {
+      compactSetup.renderer.destroy();
+    }
+
+    // Control: parented directly to the root, so no via marker.
+    const control = createSnapshot({
+      agentModels: { explorer: 'openai/gpt-6' },
+      activeSessions: { exp_a: 'explorer' },
+      sessionParents: { exp_a: 'conv-1' },
+      sessionDetails: { exp_a: { alias: 'exp-1' } },
+    });
+    const controlFrame = await renderAttributionFrame(() =>
+      renderSidebar(
+        control,
+        'test',
+        attributionTheme,
+        false,
+        false,
+        () => 0,
+        'conv-1',
+        collapsedInteraction(),
+      ),
+    );
+    expect(controlFrame).not.toContain('via');
+  });
+
   test('board-projected running rows join the same sibling counting', async () => {
     // Two running background explorers known only through the board
     // projection (no active-activity entry): the shared parent scope still
