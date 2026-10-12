@@ -1,9 +1,9 @@
 # Bundling Community Presets into the Shipped Preset Catalog
 
 The project does not bundle community-submitted preset configs into the
-shipped, project-maintained preset catalog. Community presets belong in the
-Community Presets gallery (via the submission form) and in GitHub Discussions,
-where their own owners keep them updated.
+shipped, project-maintained preset catalog. Submissions have their own home:
+the `community-preset` intake process and GitHub Discussions, where the
+preset's own owner keeps it updated.
 
 ## Why this is out of scope
 
@@ -19,15 +19,18 @@ uses it, which the project cannot be for third-party lineups.
 
 ## What is supported instead
 
-- **Community Presets gallery**: submissions come through the
-  `preset_submission.yml` form (label `community-preset`) and are reviewed for
-  clarity and validity before being listed (`docs/maintainers.md`). Listing is
-  not bundling — the preset stays community-owned and community-maintained.
+- **`community-preset` intake**: submissions arrive through the
+  `preset_submission.yml` form and are reviewed for clarity and validity
+  (`docs/maintainers.md`). The form's text promises inclusion in a "Community
+  Presets gallery"; as of 2026-10 no gallery artifact exists in the repo, and
+  the three labeled submissions to date (#890, #1014, #1017) were closed in
+  favor of Discussions. Either way this record covers only the bundled
+  catalog.
 - **GitHub Discussions**: sharing and tuning community configs (e.g. the
   OpenCode Go preset thread, #558).
 
-Do not close a `community-preset` submission citing this record: this record
-covers only the bundled catalog.
+Do not close a `community-preset` submission citing this record: it rejects
+only bundling into the shipped catalog.
 
 ## Prior requests
 
