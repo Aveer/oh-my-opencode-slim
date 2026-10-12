@@ -6794,6 +6794,112 @@ describe('ForegroundFallbackManager willAttemptFallback', () => {
 });
 
 // ---------------------------------------------------------------------------
+// ForegroundFallbackManager - chain generation pins (#1527)
+// ---------------------------------------------------------------------------
+
+describe('ForegroundFallbackManager chain generation pins', () => {
+  const makeGenerationManager = (
+    chains: Record<
+      string,
+      ReadonlyArray<string | { id: string; variant?: string }>
+    >,
+  ) =>
+    new ForegroundFallbackManager(
+      chains,
+      true,
+      { directory: '/test', hostFlavor: 'v2' } as never,
+      0,
+      undefined,
+      undefined,
+      0,
+      0,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+
+  test('registered child finishes its descent on its original chain across a swap', async () => {
+    createMockClient();
+    const chains: Record<
+      string,
+      ReadonlyArray<string | { id: string; variant?: string }>
+    > = { orchestrator: ['test/a', 'test/b', 'test/c'] };
+    const manager = makeGenerationManager(chains);
+    const switchModel = mock(async () => {});
+    const fail = (sessionID: string, model: string) => {
+      const [providerID, id] = model.split('/');
+      return manager.handleV2Retry(
+        {
+          sessionID,
+          agent: 'orchestrator',
+          model: { providerID, id },
+          error: { message: 'Rate limit exceeded' },
+          decision: { retry: true },
+        },
+        switchModel,
+      );
+    };
+
+    // Registration pins the startup generation — the same moment the v2
+    // profile bridge freezes the child's profile.
+    manager.registerSessionAgent('child', 'orchestrator');
+
+    // Hot refresh publishes a new chain generation before the first failure.
+    chains.orchestrator = ['test/x', 'test/y'];
+
+    // The pinned child keeps descending its original chain: a -> b -> c.
+    await fail('child', 'test/a');
+    expect(switchModel).toHaveBeenLastCalledWith('child', {
+      providerID: 'test',
+      id: 'b',
+    });
+    // Mid-descent swap (refresh while retrying) must not corrupt the
+    // sequence: the next target still comes from the original chain.
+    await fail('child', 'test/b');
+    expect(switchModel).toHaveBeenLastCalledWith('child', {
+      providerID: 'test',
+      id: 'c',
+    });
+
+    // A child registered after the swap gets the new generation.
+    manager.registerSessionAgent('child-new', 'orchestrator');
+    await fail('child-new', 'test/x');
+    expect(switchModel).toHaveBeenLastCalledWith('child-new', {
+      providerID: 'test',
+      id: 'y',
+    });
+  });
+
+  test('lazy pin at first descent uses the generation current at that descent', async () => {
+    createMockClient();
+    const chains: Record<
+      string,
+      ReadonlyArray<string | { id: string; variant?: string }>
+    > = { orchestrator: ['test/a', 'test/b'] };
+    const manager = makeGenerationManager(chains);
+    const switchModel = mock(async () => {});
+    // Session never registered: the first descent pins whatever generation is
+    // current (safety net for v1 hosts and roots).
+    chains.orchestrator = ['test/x', 'test/y'];
+    await manager.handleV2Retry(
+      {
+        sessionID: 'child-unseen',
+        agent: 'orchestrator',
+        model: { providerID: 'test', id: 'x' },
+        error: { message: 'Rate limit exceeded' },
+        decision: { retry: true },
+      },
+      switchModel,
+    );
+    expect(switchModel).toHaveBeenCalledWith('child-unseen', {
+      providerID: 'test',
+      id: 'y',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ForegroundFallbackManager - resolveChain correctness
 // ---------------------------------------------------------------------------
 

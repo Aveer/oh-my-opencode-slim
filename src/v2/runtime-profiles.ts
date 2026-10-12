@@ -106,6 +106,12 @@ export interface SessionProfileBridgeOptions {
   knownAgent?: (sessionID: string) => string | undefined;
   /** Observability/log seam (tests inject; defaults to no logging). */
   log?: (message: string, meta?: unknown) => void;
+  /** Fired when a plugin child's profile is frozen (the registration
+   *  moment). The factory pins the fallback-chain generation here so the
+   *  session's chain snapshot comes from the same generation as its frozen
+   *  profile — a refresh between registration and the first failure cannot
+   *  mix generations for one child. */
+  onSessionCaptured?: (sessionID: string) => void;
   /** Test seam: override the request-path model-switch bound. */
   switchTimeoutMs?: number;
 }
@@ -299,6 +305,7 @@ export function createSessionProfileBridge(
         // Freeze null so admission proceeds on the host-registered model
         // with no temperature/options applied — never reject the prompt hook.
         captured.set(sessionID, null);
+        options.onSessionCaptured?.(sessionID);
         prune();
         emitLog('[v2][profile] child session captured without a profile', {
           sessionID,
@@ -315,6 +322,7 @@ export function createSessionProfileBridge(
       ) {
         // Nothing to switch, or the host already runs a per-call model.
         captured.set(sessionID, profile);
+        options.onSessionCaptured?.(sessionID);
         prune();
         emitLog('[v2][profile] child session captured without a model switch', {
           sessionID,
@@ -339,6 +347,7 @@ export function createSessionProfileBridge(
         options.switchTimeoutMs ?? PROFILE_SWITCH_TIMEOUT_MS,
       );
       captured.set(sessionID, profile);
+      options.onSessionCaptured?.(sessionID);
       prune();
       emitLog('[v2][profile] applied model to child session', {
         sessionID,

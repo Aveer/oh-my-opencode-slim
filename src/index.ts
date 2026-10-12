@@ -13,7 +13,10 @@ import {
   projectAgentRuntimeState,
   resolvePrimaryModelValue,
 } from './agents';
-import { buildOrchestratorPrompt } from './agents/orchestrator';
+import {
+  type AgentDefinition,
+  buildOrchestratorPrompt,
+} from './agents/orchestrator';
 import {
   buildResolvedAgentRegistry,
   type RegistryHostSnapshot,
@@ -58,7 +61,6 @@ import {
   createTaskSessionManagerHook,
   createToolLoopGuardHook,
   ForegroundFallbackManager,
-  type ForegroundFallbackModel,
   formatChildInputWaitDelta,
   formatStoppedJobDelta,
   GOAL_POINTER_METADATA_KEY,
@@ -222,6 +224,49 @@ const lastImageRetainedToastByDir = new Map<string, number>();
 const IMAGE_RETAINED_TOAST_DEBOUNCE_MS = 60_000;
 
 type ModelChainEntry = { id: string; variant?: string };
+
+/**
+ * Build one complete fallback-chain generation — the chain table a fresh boot
+ * with `rt`'s config would publish. Precedence mirrors the registry's
+ * `modelCandidates` construction (registry.ts): configured chains
+ * (`rt.modelArrays`) win, then declared `_modelArray` chains (definition-set
+ * names: orchestrator overrides, config arrays invisible to the getter such
+ * as disabled agents), then the registry's candidates for names outside the
+ * definition set (marketplace agents, aliases, display names). Publishers
+ * swap the published table's contents with this result in one synchronous
+ * step (see publishChainGeneration).
+ */
+function buildChainGeneration(
+  rt: RuntimeConfig,
+  defs: readonly AgentDefinition[],
+  candidates:
+    | Readonly<Record<string, readonly { id: string; variant?: string }[]>>
+    | undefined,
+): Record<string, ModelChainEntry[]> {
+  const copyEntries = (
+    entries: readonly { id: string; variant?: string }[],
+  ): ModelChainEntry[] =>
+    entries.map(({ id, variant }) => ({
+      id,
+      ...(variant ? { variant } : {}),
+    }));
+  const table: Record<string, ModelChainEntry[]> = {};
+  for (const [name, models] of Object.entries(rt.modelArrays)) {
+    if (models.length > 0) table[name] = copyEntries(models);
+  }
+  for (const def of defs) {
+    if (table[def.name] || (def._modelArray?.length ?? 0) <= 1) continue;
+    table[def.name] = copyEntries(def._modelArray ?? []);
+  }
+  if (candidates) {
+    const known = new Set(defs.map((def) => def.name));
+    for (const [name, entries] of Object.entries(candidates)) {
+      if (table[name] || known.has(name) || entries.length <= 1) continue;
+      table[name] = copyEntries(entries);
+    }
+  }
+  return table;
+}
 
 type DelegatedModelSelection = {
   agentName: string;
@@ -544,7 +589,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
 
   let chatHeadersHook: ReturnType<typeof createChatHeadersHook> | undefined;
   let foregroundFallback: ForegroundFallbackManager;
-  let foregroundFallbackChains: Record<string, ForegroundFallbackModel[]> = {};
+  let foregroundFallbackChains: Record<string, ModelChainEntry[]> = {};
   let selectedMarketplacePackageIds: readonly string[] = [];
   let deepworkCommandHook: ReturnType<typeof createDeepworkCommandHook>;
   let deepworkGuardHook: ReturnType<typeof createDeepworkGuardHook>;
@@ -632,6 +677,31 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     );
   }
 
+  /** Swap the published chain table's contents in one synchronous step, then
+   *  re-apply the model-switch disables through the manager's own method.
+   *  Never rebind `foregroundFallbackChains`: the manager's chainSource
+   *  aliases this record and sessions pin shallow copies of it — publishers
+   *  replace entry arrays and never mutate them in place. */
+  function publishChainGeneration(
+    next: Record<string, ModelChainEntry[]>,
+    rt: RuntimeConfig,
+    isSwitched: (agentName: string) => boolean,
+  ): void {
+    for (const name of Object.keys(foregroundFallbackChains)) {
+      if (!(name in next)) delete foregroundFallbackChains[name];
+    }
+    Object.assign(foregroundFallbackChains, next);
+    for (const [name, models] of Object.entries(rt.modelArrays)) {
+      if (
+        models.length > 0 &&
+        rt.combinedModelInheritanceSource(name) === undefined &&
+        isSwitched(name)
+      ) {
+        foregroundFallback.disableChain(name);
+      }
+    }
+  }
+
   const resolvePrimaryModelFromFinalHostConfig = (
     agentType: string,
   ): string | undefined => {
@@ -668,7 +738,11 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       inheritance === 'orchestrator' || inheritance === 'session';
     return selectDelegatedModel({
       agentName,
-      childChain: runtime.modelArrays[agentName],
+      // Cross-generation rule: the child registers with the CURRENT chain
+      // generation at launch (the same generation as its frozen profile),
+      // while the parent's downProviders are provider names and carry over
+      // across generations unchanged.
+      childChain: foregroundFallbackChains[agentName],
       followsParent,
       // External-selection metadata deliberately ignores internal fallback
       // replays (#1079). Delegation needs the opposite view: the model
@@ -1034,6 +1108,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         '[foreground-fallback] v2 replay fallback disabled (no atomic per-turn model switch); retry-hook steering active',
       );
     }
+    // Startup generation: captured here and republished (contents swap) by
+    // registry finalize and every successful profile refresh. The manager
+    // aliases this record; see publishChainGeneration.
     foregroundFallbackChains = runtime.modelArrays;
     foregroundFallback = new ForegroundFallbackManager(
       foregroundFallbackChains,
@@ -1630,7 +1707,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       typeof configEntry?.variant === 'string'
         ? configEntry.variant
         : undefined;
-    const chain = runtime.modelArrays[agentName];
+    // Sidebar is a current-generation surface: variants come from the
+    // published chain table, so refreshed models resolve their variants too.
+    const chain = foregroundFallbackChains[agentName];
     if (chain) {
       const match = chain.find((entry) => entry.id === model);
       return (
@@ -1776,27 +1855,18 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
             runtime.everModelSwitched(agentName);
           },
         });
-        for (const [name, candidates] of Object.entries(
-          resolvedAgentRegistry.modelCandidates,
-        )) {
-          if (candidates.length > 1) {
-            foregroundFallbackChains[name] = candidates.map(
-              ({ id, variant }) => ({
-                id,
-                ...(variant ? { variant } : {}),
-              }),
-            );
-          }
-        }
-        for (const [agentName, models] of Object.entries(runtime.modelArrays)) {
-          if (
-            models.length > 0 &&
-            runtime.combinedModelInheritanceSource(agentName) === undefined &&
-            runtime.hasModelSwitched(agentName)
-          ) {
-            foregroundFallback.disableChain(agentName);
-          }
-        }
+        // Publish the finalized chain generation: marketplace candidates and
+        // model-switch disables are merged by the shared publisher — the same
+        // path every profile refresh republishes.
+        publishChainGeneration(
+          buildChainGeneration(
+            runtime,
+            agentDefs,
+            resolvedAgentRegistry.modelCandidates,
+          ),
+          runtime,
+          (name) => runtime.hasModelSwitched(name),
+        );
       }
       return resolvedAgentRegistry;
     },
@@ -1859,13 +1929,17 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
    *
    * This is deliberately NOT a global agent reload: the session-frozen
    * surfaces (agent definitions, prompts, tools, permissions, skills, MCPs)
-   * are never rebuilt and the host agent registry is never reloaded. It is
-   * read-only on factory-local state — a throwaway `RuntimeConfig.create`
-   * view resolves the fresh file against the captured host layer, so running
-   * generation state (`config`, `runtime`, `agentDefs`, `agents`,
-   * `finalHostAgentConfig`) is untouched. New child sessions receive the
-   * refreshed inference fields through the v2 session-profile bridge; the
-   * sidebar is rewritten through the existing `recordTuiAgentModels` writer.
+   * are never rebuilt and the host agent registry is never reloaded. The
+   * running generation state (`config`, `runtime`, `agentDefs`, `agents`,
+   * `finalHostAgentConfig`) is untouched — a throwaway `RuntimeConfig.create`
+   * view resolves the fresh file against the captured host layer. On success
+   * the refresh republishes the complete next chain generation (config +
+   * marketplace-merged, see buildChainGeneration) beside the sidebar write,
+   * so chain consumers never serve a different generation than the profiles.
+   * New child sessions receive the refreshed inference fields through the v2
+   * session-profile bridge (and pin the chain generation at registration);
+   * the sidebar is rewritten through the existing `recordTuiAgentModels`
+   * writer.
    *
    * Returns a discriminated result; a failure never claims success and never
    * swaps state (the caller decides what to do with the reason). A config
@@ -1957,6 +2031,19 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       log('[plugin] runtime profiles refreshed from disk', {
         agents: Object.keys(profiles).length,
       });
+      // Chain generation: republished beside the sidebar projection, only
+      // after validation succeeded — profiles and chains always come from the
+      // same generation (the caller swaps the profile table on this ok
+      // result; an invalid refresh keeps the last-known-good generation).
+      publishChainGeneration(
+        buildChainGeneration(
+          freshRuntime,
+          freshAgentDefs,
+          resolvedAgentRegistry?.modelCandidates,
+        ),
+        freshRuntime,
+        (name) => runtime.hasModelSwitched(name),
+      );
       return { ok: true, profiles, projection };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -2010,6 +2097,11 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     'v2.backgroundDefaultFlip': backgroundDefaultFlip,
     'v2.session.retry':
       foregroundFallback.handleV2Retry.bind(foregroundFallback),
+    // v2-only extension hook: pin the chain generation in effect when a
+    // child session registers — the same generation as its frozen profile.
+    'v2.pinSessionChains': (sessionID: string) => {
+      foregroundFallback.pinSessionChains(sessionID);
+    },
     // v2 owns its own interview bridge/service; point the submit tool and
     // text-complete fallback at it so `/interview` state lands in the same
     // service that captured the session transcript.
@@ -3184,6 +3276,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     'v2.refreshProfiles': typeof refreshProfilesFromDisk;
     'v2.resolveDelegatedModel': typeof resolveV2DelegatedModel;
     'v2.backgroundDefaultFlip': BackgroundDefaultFlipState;
+    'v2.pinSessionChains': (sessionID: string) => void;
   };
 
   return hooks;
