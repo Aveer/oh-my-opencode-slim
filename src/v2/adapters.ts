@@ -129,9 +129,6 @@ export interface DelegationVocabulary {
   /** Name of the tool's agent-selector parameter: `agent` on v2,
    * `subagent_type` on v1. */
   agentParam: string;
-  /** Name of the delegation tool's optional model parameter, when the
-   * host's subagent tool supports one (OpenCode v2.0.5+). */
-  modelParam: string | undefined;
   /** Name of the delegation tool's existing-session argument, shared with
    * the control tools (`controlParamName`): `sessionID` on v2, `task_id` on
    * v1. Resuming a child session requires this exact parameter; the wrong
@@ -146,13 +143,11 @@ export function delegationVocabulary(
     ? {
         tool: 'subagent',
         agentParam: 'agent',
-        modelParam: 'model',
         resumeParam: controlParamName(hostFlavor),
       }
     : {
         tool: 'task',
         agentParam: 'subagent_type',
-        modelParam: undefined,
         resumeParam: controlParamName(hostFlavor),
       };
 }

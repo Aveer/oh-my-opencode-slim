@@ -629,11 +629,10 @@ currently break this plugin:
   `system[0]` and collapses all parts into one — locked by a regression
   test in `src/index.test.ts`.
 - **Subagent `model` param.** The built-in `subagent` tool takes an
-  optional `model` argument (`"providerID/modelID"`). The delegation
-  vocabulary exposes it (`modelParam`) and the orchestrator/council
-  prompts carry a one-sentence guardrail: only set it when the user
-  explicitly asks for a specific model or variant; never guess the ID —
-  look it up with the models tool first.
+  optional `model` argument (`"providerID/modelID"`). The v2 slim
+  orchestrator prompt carries a one-sentence guardrail: only set it when
+  the user explicitly asks for a specific model or variant; never guess
+  the ID — look it up with the models tool first.
 
 ## Installing on v2
 
