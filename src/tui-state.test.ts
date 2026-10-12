@@ -15,6 +15,7 @@ import {
   resolveTuiSnapshotRoot,
   snapshotSectionsEqual,
   TUI_SESSION_PARENTS_MAX,
+  updateSnapshot,
   updateTuiSessionDetails,
 } from './tui-state';
 
@@ -632,6 +633,38 @@ describe('tui-state persistence', () => {
     // …and identical sections (both empty) stay equal.
     const alsoEmpty = readTuiSnapshot(tempDir);
     expect(snapshotSectionsEqual(base, alsoEmpty)).toBe(true);
+  });
+
+  test('memoized updates deep-clone nested reusableByAgent arrays', () => {
+    const entry = (taskID: string) => ({
+      taskID,
+      alias: taskID,
+      terminalState: 'completed' as const,
+      lastUsedAt: 1,
+    });
+    // First write seeds the in-memory memo with a nested entry array.
+    expect(
+      updateSnapshot(tempDir, (snapshot) => {
+        snapshot.reusableByAgent['parent-1'] = { oracle: [entry('ses_1')] };
+      }),
+    ).toBe(true);
+    // An in-place push on the memo-backed candidate must not leak into the
+    // memo: a shared array would make the update look like a no-op and
+    // silently skip the disk write.
+    expect(
+      updateSnapshot(tempDir, (snapshot) => {
+        snapshot.reusableByAgent['parent-1']?.oracle?.push(entry('ses_2'));
+      }),
+    ).toBe(true);
+
+    const onDisk = JSON.parse(
+      fs.readFileSync(getTuiStatePath(tempDir), 'utf8'),
+    ) as { reusableByAgent: Record<string, Record<string, unknown[]>> };
+    expect(
+      onDisk.reusableByAgent['parent-1']?.oracle?.map(
+        (item) => (item as { taskID: string }).taskID,
+      ),
+    ).toEqual(['ses_1', 'ses_2']);
   });
 
   test('cross-project isolation — different directories write independent state files', () => {
