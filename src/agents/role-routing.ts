@@ -1,10 +1,3 @@
-import type { SpecialistRole } from '../config/agent-roles.js';
-
-export interface RoleRoutingDefinition {
-  readonly id: SpecialistRole;
-  readonly routingBlock: string;
-}
-
 /**
  * @deprecated as a prompt-rendering source. Neither orchestrator builder
  * reads this anymore (v1 and v2 both render `ROLE_ROUTING_SLIM_LINES`);
@@ -94,11 +87,12 @@ export const ROLE_ROUTING_BLOCKS: Readonly<Record<string, string>> =
   });
 
 export function renderRoleRoutingBlock(
-  role: RoleRoutingDefinition,
+  routingBlock: string,
+  roleId: string,
   runtimeName: string,
 ): string {
-  return role.routingBlock.replace(
-    new RegExp(`@${role.id}\\b`, 'g'),
+  return routingBlock.replace(
+    new RegExp(`@${roleId}\\b`, 'g'),
     `@${runtimeName}`,
   );
 }
