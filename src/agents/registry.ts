@@ -277,9 +277,6 @@ function marketplacePermissionCeilings(
     defaultEffect: 'allow',
     actions,
     namespaces,
-    namespaceEffects: Object.fromEntries(
-      namespaces.map((namespace) => [namespace, 'allow']),
-    ),
     ...(skills.length
       ? {
           resources: {
