@@ -278,6 +278,24 @@ function hostOutcomeRejectionReason(
   return 'idle-after-read-completion';
 }
 
+/** Log-only corroboration helper: maps a window-attributed host outcome to
+ * the terminal state the host-outcome commit policy would publish from it
+ * (interrupted/cancelled → stopped, failed → error, succeeded → completed). */
+function hostOutcomeImpliedState(outcome: string): string {
+  if (outcome === 'succeeded') return 'completed';
+  if (outcome === 'failed') return 'error';
+  return 'stopped';
+}
+
+/** Stop-family normalization for the corroboration compare: a verified
+ * cancel lease publishes 'cancelled' where a host outcome would imply
+ * 'stopped' — same stop family, must not log as a divergence. */
+function terminalStateFamily(state: string): 'completed' | 'error' | 'stopped' {
+  if (state === 'completed') return 'completed';
+  if (state === 'error') return 'error';
+  return 'stopped';
+}
+
 function observationIdentity(token: ObservationToken): string {
   return JSON.stringify([
     token.generation,
@@ -503,6 +521,7 @@ export function createBackgroundJobTerminalGate(options: {
     text: string,
     lease?: BackgroundJobLease,
     attribution: TerminalAttribution = 'event',
+    hostOutcomeRead?: string,
   ): GateResult {
     const value = observation(token);
     const before = board.get(token.taskID);
@@ -556,6 +575,38 @@ export function createBackgroundJobTerminalGate(options: {
     value.timer = undefined;
     value.candidate = undefined;
     options.onTerminal?.(record);
+    // Log-only corroboration: when a window-attributed host outcome is in
+    // hand for this episode, compare it with the state being published and
+    // log bounded-evidence disagreements. Same contract as
+    // hostOutcomeRejectionReason: never gates behavior — promoting this to
+    // a decision signal requires a fresh multi-agent review. No config, no
+    // state: a publication happens at most once per (taskID, generation),
+    // so the log is naturally bounded. The comparand prefers the caller-
+    // passed read (the episode's freshest window-attributed outcome, for
+    // commits whose runtime observation predates it) over the stale runtime
+    // copy. Known divergence source: host-side outcome staleness across
+    // runs (idle_outcome has no clear point —
+    // docs/opencode-v2-compatibility.md); stop-family normalization keeps
+    // verified-cancel publications out of the log.
+    const hostOutcome =
+      hostOutcomeRead ??
+      (typeof value.runtime?.terminalOutcome === 'string'
+        ? value.runtime.terminalOutcome
+        : undefined);
+    if (
+      hostOutcome !== undefined &&
+      terminalStateFamily(state) !==
+        terminalStateFamily(hostOutcomeImpliedState(hostOutcome))
+    )
+      log('[terminal-gate] outcome corroboration', {
+        taskID: token.taskID,
+        alias: record.alias,
+        generation: token.generation,
+        published: state,
+        attribution,
+        hostOutcome,
+        hostImpliedState: hostOutcomeImpliedState(hostOutcome),
+      });
     log('[terminal-gate] terminal published', {
       taskID: token.taskID,
       generation: token.generation,
@@ -1109,6 +1160,7 @@ export function createBackgroundJobTerminalGate(options: {
         evidence.text,
         undefined,
         'transcript',
+        terminalOutcome,
       );
     // Native return is attributable only when no transcript exists. Foreground
     // still publishes when the transcript is pending; empty result uses a
@@ -1120,7 +1172,14 @@ export function createBackgroundJobTerminalGate(options: {
       signal.status.result?.trim() &&
       signal.status.state !== 'running'
     ) {
-      return commit(token, signal.status.state, signal.status.result);
+      return commit(
+        token,
+        signal.status.state,
+        signal.status.result,
+        undefined,
+        'event',
+        terminalOutcome,
+      );
     }
     if (
       foregroundNativeTerminal &&
@@ -1141,6 +1200,9 @@ export function createBackgroundJobTerminalGate(options: {
         guarded.state,
         guarded.resultSummary ??
           `Foreground task ended with state ${guarded.state}.`,
+        undefined,
+        'event',
+        terminalOutcome,
       );
     }
     const stable =
