@@ -563,7 +563,7 @@ describe('createV2Setup e2e', () => {
       return { dispose: () => {} };
     };
     const nativeTool = { description: 'Foreground (default) native wording' };
-    const event = () => ({
+    const launch = () => ({
       tool: 'subagent',
       sessionID: 'ses_flip_dispose',
       agent: 'orchestrator',
@@ -577,22 +577,37 @@ describe('createV2Setup e2e', () => {
     });
 
     const cleanup = await createV2Setup()(ctx);
+    // Land the rewrite and prove the flip is armed before disposal: the
+    // omitted background flips and the armed log is on record. Without
+    // this precondition the disarm assertions below would prove nothing.
     replay?.({
       update: (_id: string, fn: (tool: typeof nativeTool) => void) => {
         fn(nativeTool);
       },
       get: (id: string) => (id === 'subagent' ? nativeTool : undefined),
     });
-    await cleanup();
-
-    // Disposal ran while armed; a later call is rejected outright by the
-    // disposed instance (stronger than a silent disarm — the flip cannot
-    // run at all), and the input is never rewritten.
+    const armedLaunch = launch();
     const hook = calls.toolBeforeCb;
     if (!hook) throw new Error('tool:execute.before not captured');
-    const launch = event();
-    await expect(hook(launch)).rejects.toThrow(/disposed/);
-    expect(launch.input).not.toHaveProperty('background');
+    await hook(armedLaunch);
+    expect(armedLaunch.input.background).toBe(true);
+    await flushLoggerForTesting();
+    expect(readPluginLog()).toContain('[v2] background-default flip armed');
+    expect(readPluginLog()).not.toContain(
+      '[v2] background-default flip disarmed',
+    );
+
+    await cleanup();
+    await flushLoggerForTesting();
+    // Disposal must disarm the flip itself. A disposed instance also
+    // rejects further execute.before calls, but that rejection happens
+    // before any flip consultation, so only the disarmed log proves the
+    // state transition (removing disarm() from the disposer fails here).
+    expect(readPluginLog()).toContain('[v2] background-default flip disarmed');
+
+    const rejected = launch();
+    await expect(hook(rejected)).rejects.toThrow(/disposed/);
+    expect(rejected.input).not.toHaveProperty('background');
   }, 20_000);
 
   test('bundled skills register through a lazily replayed draft', async () => {
