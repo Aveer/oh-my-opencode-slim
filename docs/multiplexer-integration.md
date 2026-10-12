@@ -264,35 +264,6 @@ inside that pane).
 All `multiplexer.*` values are read by the client only. An invalid value
 disables pane management (fail-closed) with a once-per-process diagnostic.
 
-### Deprecated key: `zellij_pane_mode`
-
-`multiplexer.zellij_pane_mode` is **no longer supported**. It is ignored, pane
-management keeps working under the remaining configuration, and a one-time
-deprecation warning is logged:
-
-```text
-[oh-my-opencode-slim] Deprecated multiplexer.zellij_pane_mode config key found and ignored.
-Zellij panes always open in the tab containing the parent pane.
-```
-
-Remove the key from your config to silence the warning. There is no replacement
-key: same-tab placement is the only Zellij behavior (see
-[Behavior Changes and Removals](#behavior-changes-and-removals)).
-
-### Legacy `tmux` config
-
-The old top-level `tmux` block (`tmux.enabled` / `tmux.layout` /
-`tmux.main_pane_size`) is deprecated and **ignored** (a warning is logged). It
-is no longer converted automatically. Replace it with `multiplexer.*`:
-
-```jsonc
-// Before (ignored)
-{ "tmux": { "enabled": true, "layout": "main-vertical" } }
-
-// After
-{ "multiplexer": { "type": "tmux", "layout": "main-vertical" } }
-```
-
 ## Layouts
 
 The five standard layouts and their fixed mapping per adapter. Where an adapter
@@ -510,7 +481,7 @@ removed or changed behavior, with migration guidance:
 
 | # | Item | Old behavior | New behavior | Migration |
 |---|------|--------------|--------------|-----------|
-| 1 | `multiplexer.zellij_pane_mode` + agent-tab | Default `agent-tab` opened panes in a dedicated `opencode-agents` tab (with focus save/restore, first-pane reuse, `new-tab` / `go-to-tab-by-id`); `current-tab` opted into the parent tab | Key is unsupported and ignored; Zellij panes **always** open in the tab containing the parent pane (no tab creation, no tab switching, no focus save/restore) | Delete `zellij_pane_mode` from config. Leaving it is harmless: panes keep working and one deprecation warning is logged |
+| 1 | `multiplexer.zellij_pane_mode` + agent-tab | Dedicated `opencode-agents` tab; `current-tab` opted into the parent tab | Removed: ignored with a warning. Zellij panes always open in the parent pane's tab | Delete `zellij_pane_mode` from config |
 | 2 | tmux pane location registry | The TUI wrote `…/opencode/storage/oh-my-opencode-slim/tmux-panes/<hash>.json` (session → `TMUX_PANE`, owner pid, 30 s TTL); the server read it and otherwise fell back to the **server's own** `TMUX_PANE` | No cross-process files at runtime. Each client anchors on its own `TMUX_PANE`, re-resolved at spawn time, and addresses its own tmux server via `-S <socket>` from `TMUX` | None. Stale `tmux-panes/*.json` files can be deleted; nothing reads them |
 | 3 | Deferred close for background jobs | On idle, the server checked the in-memory background job board; if a job was running the close was skipped and retried when the job finished (no debounce) | Client-side **stable-idle debounce** (default 5 s) plus a final idle re-check; busy within the window cancels the close; deletion closes immediately | None. If a child idles between turns, expect a close/rebuild flap (accepted; see [Known Limitations](#known-limitations)) |
 | 4 | cmux-tui adapter | The macOS app — a different product that only shares the name (0.64.x, surface model): `CMUX_SOCKET_PATH` / workspace / surface ids, readiness polling, deferred spawn retries, orphan cooldowns, finite close budgets, hot-reload takeover, and vertical `equalize` rebalancing | Rewritten for **cmux-tui** (`cmux.protocol/2`): `CMUX_TUI_SOCKET` (or legacy `CMUX_MUX_SOCKET`), two-hop anchor (`CMUX_TUI_TERMINAL_ID` → terminal → tab → pane), a sibling tab appended inside the parent pane (`pane run --on-exit keep --name <parent/child> -- <argv>`), `terminal close`; availability by protocol read self-check, never `--version`; no cooldowns, budgets, deferred spawns, registries, `equalize`, or screen-level splits | Install **cmux-tui** (`cmux-tui-v0.13.3+`). The macOS app and the CLI it bundles are out of scope; macOS and Linux use the same cmux-tui binary and interface |
@@ -533,7 +504,13 @@ removed or changed behavior, with migration guidance:
 3. `admission-mismatch` → the configured adapter is not the one the client is
    inside (for example `type: "zellij"` while running in tmux).
 4. `host-unreachable` → on v1 the host has no reachable listener; restart with
-   `--port` or use `serve` + `attach`. On v2 shared or `--server` hosts the
+   `--port` or use `serve` + `attach`. For a v1 server started with
+   `OPENCODE_SERVER_PASSWORD`, the client authenticates its probe and session
+   reads with the same basic auth `opencode attach` uses: the header from
+   `attach -p/--password` (and `-u/--username`), or else
+   `OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_USERNAME` in the TUI's
+   environment. A 401 therefore means neither was provided or they do not
+   match the server. On v2 shared or `--server` hosts the
    authenticated `server.info()` probe failed; check the shared service or the
    `--server` URL.
 5. `readiness-timeout` → the child never became visible in `/session/status`

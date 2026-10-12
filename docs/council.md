@@ -38,11 +38,21 @@ in parallel via the host's native delegation tool (`task()` on v1,
 `subagent()` on v2) at depth 1, and each
 councillor appears as its own TUI pane.
 
+A seat session receives only the prompt it is dispatched with — nothing else
+from the parent conversation — so the orchestrator embeds a brief summary of
+the needed context into each seat prompt. Councillors do have read-only
+codebase tools (read/glob/grep and friends); that boundary is enforced by
+permission config, never by prompt text.
+
 Once every councillor has responded (or the orchestrator's bounded wait on
 a silent seat expires — see [Failure behavior](#failure-behavior)), the
-orchestrator passes the collected responses to the council agent, which
-synthesizes them into a single report. The council agent itself waits for
-no one: it has no tools and starts from whatever the orchestrator hands it.
+orchestrator calls the council agent with the question plus a final
+`Seats: <id, id>` line listing the session IDs the seat dispatches returned;
+the harness resolves those IDs from its Background Job Board and attaches the
+full stored responses before the call runs, so the orchestrator never
+re-types the seat text itself. The
+council agent itself waits for no one: it has no tools and starts from
+whatever its context carries.
 
 ### Who dispatches whom
 
@@ -57,9 +67,9 @@ User / Orchestrator
         +--> task(): councillor-gamma (configured model)   } by the orchestrator
         |
         v
-task(subagent_type='council', prompt=<question + all councillor responses>)
+task(subagent_type='council', prompt=<question + 'Seats: <id, id>' line>)
         |
-        v
+        v   harness resolves the returned IDs and attaches every seat response
 Council agent (no tools) synthesizes the responses
         |
         v
@@ -97,12 +107,13 @@ Add a council model and at least one council preset to your plugin config:
 ```
 
 Then ask for it in your message. Council Mode is **keyword-triggered**: the
-`council-inject` hook watches orchestrator user messages and injects the
-full Council Mode procedure **once** — on the first message that carries a
-trigger. The block then stays in history as a standing procedure: later
-triggers don't re-inject it, so the token cost is paid once per session,
-not per trigger. Code blocks and inline code are stripped before matching,
-and slash commands never trigger:
+orchestrator's static prompt carries only the seat roster (a `## Council`
+line listing the seats), and the `council-inject` hook watches orchestrator
+user messages and injects the full Council Mode procedure **once** — on the
+first message that carries a trigger. The block then stays in history as a
+standing procedure: later triggers don't re-inject it, so the token cost is
+paid once per session, not per trigger. Code blocks and inline code are
+stripped before matching, and slash commands never trigger:
 
 - **English**: `council` / `@council`, `councillor`, `consensus`,
   `second opinion`, `roundtable`, `multiple opinions`, `multiple models`,
@@ -352,8 +363,10 @@ session, so sessions that never ask pay zero tokens for the procedure.
 `disabled_hooks: ["council-inject"]` (see
 [Hooks](configuration.md#hooks)). The council agent and councillor seats
 stay available — you can still dispatch them by name — but the automatic
-procedure injection no longer happens. A one-line seat pointer in the
-orchestrator prompt remains as the only static cost.
+procedure injection no longer happens. The seat roster in the orchestrator
+prompt remains as the only static cost; with the hook disabled it grows a
+one-line manual dispatch hint (`Seats: ... — dispatch via <tool>() when the
+user asks for consensus.`) because no procedure block will ever appear.
 
 **Disabling the council.** Listing `council` in `disabled_agents` disables
 the whole chain (council agent, councillor seats, seat pointer, keyword
@@ -365,8 +378,10 @@ Each councillor is dispatched in parallel as its own TUI pane while it
 runs; when idle, councillors are hidden from the @-mention menu (they are
 still dispatchable by name). As they complete, their responses stream into
 the panes. Once all councillors have responded (or failed), the
-orchestrator passes everything to the council agent, which synthesizes
-the report.
+orchestrator calls the council agent with a `Seats: <id, id>` line of the
+dispatch-returned session IDs, and
+the harness attaches the collected responses to that call; the council
+agent synthesizes the report.
 
 ### Output
 
@@ -393,9 +408,8 @@ Council responses include:
 
 ### Removed `master` fields
 
-The `council.master` field and other `master`-prefixed fields have been
-removed. A deprecation warning is logged this release if a config still
-contains them, but they no longer have any effect.
+The `council.master*` keys were removed: ignored with a warning (see
+[Removed config keys](configuration.md#removed-config-keys)).
 
 Prefer this instead:
 
@@ -411,9 +425,10 @@ Prefer this instead:
 
 ### Reserved keys inside presets
 
-- A preset key named `master` is ignored
-- Legacy nested `councillors` objects are still accepted for backward
-  compatibility
+- A preset key named `master` was removed: the entry is ignored with a warning.
+- Nested legacy `councillors` objects were removed: the wrapper and the
+  councillors inside it are ignored with a warning. Put councillors directly
+  under the preset.
 
 ---
 

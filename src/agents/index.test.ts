@@ -1221,9 +1221,10 @@ test('orchestrator prompt carries the council seat pointer when councillors exis
   const prompt = orchestrator?.config.prompt as string;
   expect(prompt).toContain('## Council');
   expect(prompt).toContain('Seats: councillor-alpha');
-  expect(prompt).toContain('dispatch via task()');
-  // The full dispatch procedure is injected once by the council-inject hook
-  // (first-hit), never carried statically.
+  // Pointer is roster-only: the gate, the dispatch vocabulary, and the whole
+  // procedure live in the block the council-inject hook injects on the first
+  // council keyword — the static pointer must not duplicate either.
+  expect(prompt).not.toContain('dispatch via task()');
   expect(prompt).not.toContain('## Council Mode');
   expect(prompt).not.toContain('proceed without it');
 });
@@ -1232,9 +1233,11 @@ test('council pointer wording tracks the council-inject hook state', () => {
   const enabled = createAgents(runtimeFor({ council: councilConfig() }));
   const enabledPrompt = enabled.find((a) => a.name === 'orchestrator')?.config
     .prompt as string;
-  expect(enabledPrompt).toContain(
-    'injected once by the council-inject hook, at the first council keyword',
-  );
+  // Enabled: roster only — no dispatch hint, no injection-mechanics
+  // narrative (the block carries the procedure when it lands).
+  expect(enabledPrompt).toContain('Seats: councillor-alpha');
+  expect(enabledPrompt).not.toContain('dispatch via task()');
+  expect(enabledPrompt).not.toContain('council-inject hook');
 
   const disabled = createAgents(
     runtimeFor({
@@ -1244,12 +1247,13 @@ test('council pointer wording tracks the council-inject hook state', () => {
   );
   const disabledPrompt = disabled.find((a) => a.name === 'orchestrator')?.config
     .prompt as string;
-  // Seats are still listed, but no auto-inject promise when disabled.
+  // Disabled: the roster keeps a one-line manual hint — with the hook off no
+  // block will ever appear, so the seats would otherwise be undispatchable.
   expect(disabledPrompt).toContain('Seats: councillor-alpha');
-  expect(disabledPrompt).toContain('keyword injection disabled');
-  expect(disabledPrompt).not.toContain(
-    'injected once by the council-inject hook',
+  expect(disabledPrompt).toContain(
+    'Seats: councillor-alpha — dispatch via task() when the user asks for consensus.',
   );
+  expect(disabledPrompt).not.toContain('council-inject hook');
 });
 
 test('routingBlock: false strips <Agents> from the v2 orchestrator prompt', () => {
@@ -1273,11 +1277,10 @@ test('orchestrator prompt excludes the council pointer when no councillors', () 
   const orchestrator = agents.find((a) => a.name === 'orchestrator');
   const prompt = orchestrator?.config.prompt as string;
   // Contamination-proof: assert on the pointer's distinctive plugin-owned
-  // phrase, not the generic '## Council' header (user-level prompt files
-  // may legitimately contain their own Council sections).
-  expect(prompt).not.toContain(
-    'the full procedure is injected once by the council-inject hook',
-  );
+  // section shape (header + roster line), not the generic '## Council'
+  // header (user-level prompt files may legitimately contain their own
+  // Council sections).
+  expect(prompt).not.toContain('\n## Council\nSeats: ');
 });
 
 test('council registers as a subagent, not a switchable primary', () => {
@@ -1669,8 +1672,7 @@ describe('council agent model resolution', () => {
     expect(council?.config.model).toBe(DEFAULT_MODELS.council);
   });
 
-  test('deprecated council.master field is ignored', () => {
-    // Verify that the deprecated master field is reported but not applied.
+  test('deprecated council.master field is rejected', () => {
     const rawCouncilConfig = {
       master: { model: 'anthropic/claude-opus-4-6' },
       presets: {
@@ -1681,18 +1683,7 @@ describe('council agent model resolution', () => {
     };
 
     const parsed = CouncilConfigSchema.safeParse(rawCouncilConfig);
-    expect(parsed.success).toBe(true);
-
-    if (parsed.success) {
-      expect(parsed.data._deprecated).toEqual(['master']);
-      const config: PluginConfig = {
-        council: parsed.data,
-      };
-      const agents = createAgents(runtimeFor(config));
-      const council = agents.find((a) => a.name === 'council');
-      // Master is deprecated and no longer used for model fallback
-      expect(council?.config.model).toBe(DEFAULT_MODELS.council);
-    }
+    expect(parsed.success).toBe(false);
   });
 });
 

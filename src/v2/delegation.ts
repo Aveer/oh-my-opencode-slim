@@ -3,6 +3,7 @@
  * translates names/args so the whole v1 pipeline (task-session-manager,
  * job board, task_* tools) is reused with zero changes. */
 
+import { log } from '../utils/logger';
 import { type DelegationVocabulary, delegationVocabulary } from './adapters';
 
 export const DELEGATION_TOOL_V2 = 'subagent';
@@ -109,9 +110,15 @@ export function createBackgroundDefaultFlipState(): BackgroundDefaultFlipState {
   return {
     arm: () => {
       armed = true;
+      // Diagnostic lamp: when the flip silently never arms (or arms and
+      // never disarms), behavior-side evidence only shows the symptom
+      // (omitted background staying foreground); the armed/disarmed trail
+      // pinpoints which half diverged.
+      log('[v2] background-default flip armed');
     },
     disarm: () => {
       armed = false;
+      log('[v2] background-default flip disarmed');
     },
     isArmed: () => armed,
   };

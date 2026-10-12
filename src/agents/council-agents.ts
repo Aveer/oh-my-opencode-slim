@@ -30,8 +30,6 @@ export function buildCouncillorAgents(
 
   const agents: AgentDefinition[] = [];
   for (const [name, cfg] of Object.entries(preset)) {
-    if (name === 'master') continue;
-
     const agentName = `${COUNCILLOR_AGENT_PREFIX}${name}`;
     if (disabled.has(agentName)) continue;
     const base = createCouncillorAgent(

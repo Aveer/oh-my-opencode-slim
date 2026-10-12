@@ -100,7 +100,10 @@ describe('orchestrator prompt', () => {
 
     expect(prompt).toContain('call `wait_for_user` as your final tool action');
     expect(prompt).not.toContain('End Turn After Background Tasks');
-    expect(prompt).toContain('Do not immediately wait after spawning');
+    // The launch→status→end-turn flow line is scheduler-gated; the
+    // two-channel rule itself stays in every state.
+    expect(prompt).not.toContain('launch → brief status → end turn');
+    expect(prompt).toContain('Two-channel delegation:');
   });
 
   test('defaults to board-aware wording while board injection is on', () => {
@@ -493,8 +496,17 @@ describe('background-default flip prompt alignment', () => {
     expect(prompt).toContain('After dispatching, do non-overlapping work');
   });
 
-  test('v1 render keeps its own background guidance byte-identically', () => {
+  test('v1 render replaces the blanket prefer-background line with the two-channel rule', () => {
     const prompt = buildOrchestratorPrompt();
-    expect(prompt).toContain('background: true');
+    // The host tool description covers launch/poll mechanics; the v1 prompt
+    // keeps only the channel-choice rule and its own end-turn discipline.
+    expect(prompt).toContain(
+      'Two-channel delegation: short work whose result feeds the next step → foreground',
+    );
+    expect(prompt).toContain(
+      'work that runs independently or is long → background, then end the turn or continue non-overlapping work',
+    );
+    expect(prompt).not.toContain('Prefer `task(..., background: true)`');
+    expect(prompt).not.toContain('Do not immediately wait after spawning');
   });
 });

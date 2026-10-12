@@ -1,4 +1,4 @@
-import { type PluginInput } from '@opencode-ai/plugin';
+import type { PluginInput } from '@opencode-ai/plugin';
 import {
   classifyTerminalEvidence,
   classifyV2HistoricalRound,
