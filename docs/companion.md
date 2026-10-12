@@ -31,9 +31,10 @@ not claim canonical settled terminal evidence.
 
 Right-click the Companion to open its compact control menu. When the menu is
 closed, the displayed project continues to follow live agent activity. Opening
-the menu pins the currently displayed project so background activity in another
-repository cannot change the target while you are editing it. The first menu row
-cycles across every live project, even when that project is currently idle.
+the menu pins the displayed animation session while allowing a **separate**
+preset-editing target to cycle across live projects. Changing that editing
+target never moves or resizes the animation window, and background work cannot
+steal the display or the preset target until the menu closes.
 
 The preset row always applies to that explicitly selected project. Its center
 button shows a readable scoped value such as `Prj:Inherit` or `Gbl:openai`;
