@@ -2080,7 +2080,7 @@ describe('plugin reload generation cleanup', () => {
     expect(wake).toHaveBeenCalledTimes(1);
     expect(wake.mock.calls[0]?.[0]).toBe('parent-1');
     expect(String(wake.mock.calls[0]?.[1])).toBe(
-      '<stopped-job>\nalias: fix-1\ntask: child-host-stop\ngeneration: 1\nstate: stopped\nreason: stopped without a terminal result\n</stopped-job>',
+      '<stopped-job>\nalias: fix-1\ntask: child-host-stop\nstate: stopped\nreason: stopped without a terminal result\n</stopped-job>',
     );
     expect(String(wake.mock.calls[0]?.[2])).toBe('child-host-stop:1');
     expect(skipLogs).toHaveLength(0);

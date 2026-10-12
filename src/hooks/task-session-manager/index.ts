@@ -86,29 +86,25 @@ function rehydrateHistoricalRunningTasks(
   ) => string | undefined,
 ): string[] {
   const rehydrated: string[] = [];
-  const managedOrchestratorSessionIDs = new Set<string>();
+  const managedSessionIDs = new Set<string>();
 
   for (const message of messages) {
     if (!isMessageWithParts(message)) continue;
-    if (message.info.agent !== 'orchestrator') continue;
-
     const parentSessionID = message.info.sessionID;
     if (!parentSessionID) continue;
     if (!shouldManageSession(parentSessionID)) {
+      if (message.info.agent !== 'orchestrator') continue;
       registerSessionAsOrchestrator?.(parentSessionID);
       if (!shouldManageSession(parentSessionID)) continue;
     }
-    managedOrchestratorSessionIDs.add(parentSessionID);
+    managedSessionIDs.add(parentSessionID);
   }
 
   for (const message of messages) {
     if (!isMessageWithParts(message)) continue;
 
     const parentSessionID = message.info.sessionID;
-    if (
-      !parentSessionID ||
-      !managedOrchestratorSessionIDs.has(parentSessionID)
-    ) {
+    if (!parentSessionID || !managedSessionIDs.has(parentSessionID)) {
       continue;
     }
 
@@ -214,6 +210,9 @@ export function createTaskSessionManagerHook(
     /** Per-instance pairing flag for the background-default flip (v2 only);
      *  see BackgroundDefaultFlipState in v2/delegation. */
     isBackgroundDefaultFlipArmed?: () => boolean;
+    /** Hook toggles from the omos config (runtime.disabledHooks); passing
+     * 'council-assembly' disables host-side council seat assembly. */
+    disabledHooks?: readonly string[];
     recoverRetainedSession?: (request: {
       parentSessionID: string;
       requested: string;
@@ -743,6 +742,7 @@ export function createTaskSessionManagerHook(
         taskContextTracker,
         getLifecycleEpoch: () => rehydrateState.nextEpoch,
         hostFlavor: options.hostFlavor,
+        councilAssembly: !options.disabledHooks?.includes('council-assembly'),
         isBackgroundDefaultFlipArmed: options.isBackgroundDefaultFlipArmed,
         recoverRetainedSession: options.recoverRetainedSession,
         resolveCanonicalTaskRef: options.resolveCanonicalTaskRef,
@@ -823,9 +823,6 @@ export function createTaskSessionManagerHook(
 
       for (const [messageIndex, message] of messages.entries()) {
         if (!isUserMessageWithParts(message)) continue;
-        if (message.info.agent && message.info.agent !== 'orchestrator') {
-          continue;
-        }
         if (
           !message.info.sessionID ||
           !options.shouldManageSession(message.info.sessionID)

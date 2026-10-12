@@ -49,26 +49,23 @@ function orchestratorPromptFor(hostFlavor?: string): string {
 }
 
 describe('delegationVocabulary', () => {
-  test("v2 → { tool: 'subagent', agentParam: 'agent', modelParam: 'model', resumeParam: 'sessionID' }", () => {
+  test("v2 → { tool: 'subagent', agentParam: 'agent', resumeParam: 'sessionID' }", () => {
     expect(delegationVocabulary('v2')).toEqual({
       tool: 'subagent',
       agentParam: 'agent',
-      modelParam: 'model',
       resumeParam: 'sessionID',
     });
   });
 
-  test("v1/default → { tool: 'task', agentParam: 'subagent_type', modelParam: undefined, resumeParam: 'task_id' }", () => {
+  test("v1/default → { tool: 'task', agentParam: 'subagent_type', resumeParam: 'task_id' }", () => {
     expect(delegationVocabulary(undefined)).toEqual({
       tool: 'task',
       agentParam: 'subagent_type',
-      modelParam: undefined,
       resumeParam: 'task_id',
     });
     expect(delegationVocabulary('v1')).toEqual({
       tool: 'task',
       agentParam: 'subagent_type',
-      modelParam: undefined,
       resumeParam: 'task_id',
     });
   });
@@ -113,7 +110,12 @@ describe('buildOrchestratorPrompt delegation vocabulary', () => {
       'Never use `task(..., task_id: ...)` to fetch output',
     );
     expect(prompt).toContain('any resume starts new model work');
-    expect(prompt).toContain('Prefer `task(..., background: true)`');
+    // The blanket prefer-background line is replaced by the two-channel rule;
+    // launch/poll mechanics stay with the host's tool description.
+    expect(prompt).toContain(
+      'Two-channel delegation: short work whose result feeds the next step → foreground',
+    );
+    expect(prompt).not.toContain('Prefer `task(..., background: true)`');
     expect(prompt).toContain('cannot receive another `task` call');
     expect(prompt).toContain(
       '`task_revive(task_id: "<task-id>", prompt: "...")`',
@@ -145,15 +147,16 @@ const SLIM_MODEL_PARAM_SENTENCE =
   'Set `model` only when the user asks; look up IDs with the models tool first.';
 
 describe('createAgents council seat pointer vocabulary', () => {
-  test('v2 hostFlavor emits a subagent() seat pointer, not the full procedure', () => {
+  test('v2 hostFlavor emits a roster-only seat pointer, not the full procedure', () => {
     const prompt = orchestratorPromptFor('v2');
 
-    // Static pointer: seat IDs + native vocabulary only. The full Council
-    // Mode dispatch procedure is injected once by the council-inject hook
-    // (first-hit, at the first council trigger) — never carried statically.
+    // Static pointer: seat roster only. The gate, the native vocabulary,
+    // and the full Council Mode dispatch procedure all live in the block
+    // the council-inject hook injects (first-hit, at the first council
+    // trigger) — never carried statically.
     expect(prompt).toContain('## Council');
     expect(prompt).toContain('Seats: councillor-alpha');
-    expect(prompt).toContain('dispatch via subagent()');
+    expect(prompt).not.toContain('dispatch via subagent()');
     expect(prompt).not.toContain('## Council Mode');
     expect(prompt).not.toContain('in PARALLEL');
     // The slim base prompt carries the compressed model-param guidance.
@@ -162,16 +165,44 @@ describe('createAgents council seat pointer vocabulary', () => {
     expect(prompt).not.toContain('task(');
   });
 
-  test('v1 (no hostFlavor) keeps the task() seat pointer', () => {
+  test('v1 (no hostFlavor) keeps a roster-only seat pointer', () => {
     const prompt = orchestratorPromptFor();
 
     expect(prompt).toContain('## Council');
     expect(prompt).toContain('Seats: councillor-alpha');
-    expect(prompt).toContain('dispatch via task()');
+    expect(prompt).not.toContain('dispatch via task()');
     expect(prompt).not.toContain('## Council Mode');
     expect(prompt).not.toContain('subagent(');
     expect(prompt).not.toContain(MODEL_PARAM_SENTENCE);
     expect(prompt).not.toContain(SLIM_MODEL_PARAM_SENTENCE);
+  });
+
+  test("the disabled-hook manual hint carries the flavor's native tool", () => {
+    // With the hook off no block ever appears, so the roster's one-line
+    // hint is the pointer's only vocabulary site — it must stay native.
+    const disabledRuntime = () =>
+      runtimeFor({
+        council: councilConfig(),
+        disabled_agents: [],
+        disabled_hooks: ['council-inject'],
+      });
+    const disabledPromptFor = (hostFlavor?: string): string => {
+      const agents = createAgents(disabledRuntime(), { hostFlavor });
+      return agents.find((a) => a.name === 'orchestrator')?.config
+        .prompt as string;
+    };
+
+    const v2 = disabledPromptFor('v2');
+    expect(v2).toContain(
+      'Seats: councillor-alpha — dispatch via subagent() when the user asks for consensus.',
+    );
+    expect(v2).not.toContain('dispatch via task()');
+
+    const v1 = disabledPromptFor();
+    expect(v1).toContain(
+      'Seats: councillor-alpha — dispatch via task() when the user asks for consensus.',
+    );
+    expect(v1).not.toContain('dispatch via subagent()');
   });
 
   test('v2 keeps native resume guidance and does not adopt the v1 task_revive-first rule', () => {
