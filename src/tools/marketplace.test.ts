@@ -233,6 +233,16 @@ describe('marketplace tools', () => {
         { agent: 'orchestrator' } as never,
       ),
     ).rejects.toThrow('acknowledge_other_projects: true');
+    await expect(
+      manage.execute(
+        {
+          action: 'uninstall',
+          target: 'author/package',
+          acknowledge_other_projects: false,
+        } as never,
+        { agent: 'orchestrator' } as never,
+      ),
+    ).rejects.toThrow('acknowledge_other_projects: true');
     expect(calls).toEqual([]);
 
     await manage.execute(
