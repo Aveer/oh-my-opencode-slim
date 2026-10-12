@@ -13,8 +13,6 @@
  */
 
 import { log } from '../utils/logger';
-import type { PermissionCeilings, PermissionPolicyInput } from './permissions';
-import { compilePermissionPolicy } from './permissions';
 import type {
   ModelRef,
   V2AgentDraft,
@@ -107,44 +105,6 @@ export function adaptPermissions(
     }
   }
   return rules;
-}
-
-/** Compile the v1 agent permission map as the baseline for native ordered
- * host rules. Native last-match evaluation lets host rules override earlier
- * baseline denials; final denials and configured ceilings remain immutable. */
-export function compileAgentPermissions(
-  permission: unknown,
-  options: {
-    tools?: readonly string[];
-    hostRules?: readonly V2PermissionRule[];
-    ceilings?: PermissionCeilings;
-    finalDenials?: readonly string[];
-  } = {},
-): V2PermissionRule[] {
-  const toolsAllow = (options.tools ?? []).map((action) => ({
-    action,
-    resource: '*',
-    effect: 'allow' as const,
-  }));
-  const baselineRules = [...toolsAllow, ...adaptPermissions(permission)].filter(
-    (rule): rule is V2PermissionRule =>
-      rule.effect === 'allow' ||
-      rule.effect === 'ask' ||
-      rule.effect === 'deny',
-  );
-  const input: PermissionPolicyInput = {
-    baselineRules,
-    hostRules: options.hostRules ?? [],
-    ...(options.ceilings ? { ceilings: options.ceilings } : {}),
-  };
-  return [
-    ...compilePermissionPolicy(input).rules.map((rule) => ({ ...rule })),
-    ...(options.finalDenials ?? []).map((action) => ({
-      action,
-      resource: '*',
-      effect: 'deny' as const,
-    })),
-  ];
 }
 
 /** Model-visible identifier parameter for control tools (`task_result`,
