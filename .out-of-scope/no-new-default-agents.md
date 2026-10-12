@@ -13,6 +13,11 @@ alvinunreal stated the roster ceiling directly:
 > new default agent. [...] currently i'm targeting releasing v3.0 with just
 > marketplace and additional community contributed agents.
 
+The stance repeats across the tracker: #281 — *"I'd say we can't add more new
+agents, will get overwhelmed - but for this kind of case we can think a
+different solution"*; #423 — *"We support dynamic agents, I think this can be
+achieved with custom configs - adding more agents isn't planned for now."*
+
 Every default agent adds prompt load and cognitive complexity to every
 session and locks in workflow opinions that don't fit every project or task
 size. The supported extension paths are:
@@ -33,6 +38,9 @@ models in core routing).
   ceiling stated)
 - PR #1347 — "feat: add optional Jev delegation routing and enforcement"
   (closed; marketplace path)
+- PR #120 — "feat: implement granular fixer agents for parallel execution"
+  (closed; alvinunreal: "I'm not sure tbh if we should by default include 2
+  types of fixers")
 - #1015 ("sentinel" security agent) and the v3.0 idea collections (#524,
   discussion #970: review panel, janitor, manager-of-orchestrators) —
   collected by alvinunreal as marketplace/community pack candidates, not

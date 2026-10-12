@@ -13,7 +13,8 @@ across that churn, and a preset that resolves to dead models is worse than
 no preset. The project has no review capacity for that upkeep, so the
 sustainable surface is Discussions (e.g. the OpenCode Go preset thread,
 #558), where the community reviews and updates configs without the project
-owning their maintenance.
+owning their maintenance. alvinunreal on PR #618: *"we can't maintain many
+presets, for now keeping 2 ; opencode-go already hard to keep updated"*.
 
 ## Handoff convention
 
