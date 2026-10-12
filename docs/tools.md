@@ -8,6 +8,13 @@ Slim only intercepts `apply_patch` before the native tool runs. It rewrites reco
 
 ---
 
+## interview_submit_state
+
+`interview_submit_state` stores the current interview state without printing the
+specification or patch in assistant text. Use it once per interview turn: the
+kickoff carries the full spec, and later turns carry a one-line status, an
+optional unified diff against the current spec body, and questions.
+
 ## Web Fetch
 
 Enhanced version of OpenCode's built-in `webfetch`. Overrides the default when
@@ -68,6 +75,15 @@ managed. `task_message` does not interrupt the current generation. `task_cancel`
 stops the generation but retains its session; it does not roll back partial edits.
 After cancelling a write-capable task, inspect and reconcile file changes before
 launching replacement work.
+
+`task_cancel` and `task_revive` admit managed parent sessions, including Build
+and custom primary agents that have delegated work. Host tool permissions still
+apply, and a parent can only control its own children. Switching primary agents
+does not transfer child ownership. Completed results are surfaced and
+acknowledged for reuse in both board modes regardless of the parent's agent name.
+History recovery and injected completion handling use the same managed-session
+admission; an unmanaged Build turn is not promoted to Orchestrator.
+This does not add the Orchestrator prompt to Build or make it delegate automatically.
 
 If the abort request times out while still pending, `task_cancel` reports
 uncertainty and retains its cancellation lease: a late abort must not affect a
@@ -139,9 +155,11 @@ its message lease after timeout; this change does not alter that quarantine.
 errored, or stopped retained session may be revived immediately once its
 retained state has been verified safe. Acknowledgement controls parent and
 job-board consumption and reusable-pool display, not same-session revival.
-On v1 a real parent fallback routes that child's next prompt, like a `task_id`
-resume, also with explicit model inheritance. V2 retains the session model. A
-failed send may leave the v1 intention pending until claimed or evicted by the
+On v1 a confirmed parent fallback routes that child's next prompt, like a
+`task_id` resume; with explicit model inheritance it follows the parent's live
+model, whether selected by fallback or a manual change. V2 retains the session
+model. A failed send may leave the v1
+intention pending until claimed or evicted by the
 bounded FIFO.
 For existing tracked sessions, baseline capture has a 5-second deadline: expiry fails without sending a prompt
 and releases the relaunch lease. The local admission wait has a 10-second deadline;

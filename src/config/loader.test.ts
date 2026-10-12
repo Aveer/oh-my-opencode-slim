@@ -365,6 +365,7 @@ describe('loadPluginConfig', () => {
           autoOpenBrowser: false,
           port: 1234,
           dashboard: true,
+          printState: true,
         },
       }),
     );
@@ -381,7 +382,28 @@ describe('loadPluginConfig', () => {
       autoOpenBrowser: false,
       port: 1234,
       dashboard: true,
+      printState: true,
     });
+  });
+
+  test('lets a project layer override the user printState interview flag', () => {
+    const userConfigPath = path.join(userConfigDir, 'opencode');
+    const projectDir = path.join(tempDir, 'project');
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    fs.mkdirSync(userConfigPath, { recursive: true });
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(userConfigPath, 'oh-my-opencode-slim.json'),
+      JSON.stringify({ interview: { printState: true } }),
+    );
+    fs.writeFileSync(
+      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      JSON.stringify({ interview: { printState: false } }),
+    );
+
+    const config = loadPluginConfig(projectDir, { silent: true });
+
+    expect(config.interview?.printState).toBe(false);
   });
 
   test('does not let a defaulted project webfetch enabled override user false', () => {
@@ -1093,6 +1115,31 @@ describe('onWarning callback', () => {
       config.backgroundJobs?.orchestratorWake.wakeOnTerminalPublication,
     ).toBe(true);
     expect(config.backgroundJobs?.childInputWake).toBe(true);
+  });
+
+  test('routingBlock never derives a v2 default (no boardInjection-style flip)', () => {
+    const projectDir = path.join(tempDir, 'project');
+    // Unset on v2 stays unset: the native subagent roster carries agent
+    // identity only, and the block's Delegate/Don't routing criteria have
+    // no native equivalent — a derived false would be a silent routing
+    // downgrade dressed up as deduplication.
+    const v2Config = loadPluginConfig(projectDir, {
+      silent: true,
+      hostFlavor: 'v2',
+    });
+    expect(v2Config.routingBlock).toBeUndefined();
+
+    const projectConfigDir = path.join(projectDir, '.opencode');
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
+      JSON.stringify({ routingBlock: false }),
+    );
+    const explicitOff = loadPluginConfig(projectDir, {
+      silent: true,
+      hostFlavor: 'v2',
+    });
+    expect(explicitOff.routingBlock).toBe(false);
   });
 
   test('v2 host flavor never overrides explicitly configured board/wake keys', () => {

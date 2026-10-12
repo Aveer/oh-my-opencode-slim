@@ -1,7 +1,16 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as packageManagerModule from '../../utils/package-manager';
 
 const logMock = mock(() => {});
 
@@ -75,9 +84,19 @@ mock.module('../../utils/compat', () => ({
   isBun: false,
 }));
 
+// bun's mock.module registry is process-global and test files run in
+// filesystem readdir order, so this file's package-manager mock would
+// otherwise leak into src/utils/package-manager.test.ts. Capture the real
+// exports (before mocking) and restore them once this file's tests are done.
+const realPackageExports = { ...packageManagerModule };
+
 mock.module('../../utils/package-manager', () => ({
   resolvePackageInstallCommand: () => resolvedInstall,
 }));
+
+afterAll(() => {
+  mock.module('../../utils/package-manager', () => realPackageExports);
+});
 
 let importCounter = 0;
 
@@ -1027,7 +1046,7 @@ describe('auto-update-checker/index', () => {
       body: {
         title: 'oh-my-opencode-slim v2.0.0 is available.',
         message:
-          'Running v1.1.2.\nIt requires OpenCode background subagents.\nRefresh the cached copy: \`bunx oh-my-opencode-slim@latest install\`',
+          'Running v1.1.2.\nIt requires OpenCode background subagents.\nRefresh the cached copy: `bunx oh-my-opencode-slim@latest install`',
         variant: 'info',
         duration: 12000,
       },
@@ -1065,7 +1084,7 @@ describe('auto-update-checker/index', () => {
       body: {
         title: 'oh-my-opencode-slim v3.0.2 is available.',
         message:
-          'Running v2.9.9 from /home/u/.cache/opencode/packages/oh-my-opencode-slim@latest/node_modules/oh-my-opencode-slim/package.json.\nIt requires OpenCode background subagents.\nRefresh the cached copy: \`bunx oh-my-opencode-slim@latest install\`',
+          'Running v2.9.9 from /home/u/.cache/opencode/packages/oh-my-opencode-slim@latest/node_modules/oh-my-opencode-slim/package.json.\nIt requires OpenCode background subagents.\nRefresh the cached copy: `bunx oh-my-opencode-slim@latest install`',
         variant: 'info',
         duration: 12000,
       },
