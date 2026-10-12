@@ -521,6 +521,7 @@ export function createBackgroundJobTerminalGate(options: {
     text: string,
     lease?: BackgroundJobLease,
     attribution: TerminalAttribution = 'event',
+    hostOutcomeRead?: string,
   ): GateResult {
     const value = observation(token);
     const before = board.get(token.taskID);
@@ -580,14 +581,18 @@ export function createBackgroundJobTerminalGate(options: {
     // hostOutcomeRejectionReason: never gates behavior — promoting this to
     // a decision signal requires a fresh multi-agent review. No config, no
     // state: a publication happens at most once per (taskID, generation),
-    // so the log is naturally bounded. Known divergence source: host-side
-    // outcome staleness across runs (idle_outcome has no clear point —
+    // so the log is naturally bounded. The comparand prefers the caller-
+    // passed read (the episode's freshest window-attributed outcome, for
+    // commits whose runtime observation predates it) over the stale runtime
+    // copy. Known divergence source: host-side outcome staleness across
+    // runs (idle_outcome has no clear point —
     // docs/opencode-v2-compatibility.md); stop-family normalization keeps
     // verified-cancel publications out of the log.
     const hostOutcome =
-      typeof value.runtime?.terminalOutcome === 'string'
+      hostOutcomeRead ??
+      (typeof value.runtime?.terminalOutcome === 'string'
         ? value.runtime.terminalOutcome
-        : undefined;
+        : undefined);
     if (
       hostOutcome !== undefined &&
       terminalStateFamily(state) !==
@@ -1155,6 +1160,7 @@ export function createBackgroundJobTerminalGate(options: {
         evidence.text,
         undefined,
         'transcript',
+        terminalOutcome,
       );
     // Native return is attributable only when no transcript exists. Foreground
     // still publishes when the transcript is pending; empty result uses a
@@ -1166,7 +1172,14 @@ export function createBackgroundJobTerminalGate(options: {
       signal.status.result?.trim() &&
       signal.status.state !== 'running'
     ) {
-      return commit(token, signal.status.state, signal.status.result);
+      return commit(
+        token,
+        signal.status.state,
+        signal.status.result,
+        undefined,
+        'event',
+        terminalOutcome,
+      );
     }
     if (
       foregroundNativeTerminal &&
@@ -1187,6 +1200,9 @@ export function createBackgroundJobTerminalGate(options: {
         guarded.state,
         guarded.resultSummary ??
           `Foreground task ended with state ${guarded.state}.`,
+        undefined,
+        'event',
+        terminalOutcome,
       );
     }
     const stable =

@@ -1873,41 +1873,106 @@ describe('outcome corroboration (log-only mirror)', () => {
   test('divergent host outcome is logged and never changes publication', async () => {
     const capture = captureLogs();
     try {
-      const h = harness({
-        baselineFor: () => undefined,
-        readTerminalEvidence: async () => ({ data: [] }),
+      const run = async (terminalOutcome: string) => {
+        const h = harness({
+          baselineFor: () => undefined,
+          readTerminalEvidence: async () => ({ data: [] }),
+        });
+        const token = h.gate.capture(h.run);
+        if (!token) throw new Error('missing observation');
+        h.gate.observe(token, {
+          kind: 'quiescent',
+          origin: 'host-outcome',
+          readStartedAt: token.readStartedAt,
+          stable: true,
+          terminalOutcome,
+        });
+        h.advance(20);
+        const lease = h.board.acquireCancellationLease(
+          h.run.taskID,
+          h.run.generation,
+        );
+        if (!lease) throw new Error('missing cancellation lease');
+        const before = capture.entries.length;
+        const result = await h.gate.reconcile(h.run, {
+          kind: 'cancel',
+          lease,
+          reason: 'user requested',
+        });
+        expect(result.kind).toBe('committed');
+        return {
+          record: h.board.get(h.run.taskID),
+          corroboration: capture.entries
+            .slice(before)
+            .filter(
+              (entry) =>
+                entry.message === '[terminal-gate] outcome corroboration',
+            ),
+        };
+      };
+      const divergent = await run('failed');
+      expect(divergent.record).toMatchObject({
+        state: 'cancelled',
+        resultSummary: 'cancelled: user requested',
+        terminalRevision: 1,
       });
-      const token = h.gate.capture(h.run);
-      if (!token) throw new Error('missing observation');
-      h.gate.observe(token, {
-        kind: 'quiescent',
-        origin: 'host-outcome',
-        readStartedAt: token.readStartedAt,
-        stable: true,
-        terminalOutcome: 'failed',
-      });
-      h.advance(20);
-      const lease = h.board.acquireCancellationLease(
-        h.run.taskID,
-        h.run.generation,
-      );
-      if (!lease) throw new Error('missing cancellation lease');
-      const result = await h.gate.reconcile(h.run, {
-        kind: 'cancel',
-        lease,
-        reason: 'user requested',
-      });
-      expect(result.kind).toBe('committed');
-      expect(h.board.get(h.run.taskID)?.state).toBe('cancelled');
-      const entries = capture.of('[terminal-gate] outcome corroboration');
-      expect(entries).toHaveLength(1);
-      expect(entries[0]?.data).toMatchObject({
-        taskID: h.run.taskID,
-        generation: h.run.generation,
+      expect(divergent.corroboration).toHaveLength(1);
+      expect(divergent.corroboration[0]?.data).toMatchObject({
+        taskID: 'ses_child',
+        generation: 1,
         published: 'cancelled',
         attribution: 'event',
         hostOutcome: 'failed',
         hostImpliedState: 'error',
+      });
+      // Log-only contract: the publication with the divergent outcome in
+      // hand is identical to the same cancellation without it.
+      const control = await run('cancelled');
+      expect(divergent.record).toEqual(control.record);
+      expect(control.corroboration).toHaveLength(0);
+    } finally {
+      capture.restore();
+    }
+  });
+
+  test('a fresh outcome read threads into the commit compare', async () => {
+    const capture = captureLogs();
+    try {
+      const h = harness({
+        hostOutcomeClock: 'shared-unix-ms',
+        baselineFor: () => undefined,
+        readTerminalEvidence: async () => undefined,
+        input: {
+          client: {
+            session: {
+              get: async () => ({
+                data: { outcome: 'succeeded', time: { idle: 50 } },
+              }),
+            },
+          },
+        } as never,
+      });
+      h.observe('quiescent');
+      h.advance(61);
+      const result = await h.gate.reconcile(h.run, {
+        kind: 'output',
+        origin: { kind: 'native', run: h.run, callID: 'native' },
+        status: {
+          taskID: h.run.taskID,
+          state: 'error',
+          timedOut: false,
+          result: 'native failure',
+        },
+      });
+      expect(result.kind).toBe('committed');
+      expect(h.board.get(h.run.taskID)?.state).toBe('error');
+      const entries = capture.of('[terminal-gate] outcome corroboration');
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.data).toMatchObject({
+        published: 'error',
+        attribution: 'event',
+        hostOutcome: 'succeeded',
+        hostImpliedState: 'completed',
       });
     } finally {
       capture.restore();
