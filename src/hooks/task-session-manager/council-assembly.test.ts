@@ -202,7 +202,7 @@ describe('council seat assembly', () => {
     );
   });
 
-  test('assembly disabled + valid Seats trigger is refused (stale harness block backstop)', async () => {
+  test('assembly disabled ⇒ inert: any Seats-bearing prompt passes through byte-identically (backstop deliberately absent)', async () => {
     const board = new BackgroundJobBoard();
     seedCompleted(board, {
       taskID: 'ses_alpha',
@@ -210,59 +210,29 @@ describe('council seat assembly', () => {
       alias: 'councillor-1',
       resultSummary: 'ALPHA VERBATIM TEXT',
     });
-    const args: Record<string, unknown> = {
-      subagent_type: 'council',
-      description: 'Council synthesis',
-      prompt: 'Which migration is safest?\nSeats: councillor-1',
-      background: false,
-    };
-    const original = args.prompt;
-    await expect(
-      handleToolExecuteBefore(
+    // A refusal on the disabled path would fail CLOSED: quoting a roster or
+    // pasting content that contains a Seats line re-triggers it on every
+    // retry (the remedy itself re-fails). Disabled must mean inert; the
+    // stale-harness-block window fails OPEN and visibly at synthesis time
+    // (the council's mandated format reports missing seats).
+    for (const prompt of [
+      'Which migration is safest?\nSeats: councillor-1',
+      'Question quoting a roster:\nSeats: councillor-alpha, councillor-beta\n…and already-pasted answers below.',
+      'Question?\nSeats: , ,',
+    ]) {
+      const args: Record<string, unknown> = {
+        subagent_type: 'council',
+        description: 'Council synthesis',
+        prompt,
+        background: false,
+      };
+      await handleToolExecuteBefore(
         { tool: 'task', sessionID: PARENT, callID: 'call_council' },
         { args },
         { ...deps(board), councilAssembly: false },
-      ),
-    ).rejects.toThrow(
-      'council assembly is disabled — paste each seat response into the prompt and call council again.',
-    );
-    // Refused before any mutation: the prompt still carries its trigger line,
-    // so a retried paste-mode call re-enters cleanly.
-    expect(args.prompt).toBe(original);
-  });
-
-  test('assembly disabled + no Seats line passes through byte-identically (paste-mode flow)', async () => {
-    const board = new BackgroundJobBoard();
-    const args: Record<string, unknown> = {
-      subagent_type: 'council',
-      description: 'Council synthesis',
-      prompt: 'Question?\n## Seat: alpha\nALPHA TEXT (pasted by the model)',
-      background: false,
-    };
-    const original = args.prompt;
-    await handleToolExecuteBefore(
-      { tool: 'task', sessionID: PARENT, callID: 'call_council' },
-      { args },
-      { ...deps(board), councilAssembly: false },
-    );
-    expect(args.prompt).toBe(original);
-  });
-
-  test('assembly disabled + malformed empty-refs Seats line passes through (no ref token ⇒ no refusal)', async () => {
-    const board = new BackgroundJobBoard();
-    const args: Record<string, unknown> = {
-      subagent_type: 'council',
-      description: 'Council synthesis',
-      prompt: 'Question?\nSeats: , ,',
-      background: false,
-    };
-    const original = args.prompt;
-    await handleToolExecuteBefore(
-      { tool: 'task', sessionID: PARENT, callID: 'call_council' },
-      { args },
-      { ...deps(board), councilAssembly: false },
-    );
-    expect(args.prompt).toBe(original);
+      );
+      expect(args.prompt).toBe(prompt);
+    }
   });
 
   test('a seat owned by another parent is never resolved', async () => {

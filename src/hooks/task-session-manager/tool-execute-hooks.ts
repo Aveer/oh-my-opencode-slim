@@ -63,26 +63,9 @@ function normalizeObjectiveKey(value: string): string {
  * session IDs / board aliases the seat dispatches returned, which the
  * harness resolves host-side from its own Background Job Board, so the
  * orchestrator never re-emits seat text as output tokens (Mixture-of-Agents
- * assembly with an independent judge). No /g flag on purpose: a global
- * regex would carry lastIndex state between the findIndex pass and the
- * exec pass and silently skip matches. */
+ * assembly with an independent judge). No /g flag: lastIndex state would
+ * skip matches across the findIndex/exec passes. */
 const COUNCIL_SEATS_LINE_PATTERN = /^Seats:\s*(.+)$/;
-
-/** Does this prompt carry a seat-ref trigger line with at least one ref
- * token? Used only by the disabled-assembly backstop — the refusal must not
- * fire on a malformed `Seats: , ,` line (no ref token means no evidence the
- * orchestrator relied on attachment). */
-function hasCouncilSeatsTrigger(prompt: unknown): boolean {
-  if (typeof prompt !== 'string') return false;
-  const lines = prompt.split('\n');
-  const index = lines.findLastIndex((line) =>
-    COUNCIL_SEATS_LINE_PATTERN.test(line),
-  );
-  if (index === -1) return false;
-  return (COUNCIL_SEATS_LINE_PATTERN.exec(lines[index])?.[1] ?? '')
-    .split(',')
-    .some((ref) => ref.trim() !== '');
-}
 
 /** Seat body per the assembly contract; read-only over the record. Only a
  * completed terminal with text is a real response — lifecycle diagnostics
@@ -354,22 +337,17 @@ export async function handleToolExecuteBefore(
   // Toggled via deps.councilAssembly (disabledHooks: ['council-assembly']),
   // resolved once at construction from the same runtime set the injected
   // block's delivery mode comes from — the two can never disagree within a
-  // plugin generation. Backstop: assembly disabled while the prompt still
-  // carries a seat-ref trigger line means a stale harness-mode block is in
-  // the transcript (mid-session config reload); refuse instead of letting
-  // the tool-less council synthesize from bare IDs.
-  if (agentType === 'council') {
-    if (deps.councilAssembly !== false) {
-      assembleCouncilSeatResponses(
-        args,
-        input.sessionID,
-        deps.backgroundJobBoard,
-      );
-    } else if (hasCouncilSeatsTrigger(args.prompt)) {
-      throw new Error(
-        'council assembly is disabled — paste each seat response into the prompt and call council again.',
-      );
-    }
+  // plugin generation. Deliberately no refusal on the disabled path: a
+  // shape check that fails closed (rejecting prompts whose quoted content
+  // mentions a Seats line) DoSes legitimate paste-mode calls, while the
+  // stale-harness-block window it guards fails open and visibly at
+  // synthesis time (the council's mandated format reports missing seats).
+  if (agentType === 'council' && deps.councilAssembly !== false) {
+    assembleCouncilSeatResponses(
+      args,
+      input.sessionID,
+      deps.backgroundJobBoard,
+    );
   }
   if (typeof args.task_id === 'string' && args.task_id.trim() !== '') {
     const canonical = deps.resolveCanonicalTaskRef
