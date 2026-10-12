@@ -411,6 +411,67 @@ describe('task_reply', () => {
       requestID: 'que_2',
       questions: [],
     });
+    const formReply = mock(async () => undefined);
+    const client = { session: { form: { reply: formReply } } };
+    const { task_reply } = createTaskReplyTool({
+      input: { directory: '/test', client, hostFlavor: 'v2' } as never,
+      backgroundJobBoard: board,
+    });
+
+    expect(Object.keys(task_reply.args)).toContain('sessionID');
+    // Detected v2 (runtime session.form.reply) restores the v1 `answers`
+    // surface: open question waits are answerable through the host's
+    // documented form.reply route.
+    expect(Object.keys(task_reply.args)).toContain('answers');
+    expect(task_reply.description).toBe(
+      'Reply to a tracked child request by task ID/alias and request ID.',
+    );
+
+    // Both identifier forms resolve the task and its open ask on v2, and
+    // the answer passes through session.form.reply with the
+    // SessionFormReplyInput shape (sessionID = child taskID, formID =
+    // open-wait requestID). The asks clear on success.
+    await task_reply.execute(
+      { sessionID: 'ses_child1', request_id: 'que_1', answers: ['yes'] },
+      { sessionID: 'parent-1' } as never,
+    );
+    await task_reply.execute(
+      { task_id: 'ses_child1', request_id: 'que_2', answers: ['no'] },
+      { sessionID: 'parent-1' } as never,
+    );
+    expect(formReply).toHaveBeenCalledTimes(2);
+    expect(formReply.mock.calls[0]?.[0]).toEqual({
+      sessionID: 'ses_child1',
+      formID: 'que_1',
+      answer: { question_0: 'yes' },
+    });
+    expect(formReply.mock.calls[1]?.[0]).toEqual({
+      sessionID: 'ses_child1',
+      formID: 'que_2',
+      answer: { question_0: 'no' },
+    });
+    expect(getChildInputWait('ses_child1', 'que_1')).toBeUndefined();
+    expect(getChildInputWait('ses_child1', 'que_2')).toBeUndefined();
+  });
+
+  test('v2 without a detected form.reply keeps the honest C4 surface', async () => {
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    noteChildInputWait({
+      taskID: 'ses_child1',
+      parentSessionID: 'parent-1',
+      kind: 'question',
+      requestID: 'que_3',
+      questions: [],
+    });
+    noteChildInputWait({
+      taskID: 'ses_child1',
+      parentSessionID: 'parent-1',
+      kind: 'question',
+      requestID: 'que_4',
+      questions: [],
+    });
     const reply = mock(async () => ({ data: true }));
     const client = { question: { reply, reject: mock(async () => ({})) } };
     const { task_reply } = createTaskReplyTool({
@@ -419,10 +480,10 @@ describe('task_reply', () => {
     });
 
     expect(Object.keys(task_reply.args)).toContain('sessionID');
-    // v2 advertises only what it can do: the pinned plugin context has no
-    // form.reply, so the answers arg is absent there and the description
-    // carries no caveat to offset it — the execute gate below refuses
-    // forms with the host-UI/cancel redirect.
+    // Undetected v2 advertises only what it can do: no runtime
+    // session.form.reply, so the answers arg stays absent (#1510
+    // honest-surface) and the execute gate below refuses questions with
+    // the host-UI/cancel redirect.
     expect(Object.keys(task_reply.args)).not.toContain('answers');
     expect(task_reply.description).toBe(
       'Reply to a tracked child request by task ID/alias and request ID.',
@@ -434,19 +495,19 @@ describe('task_reply', () => {
     const refusal = 'Question replies are not supported on this host';
     await expect(
       task_reply.execute(
-        { sessionID: 'ses_child1', request_id: 'que_1', answers: ['yes'] },
+        { sessionID: 'ses_child1', request_id: 'que_3', answers: ['yes'] },
         { sessionID: 'parent-1' } as never,
       ),
     ).rejects.toThrow(refusal);
     await expect(
       task_reply.execute(
-        { task_id: 'ses_child1', request_id: 'que_2', answers: ['yes'] },
+        { task_id: 'ses_child1', request_id: 'que_4', answers: ['yes'] },
         { sessionID: 'parent-1' } as never,
       ),
     ).rejects.toThrow(refusal);
     expect(reply).not.toHaveBeenCalled();
-    expect(getChildInputWait('ses_child1', 'que_1')).toBeDefined();
-    expect(getChildInputWait('ses_child1', 'que_2')).toBeDefined();
+    expect(getChildInputWait('ses_child1', 'que_3')).toBeDefined();
+    expect(getChildInputWait('ses_child1', 'que_4')).toBeDefined();
   });
 
   test('omitted answers rejects the open question', async () => {
@@ -943,6 +1004,9 @@ describe('task_reply', () => {
     });
     const reply = mock(async () => ({ data: true }));
     const reject = mock(async () => ({ data: true }));
+    // Undetected v2 (no runtime session.form.reply): the C4 gate refuses
+    // before any transport attempt with the honest alternatives; the wait
+    // stays open for the host UI.
     const client = { question: { reply, reject } };
     const { task_reply } = createTaskReplyTool({
       input: { directory: '/test', client, hostFlavor: 'v2' } as never,
@@ -1201,6 +1265,74 @@ describe('task_reply v2 event transport integration', () => {
         decision: 'always',
       });
       expect(getChildInputWait('ses_child1', 'per_1')).toBeUndefined();
+    } finally {
+      await hook.event({
+        event: { type: 'server.instance.disposed' },
+      } as never);
+    }
+  });
+
+  test('detected v2 answers a form.created question wait through session.form.reply', async () => {
+    resetUserWaitGateForTests();
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    const hook = createInputWaitHook(board);
+    try {
+      const formReply = mock(async () => undefined);
+      const input = buildPluginInput(makeV2Ctx());
+      // The v2 shim client carries no host session domain; the runtime
+      // form.reply arrives on the host client — wire the documented
+      // runtime shape (session.form.reply) onto it.
+      (
+        input as { client: { session: Record<string, unknown> } }
+      ).client.session = {
+        ...(input as { client: { session: Record<string, unknown> } }).client
+          .session,
+        form: { reply: formReply },
+      } as never;
+      const { task_reply } = createTaskReplyTool({
+        input: input as never,
+        backgroundJobBoard: board,
+      });
+
+      await routeMappedV2Event(hook, {
+        type: 'form.created',
+        data: {
+          form: {
+            id: 'form_1',
+            sessionID: 'ses_child1',
+            fields: [
+              {
+                key: 'environment',
+                title: 'Pick environment',
+                type: 'select',
+                options: [{ label: 'staging', description: 'Use staging' }],
+              },
+            ],
+          },
+        },
+      });
+
+      expect(getChildInputWait('ses_child1', 'form_1')).toMatchObject({
+        kind: 'question',
+        requestID: 'form_1',
+      });
+      // Detection restores the answers surface on v2.
+      expect(Object.keys(task_reply.args)).toContain('answers');
+
+      const output = await task_reply.execute(
+        { task_id: 'ses_child1', request_id: 'form_1', answers: ['staging'] },
+        { sessionID: 'parent-1' } as never,
+      );
+
+      expect(formReply).toHaveBeenCalledTimes(1);
+      expect(formReply.mock.calls[0]?.[0]).toMatchObject({
+        sessionID: 'ses_child1',
+        formID: 'form_1',
+      });
+      expect(output).toContain('Answered pending question form_1');
+      expect(getChildInputWait('ses_child1', 'form_1')).toBeUndefined();
     } finally {
       await hook.event({
         event: { type: 'server.instance.disposed' },
