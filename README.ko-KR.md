@@ -52,7 +52,7 @@ oh-my-opencode-slim은 OpenCode에서 여러 전문 에이전트의 작업을 �
   현재 작업 중인 에이전트를 보여 주는 데스크톱 플로팅 창입니다.
   필요에 따라 활성화할 수 있습니다.
 - **[멀티플렉서 통합](docs/multiplexer-integration.md)** - Tmux, Zellij,
-  Herdr, cmux 또는 kitty 분할 창(페인)에서 에이전트 작업을 실시간으로 확인합니다.
+  Herdr, cmux, kitty 또는 WezTerm 분할 창(페인)에서 에이전트 작업을 실시간으로 확인합니다.
 - **[프리셋 전환](docs/preset-switching.md)** - `/preset`으로 실행 중에 팀 전체의
   모델을 교체합니다. 하나의 기본 프리셋을 상속하는 기능도 지원합니다.
 - **[코드 인텔리전스 도구](docs/tools.md)** - 언어 서버 프로토콜(LSP) 도구,
@@ -166,7 +166,7 @@ bun run build
 > **백그라운드 오케스트레이션의 작동 방식을 살펴보세요.** **[Orchestrator 프롬프트](https://github.com/alvinunreal/oh-my-opencode-slim/blob/master/src/agents/orchestrator.ts#L28)**에는 작업 배정 규칙, 전문 에이전트 선택 로직, 백그라운드 작업 위임 기준이 담겨 있습니다. `@agentName <task>`로 서브에이전트를 호출해 직접 작업을 위임할 수도 있습니다.
 
 > [!TIP]
-> 기본 워크플로는 백그라운드 에이전트를 사용하므로 **[멀티플렉서 통합](docs/multiplexer-integration.md)을 활성화하는 것을 권장합니다.** 각 에이전트를 전용 Tmux, Zellij, Herdr, cmux 또는 kitty 분할 창에서 자동으로 엽니다. Orchestrator가 세션을 조율하는 동안 전문 에이전트의 작업을 실시간으로 확인할 수 있습니다.
+> 기본 워크플로는 백그라운드 에이전트를 사용하므로 **[멀티플렉서 통합](docs/multiplexer-integration.md)을 활성화하는 것을 권장합니다.** 각 에이전트를 전용 Tmux, Zellij, Herdr, cmux, kitty 또는 WezTerm 분할 창에서 자동으로 엽니다. Orchestrator가 세션을 조율하는 동안 전문 에이전트의 작업을 실시간으로 확인할 수 있습니다.
 >
 > OpenCode v2에서는 공유 백그라운드 서비스나 명시적인 `--server` 옵션을 사용할 때 분할 창을 지원합니다. `--standalone`에서는 분할 창을 지원하지 않으며, 프로세스마다 진단 메시지를 한 번 표시합니다. 이 경우 v2의 기본 서브에이전트 화면을 사용하세요.
 
@@ -664,7 +664,7 @@ bunx oh-my-opencode-slim@latest install --companion=yes
 | **[Council](docs/council.md)** | 키워드로 Orchestrator의 Council 모드를 활성화해 여러 모델을 병렬 실행하고 답변을 종합 |
 | **[사용자 지정 에이전트](docs/configuration.md#custom-agents)** | 프롬프트, 모델, MCP 접근 권한, Orchestrator 위임 규칙을 지정해 전문 에이전트 정의 |
 | **[ACP 에이전트](docs/acp-agents.md)** | Claude Code ACP, Gemini ACP 등 Agent Client Protocol(ACP) 호환 외부 에이전트에 작업을 위임하고, 도구 실행과 계획 진행 상황을 터미널 UI(TUI)에서 실시간으로 확인 |
-| **[멀티플렉서 통합](docs/multiplexer-integration.md)** | Tmux, Zellij, Herdr, cmux 또는 kitty 분할 창에서 에이전트 작업을 실시간으로 확인 |
+| **[멀티플렉서 통합](docs/multiplexer-integration.md)** | Tmux, Zellij, Herdr, cmux, kitty 또는 WezTerm 분할 창에서 에이전트 작업을 실시간으로 확인 |
 | **[Codemap](docs/codemap.md)** | 계층형 코드맵을 생성하여 대규모 코드베이스를 빠르게 파악 |
 | **[Clonedeps](docs/clonedeps.md)** | 선택한 의존성 소스를 Git 추적에서 제외된 로컬 작업 공간에 복제해 내부 구현 확인 |
 | **[Worktrees](docs/worktrees.md)** | `.slim/worktrees/`의 독립된 작업 공간에서 병렬·고위험 코딩 작업 수행 |

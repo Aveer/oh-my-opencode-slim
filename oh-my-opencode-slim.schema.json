@@ -1288,6 +1288,7 @@
             "zellij",
             "herdr",
             "kitty",
+            "wezterm",
             "cmux-tui",
             "none"
           ]

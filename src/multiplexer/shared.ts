@@ -70,8 +70,8 @@ export type ViewerCommandOptions = Pick<
  *
  * `mini` uses `attach ... --mini` on v1 (OpenCode >= 1.17.10). On v2 it
  * uses the `mini` subcommand, which rejects a positional directory; adapters
- * pin the pane cwd instead (herdr/kitty natively, tmux `-c`, Zellij `--cwd`,
- * cmux-tui `cd`).
+ * pin the pane cwd instead (herdr/kitty/wezterm natively, tmux `-c`,
+ * Zellij `--cwd`, cmux-tui `cd`).
  */
 export function buildViewCommand(
   sessionId: string,
@@ -116,8 +116,8 @@ const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /**
  * Whether the resolved shell can run a POSIX script. Used to gate the
- * `/proc`-based viewer-secret bridge (cmux-tui): unknown and Windows shells
- * count as non-POSIX, so the caller fails closed instead of feeding a
+ * `/proc`-based viewer-secret bridge (cmux-tui, wezterm): unknown and Windows
+ * shells count as non-POSIX, so the caller fails closed instead of feeding a
  * command-substitution script to a shell that cannot parse it.
  */
 export function isPosixShell(shell: string): boolean {
@@ -138,8 +138,9 @@ export function shellSupportsAndChain(shell = process.env.SHELL): boolean {
 /**
  * Wraps `command` in a POSIX script that recovers the viewer password from
  * this process's own `/proc/<pid>/environ` (readable by the owning user only)
- * and exports it as `OPENCODE_PASSWORD` before running the command. Adapters
- * whose CLI has no spawn-time env mechanism (zellij, cmux-tui) use this so
+ * and exports it (as `OPENCODE_PASSWORD` by default) before running the
+ * command. Adapters whose CLI has no spawn-time env mechanism (zellij,
+ * cmux-tui, wezterm) use this so
  * the secret never appears in command text or argv — it exists only in the
  * pane's environment at viewer start.
  *
@@ -147,15 +148,33 @@ export function shellSupportsAndChain(shell = process.env.SHELL): boolean {
  * `OPENCODE_SERVER_PASSWORD`. `/proc/<pid>/environ` is NUL-separated and is
  * split with `tr`, so the value is read line-wise: a password containing
  * newlines is recovered only up to its first line (documented limitation).
+ *
+ * `exportAs` names the variable the viewer reads: v2 viewers read
+ * `OPENCODE_PASSWORD` (the default, with the precedence above), while a v1
+ * `opencode attach` viewer reads only `OPENCODE_SERVER_PASSWORD`, so that is
+ * the only variable consulted for it.
  */
-export function withParentEnvPassword(command: string): string {
+export function withParentEnvPassword(
+  command: string,
+  exportAs:
+    | 'OPENCODE_PASSWORD'
+    | 'OPENCODE_SERVER_PASSWORD' = 'OPENCODE_PASSWORD',
+): string {
   const environ = `/proc/${process.pid}/environ`;
   const read = (name: string): string =>
     `$(tr '\\0' '\\n' < ${environ} 2>/dev/null | sed -n 's/^${name}=//p' | head -n 1)`;
+  // A v1 viewer authenticates with exactly what `opencode attach` reads, so
+  // a stray v2 `OPENCODE_PASSWORD` must not take precedence there.
+  const lookup =
+    exportAs === 'OPENCODE_SERVER_PASSWORD'
+      ? [`_omo_pw=${read('OPENCODE_SERVER_PASSWORD')}`]
+      : [
+          `_omo_pw=${read('OPENCODE_PASSWORD')}`,
+          `[ -n "$_omo_pw" ] || _omo_pw=${read('OPENCODE_SERVER_PASSWORD')}`,
+        ];
   return [
-    `_omo_pw=${read('OPENCODE_PASSWORD')}`,
-    `[ -n "$_omo_pw" ] || _omo_pw=${read('OPENCODE_SERVER_PASSWORD')}`,
-    'if [ -n "$_omo_pw" ]; then export OPENCODE_PASSWORD="$_omo_pw"; fi',
+    ...lookup,
+    `if [ -n "$_omo_pw" ]; then export ${exportAs}="$_omo_pw"; fi`,
     'unset _omo_pw',
     command,
   ].join('\n');

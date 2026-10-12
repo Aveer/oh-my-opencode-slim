@@ -196,9 +196,9 @@ This allows consumers to import directly from `src/config` rather than individua
 - `default_preset`: Default preset name to use
 
 ### MultiplexerConfig
-- `type`: "auto", "tmux", "zellij", "herdr", "cmux", "kitty", or "none" (client-local admission)
+- `type`: "auto", "tmux", "zellij", "herdr", "cmux", "kitty", "wezterm", or "none" (client-local admission)
 - `layout`: Pane layout (main-horizontal, main-vertical, tiled, even-horizontal, even-vertical)
-- `main_pane_size`: Percentage for main pane (20-80), tmux main-* layouts only
+- `main_pane_size`: Percentage for main pane (20-80), tmux main-* layouts and the first WezTerm main-* split
 - `zellij_pane_mode`: **removed/deprecated** — stripped by `sanitizeMultiplexerConfig` with a once-per-process warning; zellij panes always open in the parent pane's tab
 
 ## Environment Variable Support

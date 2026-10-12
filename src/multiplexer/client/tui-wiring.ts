@@ -231,6 +231,8 @@ export function detectClientAdapter(
   if (env.ZELLIJ_PANE_ID) return 'zellij';
   if (env.HERDR_PANE_ID) return 'herdr';
   if (env.KITTY_WINDOW_ID) return 'kitty';
+  // Last: tmux/zellij nested inside WezTerm must win.
+  if (env.WEZTERM_PANE) return 'wezterm';
   return null;
 }
 
@@ -300,6 +302,8 @@ export function resolveAnchoredTarget(
       return env.HERDR_PANE_ID ?? null;
     case 'kitty':
       return env.KITTY_WINDOW_ID ?? null;
+    case 'wezterm':
+      return env.WEZTERM_PANE ?? null;
     case 'cmux-tui':
       return env.CMUX_TUI_TERMINAL_ID ?? env.CMUX_TUI_SOCKET ?? null;
   }

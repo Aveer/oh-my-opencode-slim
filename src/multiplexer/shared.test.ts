@@ -447,6 +447,45 @@ describe('withParentEnvPassword', () => {
     await expectExtractedPassword('PATH=/usr/bin\0', '');
   });
 
+  test('v1 attach viewers get only OPENCODE_SERVER_PASSWORD', async () => {
+    const { withParentEnvPassword } = await importShared();
+    const script = withParentEnvPassword(
+      'opencode attach u',
+      'OPENCODE_SERVER_PASSWORD',
+    );
+    expect(script).toContain('export OPENCODE_SERVER_PASSWORD="$_omo_pw"');
+    expect(script).not.toContain('export OPENCODE_PASSWORD');
+    // A stray v2 OPENCODE_PASSWORD must not be consulted for a v1 viewer.
+    expect(script).not.toContain('s/^OPENCODE_PASSWORD=//p');
+    expect(script.endsWith('\nopencode attach u')).toBe(true);
+  });
+
+  test('v1 export ignores OPENCODE_PASSWORD in the parent environ', async () => {
+    const { withParentEnvPassword } = await importShared();
+    const dir = `/tmp/opencode/omo-shared-v1-test-${process.pid}`;
+    mkdirSync(dir, { recursive: true });
+    const environPath = `${dir}/environ`;
+    writeFileSync(
+      environPath,
+      'OPENCODE_PASSWORD=v2-value\0OPENCODE_SERVER_PASSWORD=v1-value\0',
+    );
+    try {
+      const script = withParentEnvPassword(
+        'printf %s "$OPENCODE_SERVER_PASSWORD"',
+        'OPENCODE_SERVER_PASSWORD',
+      ).replaceAll(`/proc/${process.pid}/environ`, environPath);
+      const proc = Bun.spawn(['/bin/sh', '-c', script], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+      });
+      expect(await proc.exited).toBe(0);
+      expect(await new Response(proc.stdout).text()).toBe('v1-value');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('runs the wrapped command in a POSIX shell', async () => {
     const { withParentEnvPassword } = await importShared();
     const script = withParentEnvPassword('printf ok');
@@ -477,9 +516,12 @@ async function expectExtractedPassword(
     const script = withParentEnvPassword(
       'printf %s "$OPENCODE_PASSWORD"',
     ).replaceAll(`/proc/${process.pid}/environ`, environPath);
+    // Clean env: a password exported in the test runner's own environment
+    // must not satisfy the "neither is present" case.
     const proc = Bun.spawn(['/bin/sh', '-c', script], {
       stdout: 'pipe',
       stderr: 'pipe',
+      env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
     });
     expect(await proc.exited).toBe(0);
     expect(await new Response(proc.stdout).text()).toBe(expected);
