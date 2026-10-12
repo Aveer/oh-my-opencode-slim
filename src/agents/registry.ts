@@ -553,10 +553,8 @@ export function buildResolvedAgentRegistry(
     string,
     ReturnType<typeof compilePermissionPolicy>
   > = {};
-  const childPolicyConstraints: Record<
-    string,
-    { ceilings?: PermissionCeilings }
-  > = {};
+  const childPolicyConstraints: Record<string, PermissionCeilings | undefined> =
+    {};
   const childStanceTails: Record<string, V2PermissionRule[]> = {};
 
   // User/host entries win over plugin-injected built-ins on a key
@@ -916,15 +914,14 @@ export function buildResolvedAgentRegistry(
     const baselineBeforeReadSafeguards = ownerReadRule.length
       ? baselineRules.filter((rule) => rule.action !== 'read')
       : baselineRules;
-    childPolicyConstraints[name] = finalizedPackageMetadata
-      ? {
-          ceilings: marketplacePermissionCeilings(
-            finalizedPackageMetadata.capabilities.tools,
-            finalizedPackageMetadata.capabilities.skills,
-            finalizedPackageMetadata.capabilities.mcps,
-          ),
-        }
-      : {};
+    const ceilings = finalizedPackageMetadata
+      ? marketplacePermissionCeilings(
+          finalizedPackageMetadata.capabilities.tools,
+          finalizedPackageMetadata.capabilities.skills,
+          finalizedPackageMetadata.capabilities.mcps,
+        )
+      : undefined;
+    childPolicyConstraints[name] = ceilings;
     policyMap[name] = compilePermissionPolicy({
       baselineRules: [
         ...baselineBeforeReadSafeguards,
@@ -934,7 +931,7 @@ export function buildResolvedAgentRegistry(
       // Keep host exceptions intact; the native policy compiler intersects
       // both axes with the package ceiling before applying them.
       hostRules: hostRuleSet,
-      ...childPolicyConstraints[name],
+      ...(ceilings ? { ceilings } : {}),
     });
     childStanceTails[name] = delegationStanceTail(baselineRules);
     finalAgentConfig[name] = clone(finalEntry);
@@ -947,7 +944,7 @@ export function buildResolvedAgentRegistry(
     candidateMap[alias] = clone(candidateMap[canonical] ?? []);
     effective[alias] = clone(effective[canonical] ?? {});
     if (policyMap[canonical]) policyMap[alias] = policyMap[canonical];
-    if (childPolicyConstraints[canonical])
+    if (Object.hasOwn(childPolicyConstraints, canonical))
       childPolicyConstraints[alias] = childPolicyConstraints[canonical];
     if (childStanceTails[canonical])
       childStanceTails[alias] = childStanceTails[canonical];
@@ -1098,15 +1095,10 @@ export function buildResolvedAgentRegistry(
       const visibleBaselineBeforeReadSafeguards = visibleOwnerReadRule.length
         ? visibleBaselineRules.filter((rule) => rule.action !== 'read')
         : visibleBaselineRules;
-      childPolicyConstraints[display] = packageMetadata
-        ? {
-            ceilings: marketplacePermissionCeilings(
-              visibleTools,
-              visibleSkills,
-              cappedMcps,
-            ),
-          }
-        : {};
+      const visibleCeilings = packageMetadata
+        ? marketplacePermissionCeilings(visibleTools, visibleSkills, cappedMcps)
+        : undefined;
+      childPolicyConstraints[display] = visibleCeilings;
       policyMap[display] = compilePermissionPolicy({
         baselineRules: [
           ...visibleBaselineBeforeReadSafeguards,
@@ -1116,7 +1108,7 @@ export function buildResolvedAgentRegistry(
         // Keep host exceptions intact; the native policy compiler intersects
         // both axes with the package ceiling before applying them.
         hostRules: visibleRules,
-        ...childPolicyConstraints[display],
+        ...(visibleCeilings ? { ceilings: visibleCeilings } : {}),
       });
       childStanceTails[display] = delegationStanceTail(visibleBaselineRules);
       if (definition.name === 'orchestrator') {
@@ -1199,7 +1191,10 @@ export function buildResolvedAgentRegistry(
       rules: readonly V2PermissionRule[],
     ) => {
       const constraints = frozenChildConstraints[agent];
-      if (!constraints) {
+      // Presence, not truthiness: a plain (non-marketplace) agent is stored as
+      // an explicit `undefined` ceiling — it has no package ceiling, but its
+      // child payload still compiles from the host rules alone.
+      if (!Object.hasOwn(frozenChildConstraints, agent)) {
         throw new Error(
           `child permission constraints unavailable for '${agent}'`,
         );
@@ -1207,7 +1202,7 @@ export function buildResolvedAgentRegistry(
       const policy = compilePermissionPolicy({
         baselineRules: [],
         hostRules: rules,
-        ...constraints,
+        ...(constraints ? { ceilings: constraints } : {}),
       });
       const compiled = policy.rules;
       // The host appends the user's global (and per-agent) config rules AFTER
