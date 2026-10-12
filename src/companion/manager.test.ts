@@ -1968,9 +1968,11 @@ describe('CompanionManager', () => {
       manager as unknown as { consumePresetRequest: () => boolean }
     ).consumePresetRequest();
     const next = readState();
-    expect(next.known_projects.find(
-      (entry: { cwd: string }) => entry.cwd === missing,
-    )?.preset).toMatchObject({
+    expect(
+      next.known_projects.find(
+        (entry: { cwd: string }) => entry.cwd === missing,
+      )?.preset,
+    ).toMatchObject({
       last_request_id: 'missing-request',
       result_ok: false,
       message: expect.stringContaining('not a known accessible'),
