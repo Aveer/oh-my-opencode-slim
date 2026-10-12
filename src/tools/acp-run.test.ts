@@ -218,6 +218,12 @@ describe('ACP per-invocation inner model selection', () => {
       expect(f.events().map((event) => event.method)).not.toContain(
         'session/prompt',
       );
+      // Unadvertised selectors are rejected before the setter is ever sent.
+      if (error === 'does not support' || scenario === 'missing') {
+        expect(f.events().map((event) => event.method)).not.toContain(
+          'session/set_config_option',
+        );
+      }
       expect(f.events().at(-1).method).toBe('exit');
       expect(f.ctx.metadata).not.toHaveBeenCalled();
     }
