@@ -4,7 +4,7 @@ This project does not bundle a built-in `reviewer` agent or hardcode multi-step 
 
 ## Why this is out of scope
 
-The project intentionally keeps the core built-in agent roster slim and avoids prescribing rigid multi-step development protocols. Adding a dedicated `reviewer` agent to the default roster would:
+The project intentionally keeps the core built-in agent roster slim and avoids prescribing rigid multi-step development protocols (the roster ceiling itself is recorded in `.out-of-scope/no-new-default-agents.md`). Adding a dedicated `reviewer` agent to the default roster would:
 
 - Expand the default agent count beyond the core set, increasing prompt load and cognitive complexity on every session.
 - Lock developers into an opinionated two-phase review loop (plan review and implementation review) that does not fit every project or task size.
@@ -15,4 +15,4 @@ The recommended pattern is creating a custom agent in `oh-my-opencode-slim.jsonc
 ## Prior requests
 
 - PR #1206 — "feat(workflows): add bounded reviewer protocol" (closed as out of scope)
-- Discussion #524 — "v3.0 Ideas: Workflow Packs, Optional Agent Packs, and Agent Catalog" (open discussion)
+- Issue #524 / Discussion #970 — "v3.0 Ideas: Workflow Packs, Optional Agent Packs, and Agent Catalog" (open)

@@ -12,7 +12,7 @@ Baking specialized decision or classifier models (such as JEV or external routin
 - Add an extra model call and latency step ahead of every delegation decision.
 - Compete with the orchestrator's native reasoning, which already holds the full conversation context.
 
-Users who want to use specialized models for task classification or routing decisions can configure a custom agent in `oh-my-opencode-slim.jsonc` pointing to their preferred provider and model. The orchestrator can then delegate specific tagging, triage, or classification tasks to that agent without altering default routing behavior for everyone else. An optional marketplace add-on is the intended path if an automated integration is explored in the future (discussed on PR #1347).
+Users who want to use specialized models for task classification or routing decisions can configure a custom agent in `oh-my-opencode-slim.jsonc` pointing to their preferred provider and model. The orchestrator can then delegate specific tagging, triage, or classification tasks to that agent without altering default routing behavior for everyone else. An optional marketplace add-on is the intended path if an automated integration is explored in the future — alvinunreal on PR #1347: *"initial idea how we can start with Jev is to make optional, agent on new marketplace"*.
 
 ## Prior requests
 

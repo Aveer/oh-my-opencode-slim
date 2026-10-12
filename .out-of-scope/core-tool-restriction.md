@@ -16,4 +16,4 @@ The decision is now recorded: Discussion #757 was closed as resolved on 2026-10-
 
 - #483 — "[Feat]: the agent should not be able to disable autocontinue" (closed; moved to discussion)
 - Discussion #757 — "[Feat]: the agent should not be able to disable autocontinue" (closed as resolved 2026-10-11; out of scope for this plugin — host-level OpenCode feature, venue is opencode-ai/opencode)
-- #509 — "[Feature]: Allow configuring tool priority or disabling specific tools (e.g., grep, read) to favor codegraph" (closed; the plugin cannot globally disable core tools or reorder tool priority — per-agent deny rules are the workaround)
+- #509 — "[Feature]: Allow configuring tool priority or disabling specific tools (e.g., grep, read) to favor codegraph" (closed; the plugin cannot globally disable core tools or reorder tool priority — per-agent deny rules are the workaround). alvinunreal on that thread: *"Mine uses codegraph and grep when it needs to, works fine without any changes"*.

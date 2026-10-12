@@ -9,7 +9,12 @@ OpenCode already provides native runtime model switching for the active agent vi
 Extending runtime switching to individual delegated sub-agents (e.g. adding a `/set-model <agent> <model>` slash command or a per-turn model prompt) was proposed in issue #211. However:
 
 - Sub-agent definitions and their model assignments are defined at startup in `oh-my-opencode-slim.json` / presets and loaded into the plugin config.
-- Runtime state desynchronization: OpenCode core separates TUI display state from ACP session state (`session.variant` / `session.model`). Modifying a sub-agent's model mid-flight via an ephemeral plugin hook bypasses the host session manager, leading to desyncs between what the TUI displays and what the ACP session executes.
+- Runtime state desynchronization: model changes must go through the host
+  session manager (the plugin's own fallback path switches models via
+  `session.switchModel` and session prompts for exactly this reason).
+  Reassigning a sub-agent's model mid-flight through an ephemeral plugin hook
+  bypasses that manager, leaving what the UI displays and what the session
+  executes out of sync.
 - The plugin already supports declarative model fallback chains (`model: ["primary", "fallback"]`) through `ForegroundFallbackManager`. Reactive model fallback on error is supported, but arbitrary user-directed mid-session model reassignment for background sub-agents is a platform-level concern that belongs in OpenCode core rather than custom slash commands in a slim orchestration layer.
 
 If a user needs different models for different tasks, the supported pattern is switching presets (`/preset <name>`) or configuring fallback chains in `oh-my-opencode-slim.json`.

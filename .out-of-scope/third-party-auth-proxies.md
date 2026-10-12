@@ -4,7 +4,7 @@ This project does not bundle, install, or provide CLI setup options for unoffici
 
 ## Why this is out of scope
 
-Early versions included setup flags and documentation for unofficial proxies (e.g. `cli-proxy-api` for Antigravity or OmniRoute routing). Maintainers removed these because:
+Early versions included setup flags and documentation for unofficial proxies (e.g. `cli-proxy-api` for Antigravity or OmniRoute routing). alvinunreal removed them (#96): *"I removed antigravity support, docs are outdated - will fix. But antigravity with opencode doesn't seem to work anymore"* — clarifying *"Support isn't removed - this plugin can be used with any model"*; only the bundled installation instructions went away. The reasons:
 
 - `oh-my-opencode-slim` is an agent orchestration plugin, not an authentication provider or API gateway.
 - Third-party reverse-proxies and unofficial OAuth interceptors frequently break when upstream providers alter auth flows or endpoints, causing false bug reports and high maintenance overhead.
