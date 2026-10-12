@@ -586,8 +586,7 @@ export class CompanionManager {
         if (!known) return;
         known.preset = {
           current: next?.effective ?? known.preset?.current,
-          available:
-            next?.projectAvailable ?? known.preset?.available ?? [],
+          available: next?.projectAvailable ?? known.preset?.available ?? [],
           effective: next?.effective ?? known.preset?.effective,
           project: next?.project ?? known.preset?.project,
           global: next?.global ?? known.preset?.global,
