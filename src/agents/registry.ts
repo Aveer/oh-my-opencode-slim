@@ -892,7 +892,6 @@ export function buildResolvedAgentRegistry(
       finalEntry.tools = Object.fromEntries(
         packageTools.map((tool) => [tool, true]),
       );
-      (sdk[name] as Record<string, unknown>).mcps = packageMcps;
       finalEntry.mcps = packageMcps;
       permission = projectMarketplacePermission(
         sourcePermission,
@@ -903,7 +902,6 @@ export function buildResolvedAgentRegistry(
       );
     }
     finalEntry.permission = permission;
-    (sdk[name] as Record<string, unknown>).permission = clone(permission);
     const visibleNativeRules = definition.displayName
       ? Object.entries(nativeRules).find(
           ([agentName]) =>
