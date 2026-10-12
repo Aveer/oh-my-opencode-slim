@@ -323,6 +323,9 @@ Adapter notes:
   before (from `wezterm cli list-clients`) is focused again, or the parent
   when that cannot be read. As with Herdr, closing the first agent pane
   while stacked siblings remain starts a new agent column at the next spawn.
+  Closing sends Ctrl+C and then `kill-pane`; a failure counts as closed only
+  on WezTerm's `no such pane N` error, so a transient CLI error keeps the pane
+  tracked instead of forgetting a live viewer.
 - **cmux-tui** — no layout expression: child views are tabs inside the parent
   pane, so `multiplexer.layout` and `multiplexer.main_pane_size` are ignored
   and no layout command is issued.
@@ -582,7 +585,8 @@ removed or changed behavior, with migration guidance:
   upgrade without restarting WezTerm). A command can then act but report
   failure: the adapter then reports an error instead of splitting again, but
   the pane WezTerm did create is not tracked and must be closed manually.
-  Restart WezTerm.
+  Idle viewer panes may also stay open, because a failed `kill-pane` keeps
+  them tracked instead of guessing. Restart WezTerm.
 
 **cmux-tui**
 

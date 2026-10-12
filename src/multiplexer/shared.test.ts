@@ -68,6 +68,46 @@ describe('gracefulClosePane', () => {
     expect(ok).toBe(true);
   });
 
+  test('isAlreadyClosed: a failed close counts only when stderr proves the pane is gone', async () => {
+    const closeWith = (stderr: string, exitCode = 1) =>
+      crossSpawnMock.mockImplementation((args: string[]) => ({
+        exited: Promise.resolve(args.includes('kill-pane') ? exitCode : 0),
+        stdout: () => Promise.resolve(''),
+        stderr: () => Promise.resolve(args.includes('kill-pane') ? stderr : ''),
+      }));
+    const options = {
+      ctrlC: ['cli', 'send-text', '--pane-id', '5', '\u0003'],
+      close: ['cli', 'kill-pane', '--pane-id', '5'],
+      isAlreadyClosed: (stderr: string) => /no such pane \d+/.test(stderr),
+    };
+    const { gracefulClosePane } = await importShared();
+
+    closeWith('Error: no such pane 5');
+    expect(await gracefulClosePane('wezterm', '5', options)).toBe(true);
+
+    closeWith('Error while decoding response pdu');
+    expect(await gracefulClosePane('wezterm', '5', options)).toBe(false);
+
+    closeWith('', 0);
+    expect(await gracefulClosePane('wezterm', '5', options)).toBe(true);
+  });
+
+  test('isAlreadyClosed takes precedence over acceptExitCode1', async () => {
+    crossSpawnMock.mockImplementation(() => ({
+      exited: Promise.resolve(1),
+      stdout: () => Promise.resolve(''),
+      stderr: () => Promise.resolve('connection reset'),
+    }));
+    const { gracefulClosePane } = await importShared();
+    const ok = await gracefulClosePane('wezterm', '5', {
+      ctrlC: ['ctrl-c'],
+      close: ['kill'],
+      acceptExitCode1: true,
+      isAlreadyClosed: () => false,
+    });
+    expect(ok).toBe(false);
+  });
+
   test('returns false on exit 1 when acceptExitCode1 is false', async () => {
     crossSpawnMock.mockImplementation(() => ({
       exited: Promise.resolve(1),

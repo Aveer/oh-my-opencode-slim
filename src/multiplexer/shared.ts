@@ -391,6 +391,13 @@ export interface GracefulClosePaneOptions {
   acceptExitCode1?: boolean;
   /** Return true for empty/unknown paneId instead of false (zellij/herdr behavior). */
   emptyPaneReturnsTrue?: boolean;
+  /**
+   * Treat a failed close as success only when its stderr proves the pane is
+   * already gone. Stricter than `acceptExitCode1` for backends whose CLI also
+   * exits 1 on transport/protocol errors while the pane still exists (a false
+   * success would make the caller forget a live pane).
+   */
+  isAlreadyClosed?: (stderr: string) => boolean;
   /** Env to pass to the kitten/kitty invocations (e.g. KITTY_LISTEN_ON). */
   env?: Record<string, string | undefined>;
 }
@@ -415,14 +422,18 @@ export async function gracefulClosePane(
 
     await new Promise((r) => setTimeout(r, GRACEFUL_SHUTDOWN_DELAY_MS));
 
+    const inspectStderr = options.isAlreadyClosed !== undefined;
     const proc = crossSpawn([binary, ...options.close], {
       stdout: 'ignore',
-      stderr: 'ignore',
+      stderr: inspectStderr ? 'pipe' : 'ignore',
       env: options.env,
     });
     const exitCode = await proc.exited;
 
     if (exitCode === 0) return true;
+    if (options.isAlreadyClosed) {
+      return options.isAlreadyClosed(await proc.stderr());
+    }
     if (options.acceptExitCode1 && exitCode === 1) return true;
     return false;
   } catch {
