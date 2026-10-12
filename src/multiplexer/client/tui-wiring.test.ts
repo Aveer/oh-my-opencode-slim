@@ -681,12 +681,22 @@ describe('client adapter detection (FR-9)', () => {
     expect(detectClientAdapter({ ZELLIJ_PANE_ID: '3' })).toBe('zellij');
     expect(detectClientAdapter({ HERDR_PANE_ID: 'wP:p4' })).toBe('herdr');
     expect(detectClientAdapter({ KITTY_WINDOW_ID: '4' })).toBe('kitty');
+    expect(detectClientAdapter({ WEZTERM_PANE: '7' })).toBe('wezterm');
     expect(detectClientAdapter({ CMUX_TUI_SOCKET: '/tmp/cmux.sock' })).toBe(
       'cmux-tui',
     );
     expect(detectClientAdapter({ CMUX_MUX_SOCKET: '/tmp/cmux.sock' })).toBe(
       'cmux-tui',
     );
+  });
+
+  test('prefers tmux and zellij nested inside wezterm', () => {
+    expect(detectClientAdapter({ WEZTERM_PANE: '7', TMUX_PANE: '%1' })).toBe(
+      'tmux',
+    );
+    expect(
+      detectClientAdapter({ WEZTERM_PANE: '7', ZELLIJ_PANE_ID: '3' }),
+    ).toBe('zellij');
   });
 
   test('prefers the cmux signal over a nested tmux pane', () => {
@@ -1430,6 +1440,7 @@ describe('serverUrl reflection and probe (D3)', () => {
       'wP:p4',
     );
     expect(resolveAnchoredTarget('kitty', { KITTY_WINDOW_ID: '4' })).toBe('4');
+    expect(resolveAnchoredTarget('wezterm', { WEZTERM_PANE: '7' })).toBe('7');
     expect(
       resolveAnchoredTarget('cmux-tui', { CMUX_TUI_TERMINAL_ID: 'term_1' }),
     ).toBe('term_1');

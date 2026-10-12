@@ -48,7 +48,7 @@
 * **[همراه میزکار / Companion](docs/companion.md)** — یک پنجره شناور اختیاری روی Desktop است
   که Agentهای فعال، از جمله متخصص‌های در حال اجرای موازی در پس‌زمینه، را نمایش می‌دهد.
 * **[یکپارچه‌سازی Multiplexer / Multiplexer integration](docs/multiplexer-integration.md)** — امکان مشاهده کار Agentها را
-  به‌صورت زنده در paneهای Tmux، Zellij، Herdr، cmux یا kitty فراهم می‌کند.
+  به‌صورت زنده در paneهای Tmux، Zellij، Herdr، cmux، kitty یا WezTerm فراهم می‌کند.
 * **[تغییر Preset / Preset switching](docs/preset-switching.md)** — مدل‌های کل تیم را
   هنگام اجرا با `/preset` تغییر می‌دهد.
 * **[ابزارهای هوشمند کد / Code intelligence tools](docs/tools.md)** — شامل ابزارهای LSP و جست‌وجوی آگاه از AST است
@@ -160,7 +160,7 @@ bun run build
 > توصیه می‌شود نحوه کار background orchestration را بشناسید. **[Prompt مربوط به Orchestrator](https://github.com/alvinunreal/oh-my-opencode-slim/blob/master/src/agents/orchestrator.ts#L28)** شامل قوانین scheduler، منطق routing متخصص‌ها و thresholdهای واگذاری کار به Agentهای پس‌زمینه است. همیشه می‌توانید با `@agentName <task>` یک subagent را به‌صورت دستی فراخوانی کنید.
 
 > [!TIP]
-> چون Agentهای پس‌زمینه حالا workflow پیش‌فرض هستند، **به‌شدت توصیه می‌شود** **[Multiplexer Integration](docs/multiplexer-integration.md)** را فعال و تنظیم کنید. این قابلیت هر Agent را به‌صورت خودکار در یک pane اختصاصی از Tmux، Zellij، Herdr، cmux یا kitty باز می‌کند تا هم‌زمان با ادامه هماهنگی session توسط Orchestrator، کار متخصص‌ها را زنده ببینید.
+> چون Agentهای پس‌زمینه حالا workflow پیش‌فرض هستند، **به‌شدت توصیه می‌شود** **[Multiplexer Integration](docs/multiplexer-integration.md)** را فعال و تنظیم کنید. این قابلیت هر Agent را به‌صورت خودکار در یک pane اختصاصی از Tmux، Zellij، Herdr، cmux، kitty یا WezTerm باز می‌کند تا هم‌زمان با ادامه هماهنگی session توسط Orchestrator، کار متخصص‌ها را زنده ببینید.
 
 تنظیمات پیش‌فرض تولیدشده شامل هر دو Preset یعنی `openai` و `opencode-go` است.
 
@@ -712,7 +712,7 @@ bunx oh-my-opencode-slim@latest install --companion=yes
   </tr>
   <tr>
     <td><strong><a href="docs/multiplexer-integration.md">Multiplexer Integration</a></strong></td>
-    <td dir="rtl" align="right">کار Agentها را به‌صورت زنده در paneهای Tmux، Zellij، Herdr، cmux یا kitty ببینید</td>
+    <td dir="rtl" align="right">کار Agentها را به‌صورت زنده در paneهای Tmux، Zellij، Herdr، cmux، kitty یا WezTerm ببینید</td>
   </tr>
   <tr>
     <td><strong><a href="docs/codemap.md">Codemap</a></strong></td>
