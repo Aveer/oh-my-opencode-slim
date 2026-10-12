@@ -1,7 +1,4 @@
-import {
-  type SpecialistRole,
-  SUPPORTED_SPECIALIST_ROLES,
-} from '../config/agent-roles';
+import type { SpecialistRole } from '../config/agent-roles';
 import type { AgentDefinition } from './orchestrator';
 import type { AgentPermission } from './permissions';
 import {
@@ -27,7 +24,6 @@ export interface SpecialistRoleDefinition {
   readonly permission?: AgentPermission;
 }
 
-export const SPECIALIST_ROLES = SUPPORTED_SPECIALIST_ROLES;
 export type { SpecialistRole };
 
 export const ROLE_DEFINITIONS: Readonly<

@@ -690,14 +690,6 @@ export function recordTuiSessionParent(
   });
 }
 
-/** Resolve a session to its conversation root via the persistent index. */
-export function resolveTuiSessionRoot(
-  sessionID: string,
-  projectDir: string,
-): string {
-  return resolveSnapshotRoot(readTuiSnapshot(projectDir), sessionID);
-}
-
 /**
  * Root of a session according to an already-loaded snapshot. Used by the
  * render side: the visible route session (possibly a child) must be

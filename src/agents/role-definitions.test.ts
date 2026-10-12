@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { SUPPORTED_SPECIALIST_ROLES } from '../config/agent-roles';
 import { createDesignerAgent } from './designer';
 import { createExplorerAgent } from './explorer';
 import { createFixerAgent } from './fixer';
@@ -11,7 +12,6 @@ import {
   ROLE_DEFINITIONS,
   ROLE_WRITE_CAPABILITY,
   roleHasWriteCapability,
-  SPECIALIST_ROLES,
 } from './role-definitions';
 import { ROLE_ROUTING_BLOCKS, ROLE_ROUTING_SLIM_LINES } from './role-routing';
 
@@ -26,7 +26,7 @@ const FACTORIES = {
 
 describe('specialist role definitions', () => {
   test('matches golden factory prompts and descriptions', () => {
-    const outputs = SPECIALIST_ROLES.map((role) => {
+    const outputs = SUPPORTED_SPECIALIST_ROLES.map((role) => {
       const agent = FACTORIES[role]('test/model');
       return {
         name: agent.name,
@@ -41,9 +41,11 @@ describe('specialist role definitions', () => {
   });
 
   test('preserve baseline factory definitions', () => {
-    expect(Object.keys(ROLE_DEFINITIONS)).toEqual([...SPECIALIST_ROLES]);
+    expect(Object.keys(ROLE_DEFINITIONS)).toEqual([
+      ...SUPPORTED_SPECIALIST_ROLES,
+    ]);
 
-    for (const role of SPECIALIST_ROLES) {
+    for (const role of SUPPORTED_SPECIALIST_ROLES) {
       const definition = ROLE_DEFINITIONS[role];
       const agent = FACTORIES[role]('test/model');
       expect(agent.name).toBe(role);
@@ -65,7 +67,7 @@ describe('specialist role definitions', () => {
 
   test('keeps routing lines available for specialists and council', () => {
     const prompt = buildOrchestratorPrompt();
-    for (const role of SPECIALIST_ROLES) {
+    for (const role of SUPPORTED_SPECIALIST_ROLES) {
       expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES[role]);
     }
     expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES.council);

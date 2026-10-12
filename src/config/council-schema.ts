@@ -121,8 +121,6 @@ export const CouncilPresetSchema = z
     return councillors;
   });
 
-export type CouncilPreset = z.infer<typeof CouncilPresetSchema>;
-
 /**
  * Top-level council configuration.
  *

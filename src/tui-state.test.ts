@@ -12,7 +12,7 @@ import {
   recordTuiAgentModel,
   recordTuiAgentModels,
   recordTuiSessionParent,
-  resolveTuiSessionRoot,
+  resolveTuiSnapshotRoot,
   snapshotSectionsEqual,
   TUI_SESSION_PARENTS_MAX,
   updateTuiSessionDetails,
@@ -339,8 +339,12 @@ describe('tui-state persistence', () => {
 
     // Roots resolve through the persistent index; render compares both
     // sides against it, so conv-2's subagents stay out of conv-1 (#1147).
-    expect(resolveTuiSessionRoot('child-a', tempDir)).toBe('conv-1');
-    expect(resolveTuiSessionRoot('child-b', tempDir)).toBe('conv-2');
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'child-a')).toBe(
+      'conv-1',
+    );
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'child-b')).toBe(
+      'conv-2',
+    );
     expect(readTuiSnapshot(tempDir).activeSessions).toEqual({
       'child-a': 'oracle',
       'child-b': 'fixer',
@@ -388,16 +392,24 @@ describe('tui-state persistence', () => {
 
     recordTuiSessionParent('ses_new', 'root', tempDir);
 
-    expect(resolveTuiSessionRoot('ses_1', tempDir)).toBe('root');
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'ses_1')).toBe(
+      'root',
+    );
   });
 
   test('resolves multi-level ancestry through the index', () => {
     recordTuiSessionParent('grandchild', 'child', tempDir);
     recordTuiSessionParent('child', 'root', tempDir);
 
-    expect(resolveTuiSessionRoot('grandchild', tempDir)).toBe('root');
-    expect(resolveTuiSessionRoot('child', tempDir)).toBe('root');
-    expect(resolveTuiSessionRoot('root', tempDir)).toBe('root');
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'grandchild')).toBe(
+      'root',
+    );
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'child')).toBe(
+      'root',
+    );
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'root')).toBe(
+      'root',
+    );
   });
 
   test('re-roots a live activity when ancestry is discovered late', () => {
@@ -406,12 +418,16 @@ describe('tui-state persistence', () => {
       { sessionID: 'child-a', agentName: 'oracle', active: true },
       tempDir,
     );
-    expect(resolveTuiSessionRoot('child-a', tempDir)).toBe('child-a');
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'child-a')).toBe(
+      'child-a',
+    );
 
     recordTuiSessionParent('child-a', 'root-a', tempDir);
 
     expect(readTuiSnapshot(tempDir).sessionParents['child-a']).toBe('root-a');
-    expect(resolveTuiSessionRoot('child-a', tempDir)).toBe('root-a');
+    expect(resolveTuiSnapshotRoot(readTuiSnapshot(tempDir), 'child-a')).toBe(
+      'root-a',
+    );
   });
 
   test('startup sweep keeps live foreign activities and drops dead residue', async () => {
