@@ -2816,30 +2816,44 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
           // `subagent` description to state the default the execute.before
           // rewrite applies, so prose and mechanism declare one contract.
           // Pairing: the per-instance mechanism half (the args rewrite in
-          // tool-execute-hooks) reads this setup's flip handle, armed only
-          // after this description rewrite verifiably landed (draft.get
-          // probe). Any failure on either path (transform throws, native
-          // tool absent, hook registration failed, handle missing from the
-          // factory) leaves BOTH halves off and the native foreground
-          // default keeps operating end-to-end with its native wording —
-          // no semantic mismatch is possible. Per-instance state: disposing
-          // one location's setup disarms only its own flip.
+          // tool-execute-hooks) reads this setup's flip handle, armed when a
+          // registry replay verifiably lands the rewrite (draft.get probe).
+          // The v2 registry replays transforms on the next read after a
+          // change, not at registration, so arming happens inside the
+          // callback; a registration-time probe would read as false and the
+          // arm would never happen. Any failure on either path (transform
+          // throws, native tool absent, hook registration failed, handle
+          // missing from the factory) leaves BOTH halves off and the native
+          // foreground default keeps operating end-to-end with its native
+          // wording — no semantic mismatch is possible. Per-instance state:
+          // disposing one location's setup disarms only its own flip.
           if (before && backgroundFlip) {
             try {
-              let flipVerified = false;
               const reg = await ctx.tool.transform((draft) => {
-                draft.update(DELEGATION_TOOL_V2, (tool) => {
-                  tool.description = SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION;
-                });
-                const flipped = draft.get(DELEGATION_TOOL_V2);
-                flipVerified =
-                  flipped?.description ===
-                  SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION;
-                if (!flipVerified) {
-                  log('[v2] subagent description flip missed (tool absent)');
+                try {
+                  draft.update(DELEGATION_TOOL_V2, (tool) => {
+                    tool.description = SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION;
+                  });
+                  const flipped = draft.get(DELEGATION_TOOL_V2);
+                  if (
+                    flipped?.description ===
+                    SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION
+                  ) {
+                    backgroundFlip.arm();
+                  } else {
+                    // A replay that cannot find the native tool must undo
+                    // a previous arm so the two halves never disagree.
+                    backgroundFlip.disarm();
+                    log('[v2] subagent description flip missed (tool absent)');
+                  }
+                } catch (err) {
+                  // A throwing replay must not leave a stale arm behind
+                  // either; disarm is the fail-safe direction on every
+                  // error path, not just registration-time throws.
+                  backgroundFlip.disarm();
+                  log('[v2] subagent description flip failed', String(err));
                 }
               });
-              if (flipVerified) backgroundFlip.arm();
               disposers.push(() => {
                 // Disarm first: a throwing reg.dispose() must never leave a
                 // stale armed mechanism behind (fail-safe direction).
