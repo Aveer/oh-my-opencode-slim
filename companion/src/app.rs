@@ -1159,7 +1159,7 @@ impl eframe::App for CompanionApp {
                         Ok(()) => {
                             self.pending_preset_request = Some(PendingPresetRequest {
                                 request_id,
-                                session_id: session.session_id.clone(),
+                                session_id: preset_target.session_id.clone(),
                             });
                         }
                         Err(err) => {
