@@ -4,6 +4,7 @@ import { parseList } from '../config/agent-mcps';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
+import { legacyAliasFor } from '../config/utils';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
 import { resolveMarketplaceActivation } from '../marketplace/activation';
 import {
@@ -321,6 +322,84 @@ function rulesEndWithStanceTail(
   });
 }
 
+/**
+ * Shared permission-finalization tail for one agent: adapts the finalized
+ * permission map into the v2 baseline, adds the marketplace read safeguards
+ * and the owner-read override, and compiles the native policy against the
+ * package ceilings.
+ *
+ * Write-free and projection-free by design. The caller keeps the policy and
+ * child-constraint map writes (keyed by canonical name vs display name), the
+ * MCP expansion / marketplace projection that produces `permission`, and the
+ * host-rule resolution. `sourcePermission` must be the PRISTINE permission the
+ * package ceiling was authored against, never the projected map: the
+ * projection carries a `'*': 'deny'` base that would silently rewrite the
+ * owner-read effect. Non-marketplace callers pass empty capabilities, which
+ * yields no ceilings, no read safeguards, and an unwrapped host rule set.
+ */
+function finalizeAgentPolicy(input: {
+  readonly permission: Record<string, unknown>;
+  readonly sourcePermission: Record<string, unknown>;
+  readonly tools: readonly string[];
+  readonly skills: readonly string[];
+  readonly mcps: readonly string[];
+  readonly hostRules: readonly V2PermissionRule[];
+  readonly packageMetadata: MarketplaceAgentMetadata | undefined;
+}): {
+  baselineRules: V2PermissionRule[];
+  ceilings: PermissionCeilings | undefined;
+  policy: ReturnType<typeof compilePermissionPolicy>;
+} {
+  const {
+    permission,
+    sourcePermission,
+    tools,
+    skills,
+    mcps,
+    hostRules,
+    packageMetadata,
+  } = input;
+  const baselineRules = adaptPermissions(permission).filter(
+    (rule): rule is V2PermissionRule =>
+      rule.effect === 'allow' ||
+      rule.effect === 'ask' ||
+      rule.effect === 'deny',
+  );
+  const ownerReadRule: V2PermissionRule[] =
+    packageMetadata &&
+    Object.hasOwn(sourcePermission, 'read') &&
+    permissionEffect(sourcePermission, 'read') !== 'allow'
+      ? [
+          {
+            action: 'read',
+            resource: '*',
+            effect: permissionEffect(sourcePermission, 'read'),
+          },
+        ]
+      : [];
+  const baselineBeforeReadSafeguards = ownerReadRule.length
+    ? baselineRules.filter((rule) => rule.action !== 'read')
+    : baselineRules;
+  const ceilings = packageMetadata
+    ? marketplacePermissionCeilings(tools, skills, mcps)
+    : undefined;
+  return {
+    baselineRules,
+    ceilings,
+    policy: compilePermissionPolicy({
+      baselineRules: [
+        ...baselineBeforeReadSafeguards,
+        ...marketplaceReadSafeguards(tools),
+        ...ownerReadRule,
+      ],
+      // Keep host exceptions intact; the native policy compiler intersects
+      // both axes with the package ceiling before applying them.
+      hostRules,
+      ...(ceilings ? { ceilings } : {}),
+    }),
+  };
+}
+
 function appendMarketplaceRouting(
   config: Record<string, unknown>,
   definitions: readonly AgentDefinition[],
@@ -370,9 +449,7 @@ function presetForAgent(
   name: string,
 ) {
   if (!preset) return undefined;
-  const alias = Object.keys(AGENT_ALIASES).find(
-    (key) => AGENT_ALIASES[key] === name,
-  );
+  const alias = legacyAliasFor(name);
   return preset[name] ?? (alias ? preset[alias] : undefined);
 }
 
@@ -564,9 +641,7 @@ export function buildResolvedAgentRegistry(
   const preset = resolvedPreset(runtime);
   const runtimeAgentOverrides = runtime.agents();
   const overrideFor = (name: string) => {
-    const legacy = Object.keys(AGENT_ALIASES).find(
-      (alias) => AGENT_ALIASES[alias] === name,
-    );
+    const legacy = legacyAliasFor(name);
     return (
       runtimeAgentOverrides[name] ??
       (legacy ? runtimeAgentOverrides[legacy] : undefined)
@@ -832,18 +907,24 @@ export function buildResolvedAgentRegistry(
         }
       }
     }
+    // Finalized package capabilities (empty for non-marketplace agents); they
+    // feed the marketplace metadata, the projected permission map, and the
+    // policy ceilings below.
+    let packageTools: readonly string[] = [];
+    let packageSkills: readonly string[] = [];
+    let packageMcps: readonly string[] = [];
     if (packageMetadata) {
       const requestedTools = finalEntry.tools as
         | Record<string, boolean>
         | undefined;
-      const packageTools = packageMetadata.capabilities.tools.filter(
+      packageTools = packageMetadata.capabilities.tools.filter(
         (tool) => requestedTools?.[tool] !== false,
       );
-      const packageSkills = narrowCapabilities(
+      packageSkills = narrowCapabilities(
         packageMetadata.capabilities.skills,
         runtime.agents()[name]?.skills,
       );
-      let packageMcps = narrowCapabilities(
+      packageMcps = narrowCapabilities(
         packageMetadata.capabilities.mcps,
         runtime.agents()[name]?.mcps,
       );
@@ -887,52 +968,17 @@ export function buildResolvedAgentRegistry(
     // Same host-config boundary as above: host native rules keyed by a
     // legacy alias (e.g. `explore`) must not apply to the plugin agent.
     const hostRuleSet = nativeRules[name] ?? visibleNativeRules ?? [];
-    const baselineRules = adaptPermissions(permission).filter(
-      (rule): rule is V2PermissionRule =>
-        rule.effect === 'allow' ||
-        rule.effect === 'ask' ||
-        rule.effect === 'deny',
-    );
-    const finalizedPackageMetadata = packageMetadata
-      ? (marketplaceMetadata.get(name) ?? packageMetadata)
-      : undefined;
-    const marketplaceReadRules = marketplaceReadSafeguards(
-      finalizedPackageMetadata?.capabilities.tools ?? [],
-    );
-    const ownerReadRule: V2PermissionRule[] =
-      finalizedPackageMetadata &&
-      Object.hasOwn(sourcePermission, 'read') &&
-      permissionEffect(sourcePermission, 'read') !== 'allow'
-        ? [
-            {
-              action: 'read',
-              resource: '*',
-              effect: permissionEffect(sourcePermission, 'read'),
-            },
-          ]
-        : [];
-    const baselineBeforeReadSafeguards = ownerReadRule.length
-      ? baselineRules.filter((rule) => rule.action !== 'read')
-      : baselineRules;
-    const ceilings = finalizedPackageMetadata
-      ? marketplacePermissionCeilings(
-          finalizedPackageMetadata.capabilities.tools,
-          finalizedPackageMetadata.capabilities.skills,
-          finalizedPackageMetadata.capabilities.mcps,
-        )
-      : undefined;
-    childPolicyConstraints[name] = ceilings;
-    policyMap[name] = compilePermissionPolicy({
-      baselineRules: [
-        ...baselineBeforeReadSafeguards,
-        ...marketplaceReadRules,
-        ...ownerReadRule,
-      ],
-      // Keep host exceptions intact; the native policy compiler intersects
-      // both axes with the package ceiling before applying them.
+    const { baselineRules, ceilings, policy } = finalizeAgentPolicy({
+      permission,
+      sourcePermission,
+      tools: packageTools,
+      skills: packageSkills,
+      mcps: packageMcps,
       hostRules: hostRuleSet,
-      ...(ceilings ? { ceilings } : {}),
+      packageMetadata,
     });
+    childPolicyConstraints[name] = ceilings;
+    policyMap[name] = policy;
     childStanceTails[name] = delegationStanceTail(baselineRules);
     finalAgentConfig[name] = clone(finalEntry);
     sdk[name] = clone(finalEntry) as SDKAgentConfig & Record<string, unknown>;
@@ -1074,43 +1120,18 @@ export function buildResolvedAgentRegistry(
       };
       const visibleRules =
         nativeRules[display] ?? nativeRules[definition.name] ?? [];
-      const visibleOwnerReadRule: V2PermissionRule[] =
-        packageMetadata &&
-        Object.hasOwn(sourceVisiblePermission, 'read') &&
-        permissionEffect(sourceVisiblePermission, 'read') !== 'allow'
-          ? [
-              {
-                action: 'read',
-                resource: '*',
-                effect: permissionEffect(sourceVisiblePermission, 'read'),
-              },
-            ]
-          : [];
-      const visibleBaselineRules = adaptPermissions(visiblePermission).filter(
-        (rule): rule is V2PermissionRule =>
-          rule.effect === 'allow' ||
-          rule.effect === 'ask' ||
-          rule.effect === 'deny',
-      );
-      const visibleBaselineBeforeReadSafeguards = visibleOwnerReadRule.length
-        ? visibleBaselineRules.filter((rule) => rule.action !== 'read')
-        : visibleBaselineRules;
-      const visibleCeilings = packageMetadata
-        ? marketplacePermissionCeilings(visibleTools, visibleSkills, cappedMcps)
-        : undefined;
-      childPolicyConstraints[display] = visibleCeilings;
-      policyMap[display] = compilePermissionPolicy({
-        baselineRules: [
-          ...visibleBaselineBeforeReadSafeguards,
-          ...marketplaceReadSafeguards(visibleTools),
-          ...visibleOwnerReadRule,
-        ],
-        // Keep host exceptions intact; the native policy compiler intersects
-        // both axes with the package ceiling before applying them.
+      const { baselineRules, ceilings, policy } = finalizeAgentPolicy({
+        permission: visiblePermission,
+        sourcePermission: sourceVisiblePermission,
+        tools: visibleTools,
+        skills: visibleSkills,
+        mcps: cappedMcps,
         hostRules: visibleRules,
-        ...(visibleCeilings ? { ceilings: visibleCeilings } : {}),
+        packageMetadata,
       });
-      childStanceTails[display] = delegationStanceTail(visibleBaselineRules);
+      childPolicyConstraints[display] = ceilings;
+      policyMap[display] = policy;
+      childStanceTails[display] = delegationStanceTail(baselineRules);
       if (definition.name === 'orchestrator') {
         appendMarketplaceRouting(
           { orchestrator: visibleConfig },

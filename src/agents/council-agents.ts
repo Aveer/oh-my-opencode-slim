@@ -53,13 +53,3 @@ export function buildCouncillorAgents(
 
   return agents;
 }
-
-/**
- * Return the user-facing councillor seat name for a prefixed agent name.
- * Inverse of the prefix applied in `buildCouncillorAgents`.
- */
-export function getCouncillorSeatName(agentName: string): string {
-  return agentName.startsWith(COUNCILLOR_AGENT_PREFIX)
-    ? agentName.slice(COUNCILLOR_AGENT_PREFIX.length)
-    : agentName;
-}
