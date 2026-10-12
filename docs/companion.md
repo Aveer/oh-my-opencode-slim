@@ -144,9 +144,12 @@ the last dragged position per project and restores it the next time that project
 opens. If no custom position is saved for a project, the configured
 `companion.position` corner is used.
 
-Saved positions are clamped to the current screen so the companion stays visible
-after monitor or resolution changes. Position persistence runs off the native UI
-thread; a busy shared-state lock therefore cannot freeze animation or dragging.
+On Windows, saved positions are checked against the actual connected monitor
+rectangles, including negative virtual-desktop origins, before restoring the
+native window. Disconnected/off-screen coordinates fall back to a visible
+anchor without overwriting the stored preference. Other platforms keep the
+existing position-restoration behavior. Position persistence runs off the native
+UI thread; a busy shared-state lock therefore cannot freeze animation or dragging.
 The in-memory position remains authoritative while a delayed write is retried.
 
 ---
