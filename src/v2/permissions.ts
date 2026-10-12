@@ -217,7 +217,7 @@ function compileCeilingRules(
         const hasWildcardDeny = ceilingsForResource.some(
           ([resource, effect]) => resource === '*' && effect === 'deny',
         );
-        if (!hasWildcardDeny) {
+        if (!hasWildcardDeny && resourceAction !== action) {
           for (const resource of intersectPattern(source.resource, '*')) {
             block.push({ action, resource, effect: actionEffect });
           }
