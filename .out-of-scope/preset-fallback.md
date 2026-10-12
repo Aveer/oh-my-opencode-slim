@@ -30,8 +30,8 @@ What was requested goes further and is a different shape:
   runtime fallback chain while the preset is active — only the shorthand key
   syntax is missing.
 
-The maintainer chose not to take on that design/implementation as `wontfix`
-(issue #638). If the need recurs with a concrete design, revisit.
+Issue #638 was closed as `wontfix` during triage rather than taking on that
+design/implementation. If the need recurs with a concrete design, revisit.
 
 ## Prior requests
 

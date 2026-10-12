@@ -1,10 +1,10 @@
 # Plugin Clock Scheduler & Recurring Background Callbacks
 
-This project does not implement a clock-based interval scheduler or cron system for recurring agent callbacks, and a request for one was rejected as out of scope.
+This project does not implement a clock-based interval scheduler or cron system for recurring agent callbacks, and a request for one was closed as out of scope during triage.
 
 ## Why this is out of scope
 
-- Issue #470 requested the ability for the orchestrator or plugin to schedule minute- or hour-based callbacks (e.g. recurring status checks or timed follow-ups). It was moved to Discussion #971, which was closed as resolved on 2026-10-11 with the rejection recorded: the plugin has no user-configurable scheduler to hang callbacks on — OpenCode hooks fire on user actions, not on a clock.
+- Issue #470 requested the ability for the orchestrator or plugin to schedule minute- or hour-based callbacks (e.g. recurring status checks or timed follow-ups). It was moved to Discussion #971, which was closed as resolved during triage on 2026-10-11, noting that the plugin has no user-configurable scheduler to hang callbacks on — OpenCode hooks fire on user actions, not on a clock.
 
 The plugin architecture is strictly reactive and event-driven:
 
