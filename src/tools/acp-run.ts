@@ -414,7 +414,22 @@ class AcpClient {
   }
 }
 
-export function createAcpRunTool(agents: AcpAgentsConfig = {}): ToolDefinition {
+/** Timer seam so tests can drive the invocation timeout deterministically. */
+export interface AcpRunTimers {
+  setTimeout: (callback: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
+const DEFAULT_TIMERS: AcpRunTimers = {
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: (handle) =>
+    clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export function createAcpRunTool(
+  agents: AcpAgentsConfig = {},
+  timers: AcpRunTimers = DEFAULT_TIMERS,
+): ToolDefinition {
   return tool({
     description:
       'Run a configured external ACP-compatible coding agent and return its streamed result. Use for configured ACP agents such as Claude Code ACP, Gemini ACP, or custom ACP servers.',
@@ -478,7 +493,7 @@ export function createAcpRunTool(agents: AcpAgentsConfig = {}): ToolDefinition {
       let client: AcpClient | undefined;
       const requestedModel = args.model;
       const timeoutMs = args.timeout_ms ?? config.timeoutMs;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: unknown;
       let stop!: (error: Error) => void;
       const interruption = new Promise<never>((_, reject) => {
         stop = reject;
@@ -491,7 +506,7 @@ export function createAcpRunTool(agents: AcpAgentsConfig = {}): ToolDefinition {
       try {
         // One budget covers ACP startup, selection, and prompt, after permission.
         if (timeoutMs > 0) {
-          timer = setTimeout(
+          timer = timers.setTimeout(
             () =>
               stop(
                 new Error(
@@ -533,7 +548,7 @@ export function createAcpRunTool(agents: AcpAgentsConfig = {}): ToolDefinition {
         }
         return output;
       } finally {
-        if (timer) clearTimeout(timer);
+        if (timer !== undefined) timers.clearTimeout(timer);
         ctx.abort.removeEventListener('abort', abort);
         await client?.close();
       }

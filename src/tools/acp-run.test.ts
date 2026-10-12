@@ -248,7 +248,23 @@ describe('ACP per-invocation inner model selection', () => {
     for (const mode of ['timeout', 'abort']) {
       const f = fixture('late-setter');
       const controller = new AbortController();
-      const execution = createAcpRunTool({ 'claude-code': f.config }).execute(
+      // Fake timer: the timeout fires only when the test says so, after the
+      // setter request has provably reached the peer.
+      let fireTimeout: (() => void) | undefined;
+      let armedMs: number | undefined;
+      const cleared = mock((_handle: unknown) => {});
+      const timers = {
+        setTimeout: (callback: () => void, ms: number) => {
+          fireTimeout = callback;
+          armedMs = ms;
+          return 'fake-timer';
+        },
+        clearTimeout: cleared,
+      };
+      const execution = createAcpRunTool(
+        { 'claude-code': f.config },
+        timers,
+      ).execute(
         { ...args, model: 'fable', timeout_ms: mode === 'timeout' ? 500 : 0 },
         { ...f.ctx, abort: controller.signal },
       );
@@ -256,31 +272,28 @@ describe('ACP per-invocation inner model selection', () => {
         () => undefined,
         (error: unknown) => error,
       );
-      if (mode === 'abort') {
-        try {
-          const deadline = Date.now() + 2000;
-          while (
-            !f
-              .events()
-              .some((event) => event.method === 'session/set_config_option') &&
-            Date.now() < deadline
-          )
-            await Bun.sleep(10);
-          expect(f.events().map((event) => event.method)).toContain(
-            'session/set_config_option',
-          );
-        } finally {
-          controller.abort();
-        }
+      try {
+        while (
+          !f
+            .events()
+            .some((event) => event.method === 'session/set_config_option')
+        )
+          await Bun.sleep(10);
+      } finally {
+        if (mode === 'timeout') fireTimeout?.();
+        else controller.abort();
       }
       const error = await outcome;
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain(
         mode === 'timeout' ? 'timed out after 500ms' : 'aborted',
       );
-      expect(f.events().map((event) => event.method)).toContain(
-        'session/set_config_option',
-      );
+      if (mode === 'timeout') {
+        expect(armedMs).toBe(500);
+        expect(cleared).toHaveBeenCalledWith('fake-timer');
+      } else {
+        expect(fireTimeout).toBeUndefined();
+      }
       expect(f.events().map((event) => event.method)).not.toContain(
         'session/prompt',
       );
@@ -292,7 +305,7 @@ describe('ACP per-invocation inner model selection', () => {
       ).toEqual(['eof', 'exit']);
       expect(f.ctx.metadata).not.toHaveBeenCalled();
     }
-  });
+  }, 15_000);
 
   test('returns successful backend text even when the model metadata callback throws', async () => {
     const f = fixture();
