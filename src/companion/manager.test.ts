@@ -1788,9 +1788,7 @@ describe('CompanionManager', () => {
     m.onLoad();
     const state = readState();
     expect(state.known_projects).toHaveLength(1);
-    expect(state.known_projects[0].cwd).toBe(
-      path.join(TEST_DIR, 'known-root'),
-    );
+    expect(state.known_projects[0].cwd).toBe(path.join(TEST_DIR, 'known-root'));
     expect(resolveKnownCompanionProject(state, '/tmp/unregistered')).toBeNull();
     expect(resolveKnownCompanionProject(state, '../relative')).toBeNull();
 
@@ -1811,14 +1809,27 @@ describe('CompanionManager', () => {
     const closedDir = path.join(TEST_DIR, 'remembered');
     mkdirSync(path.join(liveDir, '.opencode'), { recursive: true });
     mkdirSync(path.join(closedDir, '.opencode'), { recursive: true });
-    const liveFile = path.join(liveDir, '.opencode', 'oh-my-opencode-slim.jsonc');
-    const closedFile = path.join(closedDir, '.opencode', 'oh-my-opencode-slim.jsonc');
+    const liveFile = path.join(
+      liveDir,
+      '.opencode',
+      'oh-my-opencode-slim.jsonc',
+    );
+    const closedFile = path.join(
+      closedDir,
+      '.opencode',
+      'oh-my-opencode-slim.jsonc',
+    );
     writeFileSync(liveFile, '{ "preset": "old" }');
     writeFileSync(
       closedFile,
       '{\n  // Keep the offline project comment.\n  "preset": "old",\n}',
     );
-    const globalPath = path.join(TEST_DIR, 'config', 'opencode', 'oh-my-opencode-slim.json');
+    const globalPath = path.join(
+      TEST_DIR,
+      'config',
+      'opencode',
+      'oh-my-opencode-slim.json',
+    );
     writeFileSync(
       globalPath,
       JSON.stringify({
@@ -1848,11 +1859,16 @@ describe('CompanionManager', () => {
       relay as unknown as { consumePresetRequest: () => boolean }
     ).consumePresetRequest();
 
-    expect(readFileSync(closedFile, 'utf8')).toContain('// Keep the offline project');
+    expect(readFileSync(closedFile, 'utf8')).toContain(
+      '// Keep the offline project',
+    );
     expect(readFileSync(closedFile, 'utf8')).toContain('"preset": "cheap"');
     expect(readFileSync(liveFile, 'utf8')).toContain('"preset": "old"');
-    expect(readState().known_projects.find((p: { cwd: string }) => p.cwd === closedDir)
-      .preset).toMatchObject({
+    expect(
+      readState().known_projects.find(
+        (p: { cwd: string }) => p.cwd === closedDir,
+      ).preset,
+    ).toMatchObject({
       project: 'cheap',
       last_request_id: 'offline-1',
       result_ok: true,
@@ -1862,18 +1878,24 @@ describe('CompanionManager', () => {
   it('rejects unregistered offline target without modifying its JSONC', () => {
     const knownDir = path.join(TEST_DIR, 'unknown-target');
     mkdirSync(path.join(knownDir, '.opencode'), { recursive: true });
-    const targetFile = path.join(knownDir, '.opencode', 'oh-my-opencode-slim.jsonc');
+    const targetFile = path.join(
+      knownDir,
+      '.opencode',
+      'oh-my-opencode-slim.jsonc',
+    );
     writeFileSync(targetFile, '{ "preset": "old" }');
     const manager = make('reject-relay', path.join(TEST_DIR, 'relay'));
     manager.onLoad();
     const state = readState();
-    state.preset_requests = [{
-      request_id: 'invalid-target',
-      session_id: 'reject-relay',
-      target_cwd: knownDir,
-      scope: 'project',
-      preset: 'cheap',
-    }];
+    state.preset_requests = [
+      {
+        request_id: 'invalid-target',
+        session_id: 'reject-relay',
+        target_cwd: knownDir,
+        scope: 'project',
+        preset: 'cheap',
+      },
+    ];
     writeFileSync(stateFilePath(), JSON.stringify(state));
     (
       manager as unknown as { consumePresetRequest: () => boolean }
