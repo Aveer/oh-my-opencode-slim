@@ -348,6 +348,16 @@ test('task_cancel and task_revive succeed when orchestrator runs under a display
     },
   );
   try {
+    // Verify that chat.message established managed admission by resolving 'mira' -> 'orchestrator'
+    // before task delegation marks PARENT as task-managed.
+    // If displayName resolution fails, assertManagedSession rejects with 'can only be used in managed sessions'.
+    await expect(
+      loaded.hooks.tool?.task_cancel.execute(
+        { sessionID: 'ses_untracked', reason: 'pre-check' },
+        { sessionID: PARENT, agent: 'mira' } as never,
+      ),
+    ).resolves.toBeDefined();
+
     await loaded.hooks['tool.execute.before']?.(
       { tool: 'task', sessionID: PARENT, callID: 'call_init' },
       {
