@@ -186,8 +186,8 @@ The server entry (`src/index.ts`) must not reach `src/multiplexer/client/*` or
 ### Dependencies
 
 - **Config Schema** (`src/config/schema.ts`): `MultiplexerConfig`
-  (type/layout/main_pane_size/cmux_tui_binary/viewer) plus the deprecated-key
-  sanitizer.
+  (type/layout/main_pane_size/cmux_tui_binary/viewer); removed keys are
+  rejected by the schema.
 - **Logger** (`src/utils/logger.ts`): plugin log sink for all diagnostics.
 - **OpenCode host**: TUI event bus (`api.event`), SDK client (`api.client`),
   route (`api.route.current`); on v2 the `ctx.data` feed, `ctx.client`,
@@ -205,8 +205,7 @@ interface MultiplexerConfig {
 }
 ```
 
-`zellij_pane_mode` is a deprecated key: it is stripped with a
-once-per-process warning and never reaches the adapter layer. Invalid
+`zellij_pane_mode` is removed; the loader strips it with a warning. Invalid
 `type`/`layout`/`main_pane_size`/`cmux_tui_binary`/`viewer` values disable
 pane management with a once-per-process diagnostic.
 

@@ -739,7 +739,7 @@ describe('readConfigState', () => {
     }
   });
 
-  test('returns false for config with deprecated fallback keys (loads fine)', () => {
+  test('does not flag config with removed fallback keys as invalid', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-tui-'));
     try {
       const projectDir = path.join(tempDir, 'project');
@@ -757,8 +757,9 @@ describe('readConfigState', () => {
         }),
       );
 
-      // Deprecated fallback keys are stripped with a warning; the config
-      // loads successfully so the sidebar must NOT show "Config invalid".
+      // Removed fallback keys are dropped with a 'removed-key' warning (not
+      // invalid-schema), so the rest of the config loads and the sidebar must
+      // NOT show "Config invalid".
       expect(readConfigState(projectDir).configInvalid).toBe(false);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });

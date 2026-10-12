@@ -826,8 +826,10 @@ path unchanged: it skips background concurrency admission (no semaphore
 slot), is not wall-clock supervised, executes synchronously on the host, and
 its status is registered through the existing foreground bookkeeping.
 Unconfigured providers, different providers, and undeterminable providers
-leave `background: true` untouched (fail-open); the default (omitted)
-behavior is unchanged.
+leave `background: true` untouched (fail-open). On v2 hosts, when the
+background-default flip is active, an omitted
+`background` is first defaulted to `true` (the flip runs before this check), so
+it is converted for configured same-provider pairs too.
 
 ### Opt-in Wall-clock Supervisor
 

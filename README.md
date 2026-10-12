@@ -648,6 +648,32 @@ install details.
 
 ---
 
+## Choose an inner ACP model per invocation
+
+Keep the outer OpenCode wrapper model fixed while choosing an independent
+inner model for each task. The wrapper calls, for a server advertising `fable`:
+
+```text
+acp_run(agent: "claude-code", model: "fable", prompt: "Investigate this bug")
+```
+
+To delegate through the generated wrapper, put the choice in the task text:
+
+```text
+@claude-code
+Inner ACP selector: fable
+Task: Investigate this bug and summarize the likely cause.
+```
+
+`acp_run.model` is an exact ACP-advertised selector, not an OpenCode
+`provider/model`. Native `subagent.model` selects only the **outer** wrapper.
+The wrapper's extraction is LLM-mediated, not a new native delegation argument.
+An explicit selector must be advertised and confirmed before prompting; errors
+never silently fall back. Omission uses the external agent default, not the
+previous call's selection. Custom wrapper/routing prompts replace this generated
+guidance and must implement it themselves. See
+[ACP Agents](docs/acp-agents.md#choosing-the-inner-model-per-invocation).
+
 ## 📚 Documentation
 
 Use this section as a map: start with installation, then jump to features, configuration, or example presets depending on what you need.
@@ -693,7 +719,7 @@ Use this section as a map: start with installation, then jump to features, confi
   <p><sub>Every merged contribution leaves a mark on the realm.</sub></p>
 
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-134-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-135-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 </div>
 
@@ -883,6 +909,7 @@ Use this section as a map: start with installation, then jump to features, confi
     <tr>
       <td align="center" valign="top" width="16.66%"><a href="https://github.com/doublepi123"><img src="https://avatars.githubusercontent.com/u/54027436?v=4?s=100" width="100px;" alt="doublepi123"/><br /><sub><b>doublepi123</b></sub></a><br /><a href="https://github.com/alvinunreal/oh-my-opencode-slim/commits?author=doublepi123" title="Code">💻</a></td>
       <td align="center" valign="top" width="16.66%"><a href="https://github.com/timothy-cloudopsguy"><img src="https://avatars.githubusercontent.com/u/96697196?v=4?s=100" width="100px;" alt="Timothy"/><br /><sub><b>Timothy</b></sub></a><br /><a href="https://github.com/alvinunreal/oh-my-opencode-slim/commits?author=timothy-cloudopsguy" title="Code">💻</a></td>
+      <td align="center" valign="top" width="16.66%"><a href="https://github.com/mwoodson"><img src="https://avatars.githubusercontent.com/u/236828?v=4?s=100" width="100px;" alt="Matt Woodson"/><br /><sub><b>Matt Woodson</b></sub></a><br /><a href="https://github.com/alvinunreal/oh-my-opencode-slim/commits?author=mwoodson" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

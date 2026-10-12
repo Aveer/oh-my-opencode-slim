@@ -292,8 +292,7 @@ export type V2ProfileRefreshResult =
  * that ignored those warnings would report ok and swap the profile table +
  * sidebar projection to defaults (silently wiping every agent model). These
  * kinds therefore abort the refresh before any state is swapped; actionable
- * warning-only kinds (`missing-preset`, `deprecated-key`, `normalized`)
- * stay non-fatal.
+ * warning-only kinds (`missing-preset`, `normalized`) stay non-fatal.
  */
 export const HARD_PROFILE_REFRESH_WARNING_KINDS: ReadonlySet<ConfigLoadWarningKind> =
   new Set(['invalid-json', 'invalid-schema', 'read-error']);
