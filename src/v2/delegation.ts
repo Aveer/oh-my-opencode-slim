@@ -3,7 +3,8 @@
  * translates names/args so the whole v1 pipeline (task-session-manager,
  * job board, task_* tools) is reused with zero changes. */
 
-import { delegationVocabulary } from './adapters';
+import { log } from '../utils/logger';
+import { type DelegationVocabulary, delegationVocabulary } from './adapters';
 
 export const DELEGATION_TOOL_V2 = 'subagent';
 export const DELEGATION_TOOL_V1 = 'task';
@@ -58,21 +59,67 @@ export function v1ArgsToSubagent(
   return out;
 }
 
-/** Host-aware delegation wording for model-visible guidance. Returns the
- * native delegation tool plus its agent-selector and existing-session
- * parameters, derived from `delegationVocabulary` so the v1/v2 mapping has a
- * single source: v2 → `subagent` / `agent` / `sessionID`; v1 and any unknown
+/** Host-aware delegation wording for model-visible guidance: the native
+ * delegation tool plus its agent-selector and existing-session parameters,
+ * derived from `delegationVocabulary` so the v1/v2 mapping has a single
+ * source: v2 → `subagent` / `agent` / `sessionID`; v1 and any unknown
  * flavor → `task` / `subagent_type` / `task_id`. The control tools (`task_*`)
- * share the same identifier param (`controlParamName`). */
-export interface DelegationWording {
-  tool: string;
-  agentParam: string;
-  resumeParam: string;
-}
+ * share the same identifier param (`controlParamName`). The host's model
+ * param is vocabulary-internal and never reaches model-visible guidance. */
+export type DelegationWording = Omit<DelegationVocabulary, 'modelParam'>;
 
 export function delegationWording(
   hostFlavor: string | undefined,
 ): DelegationWording {
   const { tool, agentParam, resumeParam } = delegationVocabulary(hostFlavor);
   return { tool, agentParam, resumeParam };
+}
+
+/** Rewritten native `subagent` description for the background-default flip
+ * (v2 only): the native prose anchors the omitted-parameter default to the
+ * foreground ("Foreground (default)…", "Use background only for…") and
+ * fights the wake-based orchestration loop this plugin ships. The flipped
+ * text states the mechanism the execute.before bridge enforces (omitted
+ * `background` launches asynchronously), teaches `background: false` as the
+ * dependent-work escape hatch, and is one line shorter than the native
+ * text so the swap never grows the tool surface. */
+export const SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION = [
+  'Spawns an agent in a child session to work on the specified task.',
+  'The output includes a sessionID you can pass back later to continue that specific conversation with the subagent.',
+  "New child sessions start with fresh context, so include all relevant context and instructions when you don't pass a sessionID.",
+  'Background (default) launches it asynchronously and returns immediately; you are notified when it finishes.',
+  'Foreground (background: false) runs the subagent to completion and returns its final response — use it only when the result is the direct input to your next step.',
+].join('\n');
+
+/** Per-instance pairing state for the background-default flip: the
+ * mechanism half (the args rewrite in tool-execute-hooks) only runs once
+ * the wording half (the description rewrite in v2 setup) verifiably
+ * landed. One instance per plugin setup — the host loads one plugin per
+ * project, so process-global state would let one location's teardown
+ * disarm another's flip. The v1 factory creates it, threads the getter
+ * into the task-session-manager deps, and hands the handle to v2 setup
+ * through the hooks bag ('v2.backgroundDefaultFlip'). */
+export interface BackgroundDefaultFlipState {
+  arm(): void;
+  disarm(): void;
+  isArmed(): boolean;
+}
+
+export function createBackgroundDefaultFlipState(): BackgroundDefaultFlipState {
+  let armed = false;
+  return {
+    arm: () => {
+      armed = true;
+      // Diagnostic lamp: when the flip silently never arms (or arms and
+      // never disarms), behavior-side evidence only shows the symptom
+      // (omitted background staying foreground); the armed/disarmed trail
+      // pinpoints which half diverged.
+      log('[v2] background-default flip armed');
+    },
+    disarm: () => {
+      armed = false;
+      log('[v2] background-default flip disarmed');
+    },
+    isArmed: () => armed,
+  };
 }
