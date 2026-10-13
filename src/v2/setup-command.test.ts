@@ -613,8 +613,8 @@ describe('createSessionContextHandler (merged context hook seam)', () => {
 });
 
 describe('context bridge: transcript identity enrichment', () => {
-  test('checkpoint board changes wait for all tool results without splitting pairs', async () => {
-    const pipeline = createPipeline({ strategy: 'checkpoint-compatible' });
+  test('board changes wait for all tool results without splitting pairs', async () => {
+    const pipeline = createPipeline();
     const launch = (taskID: string) =>
       pipeline.board.registerLaunch({
         taskID,
@@ -687,7 +687,10 @@ describe('context bridge: transcript identity enrichment', () => {
         ],
       });
       const current = await transform();
-      expect(boards(current)).toHaveLength(toolCallId === 'call-1' ? 1 : 2);
+      // Change-only: a tool-result tail is not a user anchor, so the
+      // launch's board defers to the next genuine user tail; the frozen
+      // initial board replays meanwhile and every prefix stays stable.
+      expect(boards(current)).toHaveLength(1);
       expect(projection(current).slice(0, pending.length)).toEqual(
         projection(pending),
       );
@@ -710,8 +713,8 @@ describe('context bridge: transcript identity enrichment', () => {
     }
   });
 
-  test('checkpoint board survives completion followed by tool-result continuations', async () => {
-    const pipeline = createPipeline({ strategy: 'checkpoint-compatible' });
+  test('board survives completion followed by tool-result continuations', async () => {
+    const pipeline = createPipeline();
     pipeline.board.registerLaunch({
       taskID: 'ses_remaining_child',
       parentSessionID: SESSION_ID,

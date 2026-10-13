@@ -455,6 +455,7 @@ describe('loadPluginConfig', () => {
           // Above the schema max: dropped, and must not be resurrected as an
           // explicit default that overrides the valid user value.
           maxSessionsPerAgent: 16,
+          // A removed key sanitizes away like any other bad key.
           strategy: 'checkpoint-compatible',
           // A bad nested key drops only itself; valid wake siblings still
           // override the user layer.
@@ -466,7 +467,7 @@ describe('loadPluginConfig', () => {
     const config = loadPluginConfig(projectDir, { silent: true });
 
     expect(config.backgroundJobs?.maxSessionsPerAgent).toBe(8);
-    expect(config.backgroundJobs?.strategy).toBe('checkpoint-compatible');
+    expect('strategy' in (config.backgroundJobs ?? {})).toBe(false);
     expect(config.backgroundJobs?.orchestratorWake?.intervalMs).toBe(120_000);
     expect(config.backgroundJobs?.orchestratorWake?.enabled).toBe(false);
   });
@@ -1004,23 +1005,21 @@ describe('onWarning callback', () => {
     expect(config.backgroundJobs?.stopConfirmationMs).toBe(15_000);
   });
 
-  test('v2 host flavor derives lean board/wake defaults when no layer configures them', () => {
+  test('v2 host flavor leaves wake keys at schema defaults; gating is structural', () => {
     const projectDir = path.join(tempDir, 'project');
     const config = loadPluginConfig(projectDir, {
       silent: true,
       hostFlavor: 'v2',
     });
 
-    expect(config.backgroundJobs?.boardInjection).toBe(false);
-    expect(config.backgroundJobs?.orchestratorWake.periodicWakeEnabled).toBe(
-      false,
-    );
-    // Event-driven wakes and every other channel keep their schema defaults.
-    expect(config.backgroundJobs?.orchestratorWake.enabled).toBe(true);
+    // The loader derives nothing per host flavor. v2 periodic-off is applied
+    // structurally at the wake-scheduler wiring (src/index.ts).
+    // No layer configures backgroundJobs, so nothing is parsed and no key
+    // is derived: the periodic key stays absent (runtime applies the true
+    // default on v1 and the index.ts mapping forces it off on v2).
     expect(
-      config.backgroundJobs?.orchestratorWake.wakeOnTerminalPublication,
-    ).toBe(true);
-    expect(config.backgroundJobs?.childInputWake).toBe(true);
+      config.backgroundJobs?.orchestratorWake?.periodicWakeEnabled,
+    ).toBeUndefined();
   });
 
   test('routingBlock never derives a v2 default (no boardInjection-style flip)', () => {
@@ -1048,7 +1047,7 @@ describe('onWarning callback', () => {
     expect(explicitOff.routingBlock).toBe(false);
   });
 
-  test('v2 host flavor never overrides explicitly configured board/wake keys', () => {
+  test('deleted board tuning keys load with one removed warning each, unmigrated', () => {
     const projectDir = path.join(tempDir, 'project');
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
@@ -1056,24 +1055,66 @@ describe('onWarning callback', () => {
       path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
       JSON.stringify({
         backgroundJobs: {
-          boardInjection: true,
+          maxContextLines: 1000,
+          readContextMinLines: 3,
+          readContextMaxFiles: 2,
+          strategy: 'checkpoint-compatible',
+          maxRetainedSnapshots: 5,
+          boardInjection: false,
+          maxSessionsPerAgent: 4,
           orchestratorWake: { periodicWakeEnabled: true },
         },
       }),
     );
 
-    const config = loadPluginConfig(projectDir, {
-      silent: true,
-      hostFlavor: 'v2',
-    });
-
-    expect(config.backgroundJobs?.boardInjection).toBe(true);
-    expect(config.backgroundJobs?.orchestratorWake.periodicWakeEnabled).toBe(
-      true,
-    );
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+    try {
+      const config = loadPluginConfig(projectDir, { hostFlavor: 'v2' });
+      for (const key of [
+        'backgroundJobs.maxContextLines',
+        'backgroundJobs.readContextMinLines',
+        'backgroundJobs.readContextMaxFiles',
+        'backgroundJobs.strategy',
+        'backgroundJobs.maxRetainedSnapshots',
+      ]) {
+        const matching = warnings.filter((message) =>
+          message.includes(`"${key}"`),
+        );
+        expect(matching).toHaveLength(1);
+      }
+      // Removed keys are dropped, not migrated: no alias, no carried value.
+      const bj = config.backgroundJobs as Record<string, unknown>;
+      for (const key of [
+        'maxContextLines',
+        'readContextMinLines',
+        'readContextMaxFiles',
+        'strategy',
+        'maxRetainedSnapshots',
+      ]) {
+        expect(key in bj).toBe(false);
+      }
+      // boardInjection stays a live key (v1-honoured switch): a v2 false
+      // parses silently — RuntimeConfig forces false at read time — and
+      // no removed-key warning fires for it.
+      expect(
+        warnings.some((message) =>
+          message.includes('"backgroundJobs.boardInjection"'),
+        ),
+      ).toBe(false);
+      expect(bj.boardInjection).toBe(false);
+      // Valid siblings and explicit wake keys still load.
+      expect(config.backgroundJobs?.maxSessionsPerAgent).toBe(4);
+      expect(config.backgroundJobs?.orchestratorWake.periodicWakeEnabled).toBe(
+        true,
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
-  test('explicit v2 opt-out still holds and v1 hosts keep board/wake defaults', () => {
+  test('explicit v2 opt-out still holds and v1 hosts keep wake defaults', () => {
     const projectDir = path.join(tempDir, 'project');
     const projectConfigDir = path.join(projectDir, '.opencode');
     fs.mkdirSync(projectConfigDir, { recursive: true });
@@ -1081,7 +1122,6 @@ describe('onWarning callback', () => {
       path.join(projectConfigDir, 'oh-my-opencode-slim.json'),
       JSON.stringify({
         backgroundJobs: {
-          boardInjection: false,
           orchestratorWake: { periodicWakeEnabled: false },
         },
       }),
@@ -1091,16 +1131,60 @@ describe('onWarning callback', () => {
       silent: true,
       hostFlavor: 'v2',
     });
-    expect(v2Config.backgroundJobs?.boardInjection).toBe(false);
     expect(v2Config.backgroundJobs?.orchestratorWake.periodicWakeEnabled).toBe(
       false,
     );
 
     const v1Config = loadPluginConfig(projectDir, { silent: true });
-    expect(v1Config.backgroundJobs?.boardInjection).toBe(false);
     expect(v1Config.backgroundJobs?.orchestratorWake.periodicWakeEnabled).toBe(
       false,
     );
+  });
+
+  test('v2 warns only on an explicit boardInjection true; unset and v1 stay silent', () => {
+    // The warning must distinguish explicit user intent from the applied
+    // schema default: it fires pre-parse on the merged explicit-only config,
+    // so a v2 host without the key never warns.
+    const mkProject = (name: string, backgroundJobs: unknown) => {
+      const dir = path.join(tempDir, name);
+      const configDir = path.join(dir, '.opencode');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'oh-my-opencode-slim.json'),
+        JSON.stringify({ backgroundJobs }),
+      );
+      return dir;
+    };
+    const capture = (dir: string, options?: { hostFlavor?: string }) => {
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (message: string) => warnings.push(message);
+      try {
+        loadPluginConfig(dir, options);
+      } finally {
+        console.warn = originalWarn;
+      }
+      return warnings;
+    };
+
+    const explicitTrue = mkProject('warn-explicit', { boardInjection: true });
+    expect(
+      capture(explicitTrue, { hostFlavor: 'v2' }).filter((message) =>
+        message.includes('boardInjection is ignored on OpenCode v2'),
+      ),
+    ).toHaveLength(1);
+
+    const unset = mkProject('warn-unset', { maxSessionsPerAgent: 3 });
+    expect(
+      capture(unset, { hostFlavor: 'v2' }).filter((message) =>
+        message.includes('boardInjection'),
+      ),
+    ).toHaveLength(0);
+
+    const v1False = mkProject('warn-v1', { boardInjection: false });
+    expect(
+      capture(v1False).filter((message) => message.includes('boardInjection')),
+    ).toHaveLength(0);
   });
 
   test('no options object does not break loadPluginConfig', () => {

@@ -552,33 +552,31 @@ the children-only fingerprint keeps the two-wake no-progress cap bounding
 cost. v2's native subagent completion nudges still cover the happy path; this
 watchdog covers stuck children and unreconciled jobs.
 
-#### v2 lean defaults
+#### v2 structural defaults
 
 On OpenCode v2 hosts the host's native background notifier already delivers
 each run's first terminal result (completed, error, or cancelled) to the
 parent: an idle parent gets a new turn, a busy parent gets a steer. Two plugin
-channels would duplicate that delivery, so on v2 they default **off** unless a
-config layer sets them explicitly:
+channels would duplicate that delivery, so on v2 they are **structurally off**
+— not configurable:
 
-- `backgroundJobs.boardInjection` — the passive Background Job Board is not
-  injected into orchestrator prompts.
-- `backgroundJobs.orchestratorWake.periodicWakeEnabled` — the periodic idle
-  evaluation described above never runs.
+- The passive Background Job Board is never injected into orchestrator
+  prompts. `backgroundJobs.boardInjection` is a v1-only switch: on v2 an
+  explicit `true` is ignored with a load-time warning.
+- The periodic idle evaluation described above never runs.
+  `backgroundJobs.orchestratorWake.periodicWakeEnabled` is honored on v1
+  only.
 
-Event-driven wakes keep working: stopped-job recovery, later terminal
-publications of the same run (for example a child that self-continued), and
-child-input asks still wake an idle parent, and their SDK-error retries still
-use the idle timer. v1 hosts are unchanged. To restore the previous behavior
-on v2, set the keys explicitly:
-
-```jsonc
-{
-  "backgroundJobs": {
-    "boardInjection": true,
-    "orchestratorWake": { "periodicWakeEnabled": true }
-  }
-}
-```
+Event-driven wakes keep working on both flavors: stopped-job recovery, later
+terminal publications of the same run (for example a child that
+self-continued), and child-input asks still wake an idle parent, and their
+SDK-error retries still use the idle timer. On v2, terminal retirement is
+observation-based: the plugin watches the host's native `<subagent>`
+deliveries in the parent's transcript and retires the matching record, with a
+timestamp fallback for a missed observation. On v1, `boardInjection: false`
+keeps tracking, wake, and `task_status` working — the orchestrator simply no
+longer passively sees the board, and terminal retirement runs through
+prompt-shape consumption instead.
 
 Child-input wakes wait 250 ms before notifying the parent, on both host
 versions. Requests answered during that window by the host, a UI auto-replier,
@@ -627,40 +625,28 @@ uses the `question` tool as the blocking boundary instead. On v2 hosts
 
 ### Background Job Board Injection
 
-By default, `latest` freezes one board part per eligible turn and replays
-earlier parts without a cap; it does not replace prior boards. When the board
-has not changed and contains no new terminal result, it freezes a short
-"unchanged" marker instead, refreshing the full board every tenth turn.
-Terminal results always get a full board. Retained parts disappear on process
-restart, compaction, revert, or session deletion.
+Board placement is change-only and not configurable. A fresh board part is
+placed only when the rendered board text differs from the board last injected
+for that parent — one board per state change of the job set. Once placed, the
+board is frozen: later turns replay it byte-identically on its original anchor
+message, so bytes the provider already cached never change. Unchanged turns
+inject nothing at all — no board part and no marker — because they carry zero
+new information. A transition to an empty board set is itself a state change
+and renders once.
 
-For long-lived processes, opt in to the bounded, checkpoint-compatible strategy:
+Placement only ever targets a user-role tail (a board part appended to the
+last real user message, keeping the message count stable so the provider's
+tail cache breakpoint lands on stable content). An assistant tail is never a
+placement target: a board appended there could not be retained for replay, so
+it would silently vanish from the next payload and break the byte prefix —
+the pending state change renders on the next user-side tail instead.
 
-```jsonc
-{
-  "backgroundJobs": {
-    "strategy": "checkpoint-compatible",
-    "maxRetainedSnapshots": 20
-  }
-}
-```
-
-`checkpoint-compatible` preserves prior board snapshots and appends a snapshot
-anchored after the current real-message tail only when the formatted board
-changes. Once created, snapshots are replayed on every managed turn, including
-turns with an internal initiator or an empty board; those turns do not create a
-new snapshot. Re-running injection with an unchanged board does not create a
-duplicate. This changes board message history only; task coordination, storage,
-terminal reconciliation, and reusable-session behavior remain unchanged. The
-retained snapshot cache is in memory, is limited to 20 snapshots per cache epoch,
-and is reset when OpenCode reports a session boundary or a compacted/rebased
-message history. `maxRetainedSnapshots` controls
-the epoch size and accepts integers from 1 to 100 (default `20`). When a changed
-snapshot would exceed the configured limit, all retained snapshots are discarded
-and only the new current snapshot is kept. This intentionally creates one cache
-miss at the epoch boundary, after which a fresh run of up to the configured limit
-can accumulate. The cache is lost on plugin restart, so snapshots are not
-restored beyond those present in the current OpenCode message history.
+Retained boards are in-memory per parent session and are cleared at session
+end; they are not restored across a plugin restart beyond what the current
+OpenCode message history still carries. Board injection is v1-only: on v2
+hosts the board never renders (the native notifier and inbox delivery replace
+it), and on v1 the `backgroundJobs.boardInjection: false` switch turns the
+render off while tracking, wake, and `task_status` keep working.
 
 ### Runtime Liveness Reconciliation
 

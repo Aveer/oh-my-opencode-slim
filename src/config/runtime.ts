@@ -18,11 +18,7 @@
 import {
   ALL_AGENT_NAMES,
   DEFAULT_DISABLED_AGENTS,
-  DEFAULT_MAX_CONTEXT_LINES,
-  DEFAULT_MAX_RETAINED_SNAPSHOTS,
   DEFAULT_MAX_SESSIONS_PER_AGENT,
-  DEFAULT_READ_CONTEXT_MAX_FILES,
-  DEFAULT_READ_CONTEXT_MIN_LINES,
   type ImageRouting,
   PROTECTED_AGENTS,
   resolveImageRouting,
@@ -76,12 +72,7 @@ const DEFAULT_MULTIPLEXER: MultiplexerConfig =
   MultiplexerConfigStrictSchema.parse({});
 
 const DEFAULT_BACKGROUND_JOBS: BackgroundJobsConfig = {
-  strategy: 'latest',
   maxSessionsPerAgent: DEFAULT_MAX_SESSIONS_PER_AGENT,
-  maxContextLines: DEFAULT_MAX_CONTEXT_LINES,
-  readContextMinLines: DEFAULT_READ_CONTEXT_MIN_LINES,
-  readContextMaxFiles: DEFAULT_READ_CONTEXT_MAX_FILES,
-  maxRetainedSnapshots: DEFAULT_MAX_RETAINED_SNAPSHOTS,
   orchestratorWake: {
     enabled: true,
     intervalMs: 300_000,
@@ -372,7 +363,14 @@ export class RuntimeConfig {
   }
 
   get backgroundJobs(): BackgroundJobsConfig {
-    return this.pluginConfig?.backgroundJobs ?? DEFAULT_BACKGROUND_JOBS;
+    const config = this.pluginConfig?.backgroundJobs ?? DEFAULT_BACKGROUND_JOBS;
+    if (this.hostFlavor === 'v2') {
+      // v2 hosts deliver terminal results natively (notifier + inbox);
+      // passive board injection is a v1-only channel. An explicitly
+      // configured true was already warned about at load time (loader).
+      return { ...config, boardInjection: false };
+    }
+    return config;
   }
 
   get fallback(): FailoverConfig {

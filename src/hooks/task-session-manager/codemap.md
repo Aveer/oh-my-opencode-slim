@@ -72,7 +72,7 @@ All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.
    - Prunes stale context during lifecycle events and status transitions
 
 4. **Message Injection (`experimental.chat.messages.transform`)**
-    - Injects a `<system-reminder>` part containing the `### Background Job Board` section into user messages for managed sessions, including Build/custom primary parents; latest and checkpoint modes gate by managed-session ownership rather than the parent agent name
+    - Injects a `<system-reminder>` part containing the `### Background Job Board` section into user messages for managed sessions, including Build/custom primary parents; placement is change-only (one frozen board per state change, replayed byte-identically, nothing on unchanged turns) and gated by managed-session ownership rather than the parent agent name
     - Lists active, unreconciled, and reusable sessions
     - Remembers injected terminal jobs to reconcile them on the next request after the completion was surfaced to the model (via `reconcileConsumedTerminalJobs`)
     - The idle timer remains a backstop for when the model ends its turn without further requests; after reconciling injected terminal results, the opt-in continuation evaluator can run in the same idle cycle under its existing guards
@@ -123,9 +123,8 @@ User task call → tool.execute.before → PendingTaskCall created → task ID r
 
 ### Configuration & Caps
 
-- `maxSessionsPerAgent`: Limits reusable sessions per agent type
-- `readContextMinLines`: Minimum lines to include in read context
-- `readContextMaxFiles`: Maximum files to include in read context
+- `maxSessionsPerAgent`: Limits reusable sessions per agent type (LRU eviction)
+- Read-context list: path-only, deduped per path, internal display cap (8) with a `(+N more)` tail; informational only
 - `shouldManageSession`: Predicate to determine which sessions are managed by this hook
 
 ### Events & Hooks

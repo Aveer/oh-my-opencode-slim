@@ -209,7 +209,7 @@ describe('v1 prompt byte parity (frozen template)', () => {
 
     const agentsBlock = /<Agents>([\s\S]*?)<\/Agents>/.exec(prompt);
     expect(agentsBlock).not.toBeNull();
-    expect(agentsBlock![1].trim()).toContain(ROLE_ROUTING_SLIM_LINES.designer);
+    expect(agentsBlock?.[1].trim()).toContain(ROLE_ROUTING_SLIM_LINES.designer);
     // Exactly one wrapper element — no duplicated or unclosed tag.
     expect(prompt.match(/<Agents>/g)?.length).toBe(1);
     expect(prompt.match(/<\/Agents>/g)?.length).toBe(1);
@@ -228,7 +228,7 @@ describe('v1 prompt byte parity (frozen template)', () => {
     // '\n\n'. Only the wrapper padding differs: v1 uses
     // `<Agents>\n\n${enabledAgents}\n\n</Agents>` (frozen template wording),
     // v2 uses `<Agents>\n${enabledAgents}\n</Agents>` — hence the trim.
-    expect(v1Block![1].trim()).toBe(v2Block![1].trim());
+    expect(v1Block?.[1].trim()).toBe(v2Block?.[1].trim());
   });
 });
 

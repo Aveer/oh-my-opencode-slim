@@ -15,10 +15,7 @@ import {
   isFailoverError,
   isInlineFailoverError,
 } from '../foreground-fallback/index';
-import type {
-  InjectedTerminalJobs,
-  RetainedBoardSnapshotState,
-} from './board-injection';
+import type { InjectedTerminalJobs } from './board-injection';
 import {
   type ChildInputWaitKind,
   type ChildInputWaitNotification,
@@ -304,7 +301,6 @@ export async function handleEvent(
       string,
       Map<string, BackgroundJobExecution>
     >;
-    retainedBoardSnapshots: Map<string, RetainedBoardSnapshotState>;
     backgroundJobSupervisor?: BackgroundJobSupervisor;
     bindConcurrencyTicket?: (taskID: string, pending: PendingTaskCall) => void;
     releaseConcurrencyTask?: (taskID: string) => void;
@@ -326,7 +322,6 @@ export async function handleEvent(
 
   if (input.event.type === 'session.created') {
     const info = input.event.properties?.info;
-    if (info?.id) deps.retainedBoardSnapshots.delete(info.id);
     if (info?.id) {
       rememberSessionGeneration(deps.backgroundJobBoard, info.id);
     }
@@ -460,7 +455,6 @@ export async function handleEvent(
   if (input.event.type === 'server.instance.disposed') {
     deps.backgroundJobSupervisor?.dispose();
     deps.revivedRunTracker?.dispose();
-    deps.retainedBoardSnapshots.clear();
     eventFenceMap(deps.backgroundJobBoard).clear();
     const idleSessionIds = deps.idleReconciler.clearAllTimers();
     deps.deferredInlineErrors.clear();
@@ -847,7 +841,6 @@ export async function handleEvent(
   }
   deps.inputWaits.clearInputWaits(sessionId);
   deps.pendingCallTracker.clearSession(sessionId);
-  deps.retainedBoardSnapshots.delete(sessionId);
   clearChildInputWaitsForSession(sessionId);
   const fallbackInProgress =
     deps.options.isFallbackInProgress?.(sessionId) === true;

@@ -2040,8 +2040,7 @@ describe('PluginConfigSchema custom-agent-only prompt fields', () => {
     const result = PluginConfigSchema.safeParse({
       backgroundJobs: {
         maxSessionsPerAgent: 2,
-        readContextMinLines: 10,
-        readContextMaxFiles: 8,
+        boardInjection: true,
       },
     });
 

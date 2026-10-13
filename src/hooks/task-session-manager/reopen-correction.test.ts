@@ -43,15 +43,13 @@ function userMsg(id: string, text: string, createdAt: number) {
 
 function createInjectionState(
   board: BackgroundJobBoard,
-  boardInjection?: boolean,
+  hostFlavor?: string,
 ): InjectionState {
   return {
     backgroundJobBoard: board,
     terminalGate: {} as never,
     lifecycleLedger: {} as never,
-    maxRetainedSnapshots: 20,
-    strategy: 'latest',
-    boardInjection,
+    hostFlavor,
     processedInjectedCompletions: new Set(),
     processedInjectedCompletionOrder: [],
     terminalJobsInjectedByParent: new Map(),
@@ -63,7 +61,7 @@ function createInjectionState(
       contextFilesForPrompt: () => [],
       prune: () => {},
     },
-    retainedBoardSnapshots: new Map(),
+    lastInjectedBoardTextByParent: new Map(),
     retainedTailBoards: new Map(),
   } as unknown as InjectionState;
 }
@@ -266,10 +264,20 @@ describe('reopen corrective notice', () => {
     expect(corrections[0]?.parts[0]?.text).toContain(
       `run ${second.generation} / previously completed, now running`,
     );
-    expect((request.messages as unknown[]).at(-2)).toBe(corrections[0]);
+    // Change-only: an assistant tail places no board (A5 skip), so the
+    // corrective notice is the trailing message — the board defers to the
+    // next user-side tail. (The correction part itself carries the board
+    // metadata key plus reopenCorrection; a board PLACEMENT would carry the
+    // key without the correction flag.)
+    expect((request.messages as unknown[]).at(-1)).toBe(corrections[0]);
     expect(
-      solePartMetadata((request.messages as unknown[]).at(-1)),
-    ).toMatchObject({ [BACKGROUND_JOB_BOARD_METADATA_KEY]: true });
+      (request.messages as unknown[]).some((message) => {
+        const meta = solePartMetadata(message);
+        return (
+          meta?.[BACKGROUND_JOB_BOARD_METADATA_KEY] && !meta?.reopenCorrection
+        );
+      }),
+    ).toBe(false);
   });
 
   test('prune on parent end drops a live reported run', async () => {
@@ -311,10 +319,9 @@ describe('reopen corrective notice', () => {
     expect(corrections).toHaveLength(0);
   });
 
-  test('checkpoint-compatible strategy delivers the correction on the tail too', async () => {
+  test('v2 boardless hosts deliver the correction on the tail too', async () => {
     const board = new BackgroundJobBoard();
-    const state = createInjectionState(board);
-    state.strategy = 'checkpoint-compatible';
+    const state = createInjectionState(board, 'v2');
 
     board.registerLaunch({
       taskID: 'child-1',
@@ -352,10 +359,10 @@ describe('reopen corrective notice', () => {
   });
 });
 
-describe('backgroundJobs.boardInjection switch (#1314 thread)', () => {
-  test('off: the reopen correction delivers in the board-free variant (#1443 review)', async () => {
+describe('structural flavor split (v2 boardless)', () => {
+  test('v2: the reopen correction delivers in the board-free variant (#1443 review)', async () => {
     const board = new BackgroundJobBoard();
-    const state = createInjectionState(board, false);
+    const state = createInjectionState(board, 'v2');
 
     board.registerLaunch({
       taskID: 'child-1',

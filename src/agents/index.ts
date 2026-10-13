@@ -1070,6 +1070,8 @@ export function createAgents(
     !runtime.disabledTools.includes('wait_for_user'),
     runtime.backgroundJobs.orchestratorWake.enabled,
     options?.hostFlavor,
+    // Honoured switch: the board renders on v1 unless boardInjection is
+    // false; RuntimeConfig forces it false on v2 (structural boardless).
     runtime.backgroundJobs.boardInjection,
     runtime.routingBlock,
   );

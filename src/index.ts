@@ -877,9 +877,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     });
     backgroundJobBoard = new BackgroundJobBoard({
       maxReusablePerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
-      maxContextLines: runtime.backgroundJobs.maxContextLines,
-      readContextMinLines: runtime.backgroundJobs.readContextMinLines,
-      readContextMaxFiles: runtime.backgroundJobs.readContextMaxFiles,
       delegationTool: delegation.tool,
       deferNumberedAliases: true,
       // Terminal-session GC (#1387 P2): when a retention trim evicts a
@@ -1156,12 +1153,10 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       terminalGate,
       // Flip mechanism half reads the per-instance box declared above.
       isBackgroundDefaultFlipArmed: backgroundDefaultFlip.isArmed,
-      strategy: runtime.backgroundJobs.strategy,
-      maxSessionsPerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
-      maxRetainedSnapshots: runtime.backgroundJobs.maxRetainedSnapshots,
-      readContextMinLines: runtime.backgroundJobs.readContextMinLines,
-      readContextMaxFiles: runtime.backgroundJobs.readContextMaxFiles,
+      hostFlavor,
+      // v1-only honoured switch (forced false on v2 at RuntimeConfig).
       boardInjection: runtime.backgroundJobs.boardInjection,
+      maxSessionsPerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
       disabledHooks: [...runtime.disabledHooks],
       backgroundJobBoard: backgroundJobCoordinator,
       backgroundJobSupervisor,
@@ -1186,7 +1181,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       },
       sameProviderPolicy: runtime.backgroundJobs.sameProviderPolicy,
       getSessionModel: liveSessionModel,
-      hostFlavor,
       recoverRetainedSession,
       resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
       isDisposed: () => instanceDisposed,
@@ -1225,7 +1219,21 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     pruneRevivedContext = taskSessionManagerHook.pruneTaskContext;
 
     orchestratorWakeScheduler = createOrchestratorWakeScheduler(ctx, {
-      config: runtime.backgroundJobs.orchestratorWake,
+      // v2 hosts deliver each run's first terminal publication natively, so
+      // the periodic idle evaluation is structurally off there; event-driven
+      // wakes keep their own keys. v1 honors the configured key.
+      config: {
+        ...runtime.backgroundJobs.orchestratorWake,
+        periodicWakeEnabled:
+          hostFlavor === 'v2'
+            ? false
+            : (runtime.backgroundJobs.orchestratorWake.periodicWakeEnabled ??
+              true),
+      },
+      // Honoured switch: wake annotations follow the board the parent
+      // actually sees — rendered on v1 unless boardInjection is false;
+      // RuntimeConfig forces it false on v2 (structural boardless, see
+      // injectBackgroundJobBoard).
       boardInjectionEnabled: runtime.backgroundJobs.boardInjection,
       shouldManageSession: (sessionID) =>
         sessionMetadata.getAgent(sessionID) === 'orchestrator',
@@ -3103,7 +3111,8 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
                   true,
                   true,
                   hostFlavor,
-                  runtime.backgroundJobs.boardInjection,
+                  // Structural flavor split: the board renders on v1 only.
+                  hostFlavor !== 'v2',
                 );
         // Dedup by the EFFECTIVE prompt, not by default-prompt markers:
         // a custom replacement without `<Role>` previously slipped past
