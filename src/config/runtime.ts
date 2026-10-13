@@ -288,8 +288,9 @@ export class RuntimeConfig {
     const merged = runtimePreset
       ? mergeAgentOverrides(base, runtimePreset)
       : base;
-    return resolveEffectiveAgentOverrides(merged, () =>
-      this.projectLocalSkillNames(),
+    return resolveEffectiveAgentOverrides(
+      merged,
+      () => this.projectLocalSkillNames(),
       defaultSkills,
     );
   }

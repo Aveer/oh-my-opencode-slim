@@ -85,7 +85,6 @@ describe('skills_add / skills_remove directives', () => {
     ).toEqual(['a', 'c']);
   });
 
-
   test('resolveEffectiveSkills: supplied marketplace defaults are preserved', () => {
     expect(
       resolveEffectiveSkills('market-agent', undefined, ['extra'], undefined, [
@@ -93,9 +92,13 @@ describe('skills_add / skills_remove directives', () => {
       ]),
     ).toEqual(['package-default', 'extra']);
     expect(
-      resolveEffectiveSkills('market-agent', ['explicit'], ['extra'], undefined, [
-        'package-default',
-      ]),
+      resolveEffectiveSkills(
+        'market-agent',
+        ['explicit'],
+        ['extra'],
+        undefined,
+        ['package-default'],
+      ),
     ).toEqual(['explicit', 'extra']);
   });
 

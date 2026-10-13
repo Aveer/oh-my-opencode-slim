@@ -5,12 +5,12 @@ import * as path from 'node:path';
 import { CouncilConfigSchema } from '../config';
 import { RuntimeConfig } from '../config/runtime';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
-import { compilePermissionPolicy } from '../v2/permissions';
 import { MarketplacePackageManifestSchema } from '../marketplace/schemas';
 import {
   adaptPermissions,
   snapshotNativeAgentForRegistry,
 } from '../v2/adapters';
+import { compilePermissionPolicy } from '../v2/permissions';
 import type { V2PermissionRule } from '../v2/types';
 import { createAgents } from './index';
 import { buildResolvedAgentRegistry } from './registry';
@@ -2222,7 +2222,6 @@ describe('child permission payload stance tail', () => {
   });
 });
 
-
 describe('marketplace agent customization', () => {
   const installed = (overrides: Record<string, unknown> = {}) =>
     marketplaceOptions(
@@ -2234,9 +2233,13 @@ describe('marketplace agent customization', () => {
 
   test('preserves the manifest defaults without owner overrides', () => {
     const runtime = runtimeFor({});
-    const registry = build(runtime, {
-      mcp: { 'host-mcp': { type: 'local' } },
-    }, installed());
+    const registry = build(
+      runtime,
+      {
+        mcp: { 'host-mcp': { type: 'local' } },
+      },
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
     expect(policy.decide('skill', 'review-a')).toBe('deny');
@@ -2257,12 +2260,16 @@ describe('marketplace agent customization', () => {
         },
       },
     });
-    const registry = build(runtime, {
-      mcp: {
-        'host-mcp': { type: 'local' },
-        'extra-mcp': { type: 'local' },
+    const registry = build(
+      runtime,
+      {
+        mcp: {
+          'host-mcp': { type: 'local' },
+          'extra-mcp': { type: 'local' },
+        },
       },
-    }, installed());
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'review-a')).toBe('allow');
     expect(policy.decide('skill', 'skill-a')).toBe('deny');
@@ -2278,9 +2285,13 @@ describe('marketplace agent customization', () => {
     const runtime = runtimeFor({
       agents: { 'market-agent': { skills: [], mcps: [] } },
     });
-    const registry = build(runtime, {
-      mcp: { 'host-mcp': { type: 'local' } },
-    }, installed());
+    const registry = build(
+      runtime,
+      {
+        mcp: { 'host-mcp': { type: 'local' } },
+      },
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('deny');
     expect(policy.decide('host-mcp_search', '*')).toBe('deny');
@@ -2297,13 +2308,17 @@ describe('marketplace agent customization', () => {
       disabled_skills: ['disabled-skill'],
       disabled_mcps: ['disabled-mcp'],
     });
-    const registry = build(runtime, {
-      mcp: {
-        'host-mcp': { type: 'local' },
-        'extra-mcp': { type: 'local' },
-        'disabled-mcp': { type: 'local' },
+    const registry = build(
+      runtime,
+      {
+        mcp: {
+          'host-mcp': { type: 'local' },
+          'extra-mcp': { type: 'local' },
+          'disabled-mcp': { type: 'local' },
+        },
       },
-    }, installed());
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
     expect(policy.decide('skill', 'unlisted-skill')).toBe('allow');
@@ -2323,9 +2338,13 @@ describe('marketplace agent customization', () => {
         },
       },
     });
-    const registry = build(runtime, {
-      mcp: { 'host-mcp': { type: 'local' } },
-    }, installed());
+    const registry = build(
+      runtime,
+      {
+        mcp: { 'host-mcp': { type: 'local' } },
+      },
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'review-a')).toBe('allow');
     expect(policy.decide('skill', 'skill-a')).toBe('deny');
@@ -2335,9 +2354,13 @@ describe('marketplace agent customization', () => {
     const runtime = runtimeFor({
       agents: { 'market-agent': { skills_add: ['review-a'] } },
     });
-    const registry = build(runtime, {
-      mcp: { 'host-mcp': { type: 'local' } },
-    }, installed());
+    const registry = build(
+      runtime,
+      {
+        mcp: { 'host-mcp': { type: 'local' } },
+      },
+      installed(),
+    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
     expect(policy.decide('skill', 'review-a')).toBe('allow');
@@ -2353,17 +2376,21 @@ describe('marketplace agent customization', () => {
         },
       },
     });
-    const registry = build(runtime, {
-      agent: {
-        'market-agent': {
-          permission: { skill: { 'review-a': 'deny' } },
+    const registry = build(
+      runtime,
+      {
+        agent: {
+          'market-agent': {
+            permission: { skill: { 'review-a': 'deny' } },
+          },
+        },
+        mcp: {
+          'host-mcp': { type: 'local' },
+          'extra-mcp': { type: 'local' },
         },
       },
-      mcp: {
-        'host-mcp': { type: 'local' },
-        'extra-mcp': { type: 'local' },
-      },
-    }, installed());
+      installed(),
+    );
     for (const name of ['market-agent', 'MarketVisible']) {
       const policy = registry.nativePolicies[name];
       expect(policy.decide('skill', 'review-a')).toBe('deny');
@@ -2385,13 +2412,19 @@ describe('marketplace agent customization', () => {
     const runtime = runtimeFor({
       agents: { 'market-agent': { mcps: ['agent'] } },
     });
-    expect(() => build(runtime, {
-      mcp: {
-        'host-mcp': { type: 'local' },
-        agent: { type: 'local' },
-        'agent_tools': { type: 'local' },
-      },
-    }, installed())).toThrow('ambiguous MCP namespaces');
+    expect(() =>
+      build(
+        runtime,
+        {
+          mcp: {
+            'host-mcp': { type: 'local' },
+            agent: { type: 'local' },
+            agent_tools: { type: 'local' },
+          },
+        },
+        installed(),
+      ),
+    ).toThrow('ambiguous MCP namespaces');
   });
 
   test('replaces and appends marketplace prompts using project files', () => {
@@ -2407,13 +2440,17 @@ describe('marketplace agent customization', () => {
         'Project appendix',
       );
       const runtime = runtimeFor({});
-      const registry = build(runtime, {
-        mcp: { 'host-mcp': { type: 'local' } },
-      }, {
-        ...installed(),
-        projectDirectory: project,
-        hostFlavor: 'v2',
-      });
+      const registry = build(
+        runtime,
+        {
+          mcp: { 'host-mcp': { type: 'local' } },
+        },
+        {
+          ...installed(),
+          projectDirectory: project,
+          hostFlavor: 'v2',
+        },
+      );
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
         prompt: 'Project base\n\nProject appendix',
       });
@@ -2442,13 +2479,17 @@ describe('marketplace agent customization', () => {
           },
         },
       });
-      const registry = build(runtime, {
-        mcp: { 'host-mcp': { type: 'local' } },
-      }, {
-        ...installed(),
-        projectDirectory: project,
-        hostFlavor: 'v2',
-      });
+      const registry = build(
+        runtime,
+        {
+          mcp: { 'host-mcp': { type: 'local' } },
+        },
+        {
+          ...installed(),
+          projectDirectory: project,
+          hostFlavor: 'v2',
+        },
+      );
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
         prompt: 'Inline base\n\nAdded instructions',
       });
@@ -2468,12 +2509,20 @@ describe('marketplace agent customization', () => {
         path.join(dir, 'SKILL.md'),
         '---\nname: local-skill\ndescription: A local skill\n---\n',
       );
-      const runtime = RuntimeConfig.init(project, {
-        agents: { 'market-agent': { skills_include_local: true } },
-      }, 'v2');
-      const registry = build(runtime, {
-        mcp: { 'host-mcp': { type: 'local' } },
-      }, { ...installed(), projectDirectory: project, hostFlavor: 'v2' });
+      const runtime = RuntimeConfig.init(
+        project,
+        {
+          agents: { 'market-agent': { skills_include_local: true } },
+        },
+        'v2',
+      );
+      const registry = build(
+        runtime,
+        {
+          mcp: { 'host-mcp': { type: 'local' } },
+        },
+        { ...installed(), projectDirectory: project, hostFlavor: 'v2' },
+      );
       const policy = registry.nativePolicies['market-agent'];
       expect(policy.decide('skill', 'skill-a')).toBe('allow');
       expect(policy.decide('skill', 'local-skill')).toBe('allow');
@@ -2489,7 +2538,10 @@ describe('marketplace agent customization', () => {
     );
     try {
       const prompts = path.join(
-        project, '.opencode', 'oh-my-opencode-slim', 'team',
+        project,
+        '.opencode',
+        'oh-my-opencode-slim',
+        'team',
       );
       fs.mkdirSync(prompts, { recursive: true });
       fs.writeFileSync(
@@ -2502,9 +2554,13 @@ describe('marketplace agent customization', () => {
           team: { agents: { 'market-agent': { temperature: 0.3 } } },
         },
       });
-      const registry = build(runtime, {
-        mcp: { 'host-mcp': { type: 'local' } },
-      }, { ...installed(), projectDirectory: project, hostFlavor: 'v2' });
+      const registry = build(
+        runtime,
+        {
+          mcp: { 'host-mcp': { type: 'local' } },
+        },
+        { ...installed(), projectDirectory: project, hostFlavor: 'v2' },
+      );
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
         prompt: 'Package prompt\n\nTeam-specific instructions',
       });
@@ -2527,12 +2583,14 @@ describe('marketplace agent customization', () => {
       const runtime = runtimeFor({});
       const options = { projectDirectory: project, hostFlavor: 'v2' };
       const host = { mcp: { 'host-mcp': { type: 'local' } } };
-      const original = build(
-        runtime, host, { ...installed({ prompt: 'First base' }), ...options },
-      );
-      const updated = build(
-        runtime, host, { ...installed({ prompt: 'Updated base' }), ...options },
-      );
+      const original = build(runtime, host, {
+        ...installed({ prompt: 'First base' }),
+        ...options,
+      });
+      const updated = build(runtime, host, {
+        ...installed({ prompt: 'Updated base' }),
+        ...options,
+      });
       expect(original.finalAgentConfig['market-agent']).toMatchObject({
         prompt: 'First base\n\nLocal appendix',
       });
@@ -2605,5 +2663,4 @@ describe('marketplace agent customization', () => {
       fs.rmSync(project, { recursive: true, force: true });
     }
   });
-
 });

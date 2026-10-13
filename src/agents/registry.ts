@@ -33,7 +33,7 @@ import {
   createAgents,
   getAgentConfigsFromDefinitions,
 } from './index';
-import { resolvePrompt, type AgentDefinition } from './orchestrator';
+import { type AgentDefinition, resolvePrompt } from './orchestrator';
 import { mergeTaskStance } from './permissions';
 
 export interface ResolvedAgentRegistry {
