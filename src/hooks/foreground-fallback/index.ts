@@ -495,6 +495,8 @@ export class ForegroundFallbackManager {
    *  error on a disabled agent stays silent even when the agent was never
    *  observed for that session. */
   private readonly disabledAgents = new Set<string>();
+  /** True when a SessionLifecycle coordinator owns deletion cleanup. */
+  private hasCoordinator = false;
 
   /** True when the agent's chain was explicitly disabled. Unknown agents
    * (never observed, never configured) are NOT disabled — failing open
@@ -1031,38 +1033,42 @@ export class ForegroundFallbackManager {
     this.backgroundFallbackHandoff = backgroundFallbackHandoff;
     this.readBackgroundGeneration = readBackgroundGeneration;
     if (coordinator) {
-      coordinator.onSessionDeleted((id) => {
-        this.sessionModel.delete(id);
-        this.activeFallback.delete(id);
-        this.sessionAgent.delete(id);
-        this.sessionTried.delete(id);
-        this.unknownFinishStreak.delete(id);
-        this.v2RetryNotices.delete(id);
-        // NOTE: inProgress is intentionally NOT cleared here —
-        // the finally blocks in tryFallback() and tryFallbackWithAbort()
-        // manage inProgress lifecycle. Clearing it here would make
-        // isFallbackInProgress() return false during the abort/re-prompt
-        // cycle, letting the task-session-manager treat the abort idle
-        // as a real completion and report a background task as cancelled.
-        this.lastTrigger.delete(id);
-        this.lastTriggerModel.delete(id);
-        this.lastTriggerTurn.delete(id);
-        this.triggerIncidents.delete(id);
-        this.pendingErrorCorrelation.delete(id);
-        this.turnEpoch.set(id, (this.turnEpoch.get(id) ?? 0) + 1);
-        this.lastUserMessageID.delete(id);
-        this.userEventSequence.delete(id);
-        this.replayMessageIds.delete(id);
-        this.retryAttempt.delete(id);
-        this.sessionRetries.delete(id);
-        this.chainExhaustion.delete(id);
-        this.deterministicTerminal.delete(id);
-        this.lastFallbackTime.delete(id);
-        this.initialDelayUsed.delete(id);
-        // Cancel any pending initial delay
-        this.cancelInitialDelay(id);
-      });
+      this.hasCoordinator = true;
+      coordinator.onSessionDeleted((id) => this.forgetSession(id));
     }
+  }
+
+  /** Drop all per-session state once the session is deleted. */
+  private forgetSession(id: string): void {
+    this.sessionModel.delete(id);
+    this.activeFallback.delete(id);
+    this.sessionAgent.delete(id);
+    this.sessionTried.delete(id);
+    this.unknownFinishStreak.delete(id);
+    this.v2RetryNotices.delete(id);
+    // NOTE: inProgress is intentionally NOT cleared here —
+    // the finally blocks in tryFallback() and tryFallbackWithAbort()
+    // manage inProgress lifecycle. Clearing it here would make
+    // isFallbackInProgress() return false during the abort/re-prompt
+    // cycle, letting the task-session-manager treat the abort idle
+    // as a real completion and report a background task as cancelled.
+    this.lastTrigger.delete(id);
+    this.lastTriggerModel.delete(id);
+    this.lastTriggerTurn.delete(id);
+    this.triggerIncidents.delete(id);
+    this.pendingErrorCorrelation.delete(id);
+    this.turnEpoch.set(id, (this.turnEpoch.get(id) ?? 0) + 1);
+    this.lastUserMessageID.delete(id);
+    this.userEventSequence.delete(id);
+    this.replayMessageIds.delete(id);
+    this.retryAttempt.delete(id);
+    this.sessionRetries.delete(id);
+    this.chainExhaustion.delete(id);
+    this.deterministicTerminal.delete(id);
+    this.lastFallbackTime.delete(id);
+    this.initialDelayUsed.delete(id);
+    // Cancel any pending initial delay
+    this.cancelInitialDelay(id);
   }
 
   /** Confirmed fallback serving this session, including provider failures. */
@@ -1513,27 +1519,9 @@ export class ForegroundFallbackManager {
             sessionID: id,
           });
           this.sessionParent.delete(id);
-          this.sessionModel.delete(id);
-          this.activeFallback.delete(id);
-          this.sessionAgent.delete(id);
-          this.sessionTried.delete(id);
-          this.v2RetryNotices.delete(id);
-          this.lastTrigger.delete(id);
-          this.lastTriggerModel.delete(id);
-          this.lastTriggerTurn.delete(id);
-          this.triggerIncidents.delete(id);
-          this.pendingErrorCorrelation.delete(id);
-          this.turnEpoch.set(id, (this.turnEpoch.get(id) ?? 0) + 1);
-          this.lastUserMessageID.delete(id);
-          this.userEventSequence.delete(id);
-          this.replayMessageIds.delete(id);
-          this.retryAttempt.delete(id);
-          this.sessionRetries.delete(id);
-          this.chainExhaustion.delete(id);
-          this.deterministicTerminal.delete(id);
-          this.lastFallbackTime.delete(id);
-          this.initialDelayUsed.delete(id);
-          this.cancelInitialDelay(id);
+          // Without a lifecycle coordinator this event is the only deletion
+          // signal, so it must clear the retry/terminal state too.
+          if (!this.hasCoordinator) this.forgetSession(id);
         }
         break;
       }
