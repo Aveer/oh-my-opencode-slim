@@ -691,9 +691,12 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       if (!(name in next)) delete foregroundFallbackChains[name];
     }
     Object.assign(foregroundFallbackChains, next);
-    for (const [name, models] of Object.entries(rt.modelArrays)) {
+    // Keyed on the published table, not rt.modelArrays: a switched agent's
+    // new generation may resolve its chain from _modelArray or registry
+    // candidates after its config array disappears — the disable must
+    // survive that source change.
+    for (const name of Object.keys(foregroundFallbackChains)) {
       if (
-        models.length > 0 &&
         rt.combinedModelInheritanceSource(name) === undefined &&
         isSwitched(name)
       ) {

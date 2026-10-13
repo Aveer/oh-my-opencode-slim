@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { Hooks } from '@opencode-ai/plugin';
 import { OhMyOpenCodeLite } from '../index';
 import { MarketplaceStore } from '../marketplace/store';
 import { readTuiSnapshot } from '../tui-state';
@@ -76,7 +77,14 @@ function createPluginClient() {
   );
 }
 
-async function bootFactory() {
+interface TestFactory {
+  hooks: Hooks;
+  refresh: ProfilesHook;
+}
+
+async function bootFactory(
+  hostConfig: Record<string, unknown> = {},
+): Promise<TestFactory> {
   const hooks = await OhMyOpenCodeLite({
     client: createPluginClient(),
     directory: env.projectDir,
@@ -84,8 +92,9 @@ async function bootFactory() {
     serverUrl: new URL('http://127.0.0.1:4096'),
   } as never);
   // The host calls the config hook once at init; mirror that so the initial
-  // registry/tui-state snapshot exists.
-  await hooks.config?.({} as never);
+  // registry/tui-state snapshot exists. `hostConfig.agent.<name>.model`
+  // simulates a host-persisted /model pick (see index.test.ts).
+  await hooks.config?.(hostConfig as never);
   const refresh = (hooks as unknown as { 'v2.refreshProfiles'?: ProfilesHook })[
     'v2.refreshProfiles'
   ];
@@ -95,9 +104,10 @@ async function bootFactory() {
 
 /** Boots the factory, runs `body`, and always disposes the hooks. */
 async function withFactory(
-  body: (fac: Awaited<ReturnType<typeof bootFactory>>) => Promise<void>,
+  body: (fac: TestFactory) => Promise<void>,
+  hostConfig: Record<string, unknown> = {},
 ): Promise<void> {
-  const fac = await bootFactory();
+  const fac = await bootFactory(hostConfig);
   try {
     await body(fac);
   } finally {
@@ -612,6 +622,108 @@ describe('v2 chain refresh', () => {
           ),
         ).toBe('cfg/two-b');
       });
+    } finally {
+      if (priorDataHome === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = priorDataHome;
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('model-switch disables survive a refresh that changes the chain source', async () => {
+    // A switched agent disabled at finalize must stay disabled even when a
+    // refresh resolves its chain from a different source (config array →
+    // manifest candidates). Guards the publish-time re-disable keying.
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-v2cr-dis-'));
+    const priorDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = dataDir;
+    try {
+      new MarketplaceStore({ pluginVersion: '3.0.2' }).install({
+        manifest: {
+          schemaVersion: 2,
+          id: 'team/pkgd',
+          version: '1.0.0',
+          displayName: 'pkg-agent',
+          description: 'Disable-survival chain refresh regression',
+          agentName: 'pkg-agent',
+          prompt: 'Marketplace prompt',
+          skills: [],
+          mcps: [],
+          tools: ['read'],
+          author: { name: 'Test author' },
+          tags: [],
+          license: 'MIT',
+          compatibility: { plugin: '>=1.0.0' },
+          model: {
+            source: 'explicit',
+            candidates: ['pkg/one', 'pkg/two'],
+          },
+          routing: {
+            description: 'Marketplace lane',
+            when: 'Marketplace task',
+            keywords: ['marketplace'],
+          },
+        },
+      } as never);
+      env.writeUserConfig({
+        preset: 'disable',
+        presets: { disable: { marketplace: { agents: ['team/pkgd'] } } },
+        agents: {
+          orchestrator: { model: ['cfg/one', 'cfg/two'] },
+          'pkg-agent': { model: ['cfg/a', 'cfg/b'] },
+        },
+        fallback: { enabled: true, maxRetries: 0 },
+      });
+
+      // Host /model picks differ from both chain heads → both agents are
+      // switched and their chains publish disabled.
+      const hostConfig = {
+        agent: {
+          orchestrator: { model: 'host/orchestrator' },
+          'pkg-agent': { model: 'user/live-pick' },
+        },
+      };
+      await withFactory(async ({ hooks, refresh }) => {
+        // Disabled at boot: no descent for either agent.
+        expect(
+          await retryOnce(
+            hooks as HooksWithV2,
+            'd-orch',
+            'orchestrator',
+            'cfg/one',
+          ),
+        ).toBeUndefined();
+        expect(
+          await retryOnce(hooks as HooksWithV2, 'd-pkg', 'pkg-agent', 'cfg/a'),
+        ).toBeUndefined();
+
+        // Refresh: pkg-agent's config array disappears — its chain now
+        // resolves from the manifest candidates.
+        env.writeUserConfig({
+          preset: 'disable',
+          presets: { disable: { marketplace: { agents: ['team/pkgd'] } } },
+          agents: { orchestrator: { model: ['cfg/one', 'cfg/two'] } },
+          fallback: { enabled: true, maxRetries: 0 },
+        });
+        expect((await refresh()).ok).toBe(true);
+
+        // The disable survives the source change for both agents.
+        expect(
+          await retryOnce(
+            hooks as HooksWithV2,
+            'd-orch-2',
+            'orchestrator',
+            'cfg/one',
+          ),
+        ).toBeUndefined();
+        expect(
+          await retryOnce(
+            hooks as HooksWithV2,
+            'd-pkg-2',
+            'pkg-agent',
+            'pkg/one',
+          ),
+        ).toBeUndefined();
+      }, hostConfig);
     } finally {
       if (priorDataHome === undefined) delete process.env.XDG_DATA_HOME;
       else process.env.XDG_DATA_HOME = priorDataHome;
