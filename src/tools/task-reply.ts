@@ -4,12 +4,14 @@ import {
   tool,
 } from '@opencode-ai/plugin';
 import {
+  type ChildInputWaitQuestion,
   clearChildInputWait,
   getChildInputWait,
   listChildInputWaits,
 } from '../hooks/task-session-manager/child-input-wait';
 import { pluginDisposedMessage } from '../hooks/task-session-manager/session-recovery';
 import type { BackgroundJobStore } from '../utils/background-job-store';
+import { log } from '../utils/logger';
 import { getClient } from '../utils/opencode-client';
 import { OperationTimeoutError, withTimeout } from '../utils/session';
 import {
@@ -68,6 +70,43 @@ function assertHostReplyResult(result: unknown, operation: string): void {
 }
 
 /**
+ * Fold v1 question answers (`string[][]`: selected option labels per
+ * question, in question order) into the v2 form-reply `answer` map
+ * (`{ [fieldKey]: string | number | boolean | string[] }` per
+ * SessionFormReplyInput).
+ *
+ * The open wait stores the form's fields as v1 questions in adapter order
+ * (form.created → question.asked; see event-adapter.ts), and the adapter
+ * never reorders the surviving fields — so the i-th answer fills the i-th
+ * stored question. The adapter also carries each field's original key
+ * (`ChildInputWaitQuestion.key`): the host requires answers keyed by that
+ * exact value (`answer[field.key]` — anything else is "Unknown form
+ * field"), while `header` is display text truncated to 30 chars. Keyless
+ * asks (v1-native or older records) fall back to the stored question text.
+ */
+function toFormAnswer(
+  answers: string[][],
+  questions: ChildInputWaitQuestion[] | undefined,
+): Record<string, string | number | boolean | string[]> {
+  const answer: Record<string, string | number | boolean | string[]> = {};
+  answers.forEach((selections, index) => {
+    const question = questions?.[index];
+    // The key is used verbatim: the host matches it exactly.
+    const key =
+      question?.key ||
+      question?.header.trim() ||
+      question?.question.trim() ||
+      `question_${index}`;
+    // Multiselect fields require a string[] even for a single selection.
+    answer[key] =
+      question?.multiple || selections.length !== 1
+        ? [...selections]
+        : selections[0];
+  });
+  return answer;
+}
+
+/**
  * Answer (or reject) a background child's pending question/permission when
  * the host exposes a supported reply API.
  *
@@ -79,10 +118,12 @@ function assertHostReplyResult(result: unknown, operation: string): void {
  * have a recorded open ask for the given request id. A reply for an
  * unknown request id converges benignly when the task has no open asks at
  * all (issue #1435), while stale ids with open asks still throw. OpenCode
- * v2 forms are
- * observable as question waits, but the pinned v2 plugin context exposes no
- * supported form-reply API, so those waits fail honestly instead of using
- * undocumented transport.
+ * v2 forms are observable as question waits; when the runtime host client
+ * exposes the documented `session.form.reply` API (present since v2.0.18),
+ * those waits are answered through it and the `answers` arg is advertised.
+ * Hosts without the runtime domain keep the C4 behavior: the pinned v2
+ * plugin context exposes no supported form-reply API, so those waits fail
+ * honestly instead of using undocumented transport.
  */
 export function createTaskReplyTool(options: {
   input: PluginInput;
@@ -96,6 +137,32 @@ export function createTaskReplyTool(options: {
   const delegation = delegationWording(
     typeof hostFlavor === 'string' ? hostFlavor : undefined,
   );
+  // v2 form-reply capability probe (creation-time): the host generated
+  // client exposes session.form.reply (POST
+  // /api/session/:sid/form/:fid/reply) from v2.0.18 — see the promise
+  // client at packages/client/src/promise/generated/client.ts:1053 (`form`
+  // block at :1014) and the effect layer at
+  // effect/generated/client.ts:735 — but the pinned compile-time plugin
+  // context carries no form domain, and neither does the host's runtime
+  // plugin session domain (15 methods, no form). The probed client is the
+  // v1-shaped shim built by buildPluginInput from the host session domain;
+  // the shim forwards `session.form.reply` when the host provides it
+  // (client-shim.ts), so this probe reads the one surface that can truthfully
+  // carry the capability: pinned v2.0.26 → absent (honest failure below);
+  // a future host that exposes the domain → detected. A cast keeps the
+  // mirror-conformance guard (src/v2/mirror-conformance.ts) green because
+  // the mirrored V2Context type is untouched.
+  const v2FormReply =
+    hostFlavor === 'v2'
+      ? (options.input as { client?: unknown }).client
+      : undefined;
+  const hasV2FormReply =
+    typeof (v2FormReply as { session?: { form?: { reply?: unknown } } })
+      ?.session?.form?.reply === 'function';
+  // Single-line detection record: which reply surface the tool advertises.
+  log(
+    `[task-reply] v2 form-reply ${hasV2FormReply ? 'detected; answers advertised' : 'absent; questions fail honestly'}`,
+  );
   const replyArgs = {
     ...taskRefArgs(idParam),
     request_id: z
@@ -105,7 +172,9 @@ export function createTaskReplyTool(options: {
       .array(z.string().max(MAX_ANSWER_LENGTH))
       .optional()
       .describe(
-        'Answers for a question request, in question order (each entry selects option labels). Omit to reject the request instead of answering it.',
+        hostFlavor === 'v2'
+          ? 'Answers for a question request, in question order (each entry selects option labels).'
+          : 'Answers for a question request, in question order (each entry selects option labels). Omit to reject the request instead of answering it.',
       ),
     reply: z
       .enum(['once', 'always', 'reject'])
@@ -114,19 +183,20 @@ export function createTaskReplyTool(options: {
         'Response for a permission request: once, always, or reject. Defaults to once.',
       ),
   };
-  // v2 has no form.reply in the pinned plugin context, so advertising
-  // question answers there can only invite calls the execute gate
-  // refuses. Drop the arg from the v2 schema; v1 and unknown flavors
-  // (which fail toward the capable side) keep the full surface. The
-  // static type keeps `answers` optional — the v2 gate below refuses
-  // question kinds before any answers access, so the absent key is
-  // never read there.
-  if (hostFlavor === 'v2') {
+  // v2 advertises `answers` only when the runtime host client exposes
+  // session.form.reply (detected above): undetected v2 keeps the
+  // honest-surface shape, so advertising question answers there can only
+  // invite calls the execute gate refuses (#1510 stays intact). v1 and
+  // unknown flavors (which fail toward the capable side) keep the full
+  // surface. The static type keeps `answers` optional; the undetected v2
+  // gate below refuses question kinds before any answers access, so the
+  // absent key is never read there.
+  if (hostFlavor === 'v2' && !hasV2FormReply) {
     delete (replyArgs as Partial<typeof replyArgs>).answers;
   }
   const task_reply = tool({
     description:
-      hostFlavor === 'v2'
+      hostFlavor === 'v2' && !hasV2FormReply
         ? TASK_REPLY_PERMISSION_ONLY_DESCRIPTION
         : 'Answer a background child ask (question/permission requests) by task ID/alias and request ID.',
     args: replyArgs,
@@ -196,6 +266,11 @@ export function createTaskReplyTool(options: {
       }
 
       const client = getClient(options.input) as unknown as {
+        session?: {
+          form?: {
+            reply: (args: Record<string, unknown>) => Promise<unknown>;
+          };
+        };
         question?: {
           reply: (args: Record<string, unknown>) => Promise<unknown>;
           reject: (args: Record<string, unknown>) => Promise<unknown>;
@@ -218,16 +293,30 @@ export function createTaskReplyTool(options: {
       // narrowed (non-undefined) types.
       const openWait = wait;
       const targetJob = job;
-      // v2 gate (C4): the pinned v2 plugin context exposes no supported
-      // form-reply API — question reply AND reject would both dead-end in
-      // transport attempts. Fail honestly BEFORE either path, with the
-      // alternatives the parent still has (host UI, steer, cancel). Early
-      // exit here never reaches clearChildInputWait: the ask stays open
-      // and answerable where it actually is. Permission requests are not
-      // gated; v1 hosts (no hostFlavor) keep the full path untouched.
-      if (openWait.kind === 'question' && hostFlavor === 'v2') {
+      // v2 gate (C4): question asks fail honestly BEFORE any transport
+      // attempt whenever the reply would dead-end. Undetected hosts: BOTH
+      // reply and reject dead-end (no session.form.reply, no question
+      // domain on the shim client) — refuse with the alternatives the
+      // parent still has. Detected hosts: answers flow through
+      // session.form.reply, but a rejected ask (answers omitted) would
+      // fall through to the v1 question.reject route, which the detected
+      // surface equally lacks — and form.cancel carries dismissal
+      // semantics the plugin must not fake, so rejection redirects to the
+      // host UI. Early exit never reaches clearChildInputWait: the ask
+      // stays open and answerable where it actually is. Permission
+      // requests are not gated; v1 hosts (no hostFlavor) keep the full
+      // path untouched.
+      if (
+        openWait.kind === 'question' &&
+        hostFlavor === 'v2' &&
+        (!hasV2FormReply ||
+          args.answers === undefined ||
+          args.answers.length === 0)
+      ) {
         throw new Error(
-          "Question replies are not supported on this host — answer the child's question in the host UI, or cancel the child with task_cancel instead.",
+          hasV2FormReply
+            ? "Question rejection is not supported through task_reply on this host — dismiss the child's question in the host UI, or cancel the child with task_cancel instead."
+            : "Question replies are not supported on this host — answer the child's question in the host UI, or cancel the child with task_cancel instead.",
         );
       }
 
@@ -238,10 +327,33 @@ export function createTaskReplyTool(options: {
        * hey-api transport so auth headers + the directory interceptor
        * are reused — never a hand-rolled fetch. Host SDK results do not
        * throw on HTTP errors, so error/non-2xx results fail here.
+       *
+       * v2 hosts with a detected runtime session.form.reply answer
+       * through it (SessionFormReplyInput: `{sessionID, formID, answer}` —
+       * POST /api/session/:sid/form/:fid/reply, 204 empty). The open
+       * wait's (taskID, requestID) IS the (sessionID, formID) pair: the
+       * event router notes waits keyed by the form's owning session and
+       * id (event-router.ts:934-941), so no mapping is invented here.
+       * Reject on detected v2 keeps the host-UI redirect: form.cancel
+       * carries dismissal semantics the plugin must not fake.
        */
       async function replyQuestion(
         answers: string[][] | undefined,
       ): Promise<unknown> {
+        const formReply = client.session?.form?.reply;
+        if (answers !== undefined && hasV2FormReply) {
+          if (typeof formReply !== 'function') {
+            throw new Error(
+              'Host client has no session.form.reply API; cannot answer the pending form',
+            );
+          }
+          const answer = toFormAnswer(answers, openWait.questions);
+          return await formReply({
+            sessionID: targetJob.taskID,
+            formID: openWait.requestID,
+            answer,
+          });
+        }
         const question = client.question;
         if (answers !== undefined) {
           if (typeof question?.reply === 'function') {
