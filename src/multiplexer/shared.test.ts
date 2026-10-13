@@ -422,6 +422,38 @@ describe('buildViewCommand', () => {
       });
     }
   });
+
+  test('normalizes Windows executable backslashes in both builders', async () => {
+    const original = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'win32',
+      configurable: true,
+    });
+    try {
+      const { buildOpencodeAttachCommand, buildViewCommand } =
+        await importShared();
+      const exe = 'C:\\Users\\foo\\opencode.exe';
+      expect(
+        buildOpencodeAttachCommand(
+          'sess',
+          'http://x',
+          'C:\\Users\\foo\\repo',
+          exe,
+        ),
+      ).toStartWith("'C:/Users/foo/opencode.exe' attach");
+      const cmd = buildViewCommand('ses', 'http://x', 'C:\\Users\\foo\\repo', {
+        viewerFlavor: 'v2-remote',
+        executable: exe,
+      });
+      expect(cmd).toStartWith("'C:/Users/foo/opencode.exe' --server");
+      expect(cmd).toContain('C:/Users/foo/repo');
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: original,
+        configurable: true,
+      });
+    }
+  });
 });
 
 describe('isPosixShell', () => {

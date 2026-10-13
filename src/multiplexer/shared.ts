@@ -22,6 +22,13 @@ export function normalizePathForShell(directory: string): string {
     : directory;
 }
 
+/** Quote an executable for sh -lc: bare fallback stays bare, Windows
+ * backslashes become / so MSYS2/Git Bash single quotes don't preserve them. */
+function formatExecutableForShell(executable: string): string {
+  if (executable === 'opencode') return executable;
+  return quoteShellArg(normalizePathForShell(executable));
+}
+
 export function buildOpencodeAttachCommand(
   sessionId: string,
   serverUrl: string,
@@ -33,7 +40,7 @@ export function buildOpencodeAttachCommand(
 ): string {
   const attachDir = normalizePathForShell(directory);
   return [
-    executable === 'opencode' ? executable : quoteShellArg(executable),
+    formatExecutableForShell(executable),
     'attach',
     quoteShellArg(serverUrl),
     '--session',
@@ -98,7 +105,7 @@ export function buildViewCommand(
   }
   const viewDir = normalizePathForShell(directory);
   return [
-    executable === 'opencode' ? executable : quoteShellArg(executable),
+    formatExecutableForShell(executable),
     ...(mini ? ['mini'] : []),
     ...(flavor === 'v2-remote' ? ['--server', quoteShellArg(serverUrl)] : []),
     '--session',
