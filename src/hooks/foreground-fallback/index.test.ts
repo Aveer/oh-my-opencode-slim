@@ -2596,6 +2596,89 @@ describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
     expect(mocks.abort).not.toHaveBeenCalled();
   });
 
+  test('a cascade of spent quotas via session.error reaches the third provider', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const exhausted = (sid: string) =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    // Message-tied errors: distinct message IDs are distinct incidents.
+    const tied = 'spent-cascade-tied';
+    await manager.handleEvent(redoEvents.assistant(tied, 'a'));
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'm0',
+          sessionID: tied,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p1',
+          modelID: 'a',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: tied, info: { id: 'm1' }, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: tied, info: { id: 'm2' }, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+    expect(exhausted(tied)).toEqual(new Set(['p1', 'p2']));
+
+    // Uncorrelated errors: once p2 has emitted a message, a repeated
+    // signature is p2's own failure, not p1's echo.
+    mocks.promptAsync.mockClear();
+    jest.advanceTimersByTime(6_000);
+    const seeded = 'spent-cascade-uncorrelated';
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'u0',
+          sessionID: seeded,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p1',
+          modelID: 'a',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    // The echo before p2 speaks changes nothing.
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    expect(exhausted(seeded)).toEqual(new Set(['p1']));
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'u1',
+          sessionID: seeded,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'b',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+    expect(exhausted(seeded)).toEqual(new Set(['p1', 'p2']));
+  });
+
   test('a same-provider-only chain surfaces the error', async () => {
     const { manager, mocks } = makeManager({
       chain: ['openai/luna', 'openai/sol'],

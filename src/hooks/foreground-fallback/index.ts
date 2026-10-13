@@ -505,6 +505,10 @@ export class ForegroundFallbackManager {
   private readonly lastTriggerModel = new Map<string, string>();
   /** Turn identity associated with the last failure dedup marker. */
   private readonly lastTriggerTurn = new Map<string, number>();
+  /** Error signature of the last trigger, kept only until the replacement
+   *  model emits a message: an uncorrelated spent-quota session.error with
+   *  this signature before then is that trigger's echo (issue #966). */
+  private readonly lastTriggerSignature = new Map<string, string>();
   /** Recent event identities deduplicate only repeated observations of one incident. */
   private readonly triggerIncidents = new Map<
     string,
@@ -724,6 +728,7 @@ export class ForegroundFallbackManager {
     this.lastTrigger.delete(sessionID);
     this.lastTriggerModel.delete(sessionID);
     this.lastTriggerTurn.delete(sessionID);
+    this.lastTriggerSignature.delete(sessionID);
     this.triggerIncidents.delete(sessionID);
     this.pendingErrorCorrelation.delete(sessionID);
     this.lastFallbackTime.delete(sessionID);
@@ -994,6 +999,7 @@ export class ForegroundFallbackManager {
         this.lastTrigger.delete(id);
         this.lastTriggerModel.delete(id);
         this.lastTriggerTurn.delete(id);
+        this.lastTriggerSignature.delete(id);
         this.triggerIncidents.delete(id);
         this.pendingErrorCorrelation.delete(id);
         this.turnEpoch.set(id, (this.turnEpoch.get(id) ?? 0) + 1);
@@ -1179,10 +1185,11 @@ export class ForegroundFallbackManager {
           typeof info.providerID === 'string' &&
           typeof info.modelID === 'string'
         ) {
-          this.sessionModel.set(
-            sessionID,
-            `${info.providerID}/${info.modelID}`,
-          );
+          const model = `${info.providerID}/${info.modelID}`;
+          this.sessionModel.set(sessionID, model);
+          // The replacement spoke: later session errors are its own.
+          if (model !== this.lastTriggerModel.get(sessionID))
+            this.lastTriggerSignature.delete(sessionID);
         }
         const messageTime = info.time;
         const isCompletedAssistant =
@@ -1327,7 +1334,7 @@ export class ForegroundFallbackManager {
           this.surfacesSpentQuota(
             sessionID,
             props.error,
-            this.triggeringModel(sessionID),
+            this.triggeringModel(sessionID, props.error, incidentID),
             incidentID,
           )
         ) {
@@ -1714,13 +1721,20 @@ export class ForegroundFallbackManager {
     return previous.model;
   }
 
-  /** The model a session-level spent-quota error belongs to. Within the
-   *  dedup window of a trigger in this turn whose provider is already
-   *  exhausted, it is that trigger's echo (sessionModel already names the
-   *  replacement); any other error belongs to the current model, so an
-   *  ordinary cascade on the replacement still advances. */
-  private triggeringModel(sessionID: string): string | undefined {
+  /** The model a session-level spent-quota error belongs to. An error tied
+   *  to a message is that message's incident: surfacesSpentQuota attributes
+   *  a handled one to its recorded model, anything else is the current
+   *  model's. An uncorrelated error is the last trigger's echo only when it
+   *  repeats that trigger's signature inside its dedup window, on an
+   *  exhausted provider, before the replacement has emitted anything;
+   *  otherwise it is the current model's, so the cascade still advances. */
+  private triggeringModel(
+    sessionID: string,
+    error: unknown,
+    incidentID: string,
+  ): string | undefined {
     const current = this.sessionModel.get(sessionID);
+    if (incidentID.startsWith('message:')) return current;
     const triggered = this.lastTriggerModel.get(sessionID);
     const provider = triggered
       ? parseModelReference(triggered)?.providerID
@@ -1728,6 +1742,7 @@ export class ForegroundFallbackManager {
     if (
       provider !== undefined &&
       this.quotaExhaustedProviders.get(sessionID)?.has(provider) &&
+      this.lastTriggerSignature.get(sessionID) === stringifyError(error) &&
       this.lastTriggerTurn.get(sessionID) ===
         (this.turnEpoch.get(sessionID) ?? 0) &&
       Date.now() - (this.lastTrigger.get(sessionID) ?? 0) < DEDUP_WINDOW_MS
@@ -1877,7 +1892,7 @@ export class ForegroundFallbackManager {
 
     // Deduplicate duplicate observations within the same user turn/model
     // episode. A confirmed new turn or model change starts a new incident.
-    if (this.isDeduped(sessionID, incidentID)) return;
+    if (this.isDeduped(sessionID, incidentID, error)) return;
 
     // Set inProgress before delay to prevent concurrent fallback attempts
     this.inProgress.add(sessionID);
@@ -2000,7 +2015,7 @@ export class ForegroundFallbackManager {
       // the meantime — never abort through a stale client.
       if (!this.isCurrentTurn(sessionID, epoch)) return;
       if (this.withholdsAbortForLiveChildren(sessionID)) return;
-      if (this.isDeduped(sessionID, incidentID)) return;
+      if (this.isDeduped(sessionID, incidentID, error)) return;
       if (retryAttempt !== undefined) {
         if (this.retryAlreadyObserved(sessionID, retryAttempt)) return;
         this.recordRetryAttempt(sessionID, retryAttempt);
@@ -2017,7 +2032,11 @@ export class ForegroundFallbackManager {
     }
   }
 
-  private isDeduped(sessionID: string, incidentID?: string): boolean {
+  private isDeduped(
+    sessionID: string,
+    incidentID?: string,
+    error?: unknown,
+  ): boolean {
     const now = Date.now();
     const curModel = this.sessionModel.get(sessionID);
     const turn = this.turnEpoch.get(sessionID) ?? 0;
@@ -2037,6 +2056,8 @@ export class ForegroundFallbackManager {
     }
     this.lastTrigger.set(sessionID, now);
     this.lastTriggerTurn.set(sessionID, turn);
+    if (error === undefined) this.lastTriggerSignature.delete(sessionID);
+    else this.lastTriggerSignature.set(sessionID, stringifyError(error));
     if (curModel !== undefined) {
       this.lastTriggerModel.set(sessionID, curModel);
     }
