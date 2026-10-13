@@ -1020,6 +1020,33 @@ describe('foreground fallback redo harness', () => {
     expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
   });
 
+  test('spent quota cancels a queued initial fallback (greptile P1 on #1551)', async () => {
+    const { manager, mocks } = makeManager({ initialRetryDelayMs: 1_000 });
+    const sessionID = 'spent-quota-cancels-queued-delay';
+    await manager.handleEvent(redoEvents.assistant(sessionID));
+
+    // A retryable rate limit queues the initial-delay fallback…
+    await manager.handleEvent(
+      redoEvents.assistant(sessionID, 'a', {
+        message: 'rate limit, try again in 20s',
+      }),
+    );
+    expect(jest.getTimerCount()).toBe(1);
+
+    // …then spent quota arrives before the timer fires: surface it and
+    // cancel the queued replay.
+    await manager.handleEvent(
+      redoEvents.assistant(sessionID, 'b', {
+        message: 'Monthly usage limit reached. Resets in X days.',
+      }),
+    );
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+  });
+
   test('initial retry delay is used once per descent before normal retry backoff', async () => {
     const { manager, mocks } = makeManager({
       initialRetryDelayMs: 1_000,

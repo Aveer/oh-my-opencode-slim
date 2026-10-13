@@ -1236,6 +1236,11 @@ export class ForegroundFallbackManager {
               await this.tryFallback(sessionID, messageError, incidentID);
             }
           }
+        } else if (messageError && isSurfaceQuotaError(messageError)) {
+          // Spent-quota veto (greptile P1 on #1551): the surfaced error
+          // supersedes any queued initial fallback — cancel it, or the
+          // pending timer replays over the surfaced error.
+          this.cancelInitialDelay(sessionID);
         } else if (
           !isV2Host &&
           isCompletedSuccessfulAssistant &&
@@ -1272,12 +1277,13 @@ export class ForegroundFallbackManager {
           | undefined;
         if (!props) break;
         const sessionID = eventSessionID(props);
-        if (
-          !this.enabled ||
-          !sessionID ||
-          !props.error ||
-          !isFailoverError(props.error)
-        ) {
+        if (!this.enabled || !sessionID || !props.error) break;
+        if (!isFailoverError(props.error)) {
+          // Spent-quota veto (greptile P1 on #1551): cancel any queued
+          // initial fallback so it cannot replay over the surfaced error.
+          if (isSurfaceQuotaError(props.error)) {
+            this.cancelInitialDelay(sessionID);
+          }
           break;
         }
         const incidentID = this.incidentForSessionError(
@@ -1318,6 +1324,22 @@ export class ForegroundFallbackManager {
           (isFailoverError(props.error) ||
             (props.status.message !== undefined &&
               isFailoverError({ message: props.status.message })));
+        if (
+          !isFailoverRetry &&
+          this.enabled &&
+          props.status?.type === 'retry'
+        ) {
+          // Spent-quota veto (greptile P1 on #1551): cancel any queued
+          // initial fallback so it cannot replay over the surfaced retry.
+          const signal =
+            props.error ??
+            (props.status.message !== undefined
+              ? { message: props.status.message }
+              : undefined);
+          if (signal !== undefined && isSurfaceQuotaError(signal)) {
+            this.cancelInitialDelay(sessionID);
+          }
+        }
         if (isFailoverRetry && this.enabled) {
           // Guard: stale retry event from a previous model's retry loop.
           // After a fallback, lastTriggerModel holds the OLD model (set by
@@ -1494,7 +1516,14 @@ export class ForegroundFallbackManager {
         this.inProgress.has(sessionID)
       )
         return;
-      if (!failover) return;
+      if (!failover) {
+        // Spent-quota veto (greptile P1 on #1551): a queued replay
+        // fallback is stale once the surface error arrives — cancel it.
+        if (isSurfaceQuotaError(event.error)) {
+          this.cancelInitialDelay(sessionID);
+        }
+        return;
+      }
       // initialRetryDelayMs has no steering form: the delay exists to give
       // intercepting plugins a recovery window before a REPLAY, and
       // steering performs no replay — the host's own retry backoff is
