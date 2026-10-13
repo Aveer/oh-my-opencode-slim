@@ -2777,6 +2777,128 @@ describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
     expect(mocks.promptAsync).not.toHaveBeenCalled();
   });
 
+  test('a status retry echoing the switch trigger leaves the replacement healthy', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const sid = 'spent-status-echo';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    const status = (attempt: number, error: unknown = SPENT) => ({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt, message: 'retrying...' },
+        error,
+      },
+    });
+    const rich = {
+      name: 'AI_APICallError',
+      message: SPENT.message,
+      data: { statusCode: 429 },
+    };
+    await manager.handleEvent(failed(sid, 'p1/a', rich, 'p1-msg'));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    // attempt 1 passes the stale-retry guard; the signature marks it p1's.
+    await manager.handleEvent(status(1));
+    // A status carrying only the spent text is the same signal.
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt: 1, message: SPENT.message },
+      },
+    });
+    expect(exhausted()).toEqual(new Set(['p1']));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+    // Once p2 has emitted a message, its own spent quota moves on to p3.
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'p2-msg',
+          sessionID: sid,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'b',
+        },
+      },
+    });
+    await manager.handleEvent(status(1));
+    expect(exhausted()).toEqual(new Set(['p1', 'p2']));
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+  });
+
+  test("a different spent signal right after a switch is the replacement's own", async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const sid = 'spent-status-new-signal';
+    await manager.handleEvent(failed(sid, 'p1/a', SPENT, 'p1-msg'));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'Weekly usage limit reached. Resets in 2 days.',
+        },
+      },
+    });
+    expect((manager as any).quotaExhaustedProviders.get(sid)).toEqual(
+      new Set(['p1', 'p2']),
+    );
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+  });
+
+  test('a v2 retry hook echoing the switch trigger leaves the replacement healthy', async () => {
+    const { manager } = makeManager({ chain: ['p1/a', 'p2/b', 'p3/c'] });
+    const sid = 'spent-v2-echo';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    const switchModel = mock(async () => {});
+    const retry = (providerID: string, id: string) => ({
+      sessionID: sid,
+      agent: 'orchestrator',
+      model: { providerID, id },
+      error: SPENT,
+      decision: { retry: false } as { retry: boolean; delay?: number },
+    });
+    await manager.handleV2Retry(retry('p1', 'a'), switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(1);
+    // The host retries on p2 with p1's error before p2 has run.
+    const echo = retry('p2', 'b');
+    await manager.handleV2Retry(echo, switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(1);
+    expect(echo.decision).toEqual({ retry: false });
+    expect(exhausted()).toEqual(new Set(['p1']));
+    // p2 emits a message, then fails with its own spent quota.
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'v2-p2',
+          sessionID: sid,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'b',
+        },
+      },
+    });
+    await manager.handleV2Retry(retry('p2', 'b'), switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(2);
+    expect((switchModel.mock.calls[1] as unknown[])[1]).toMatchObject({
+      providerID: 'p3',
+      id: 'c',
+    });
+    expect(exhausted()).toEqual(new Set(['p1', 'p2']));
+  });
+
   test('a same-provider-only chain surfaces the error', async () => {
     const { manager, mocks } = makeManager({
       chain: ['openai/luna', 'openai/sol'],
