@@ -18,6 +18,7 @@ import {
   isFailoverError,
   isInlineFailoverError,
   isPermanentQuotaBillingError,
+  isSpentQuotaError,
 } from './index';
 
 // ACCEPTANCE GAP: config() hook behaviour is not covered by CI — verify live.
@@ -2489,6 +2490,604 @@ describe('isFailoverError', () => {
     expect(isFailoverError({ message: 'invalid model configuration' })).toBe(
       false,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spent allowance (issue #966): provider exhaustion, not a failover veto
+// ---------------------------------------------------------------------------
+
+describe('isSpentQuotaError (issue #966)', () => {
+  test.each([
+    'quota exceeded',
+    'usage exceeded',
+    'usage limit reached',
+    'Monthly usage limit reached. Resets in X days.',
+    '5-hour usage limit reached. Resets in 36min.',
+    'Weekly usage limit reached. Resets in 2 days.',
+    'AI_APICallError: The usage limit has been reached',
+    'Usage exceeded for this billing period',
+  ])('classifies "%s" as spent allowance that still fails over', (signal) => {
+    expect(isSpentQuotaError({ message: signal })).toBe(true);
+    expect(isSpentQuotaError(signal)).toBe(true);
+    expect(
+      isSpentQuotaError({ data: { statusCode: 429, responseBody: signal } }),
+    ).toBe(true);
+    expect(isFailoverError({ message: signal })).toBe(true);
+    // Spent wording is not permanent billing: it keeps the initial delay.
+    expect(isPermanentQuotaBillingError({ message: signal })).toBe(false);
+  });
+
+  test.each([
+    'quota exceeded, retry after 20s',
+    'Quota exceeded for quota metric, try again in 30s',
+    'quota exceeded, retry in 20s',
+    'quota exceeded, will reset at midnight',
+    'quota exceeded; resets at 15:00 UTC',
+    'quota exceeded per minute',
+  ])('short-horizon "%s" is not spent allowance', (signal) => {
+    expect(isSpentQuotaError({ message: signal })).toBe(false);
+    expect(isFailoverError({ message: signal })).toBe(true);
+  });
+
+  test('free-tier exhaustion is exempt and stays permanent billing', () => {
+    const error = { message: 'Free usage exceeded, subscribe to Go' };
+    expect(isSpentQuotaError(error)).toBe(false);
+    expect(isPermanentQuotaBillingError(error)).toBe(true);
+    expect(isFailoverError(error)).toBe(true);
+  });
+
+  test('reads nested carriers without cross-carrier escapes', () => {
+    expect(isSpentQuotaError({ cause: { message: 'quota exceeded' } })).toBe(
+      true,
+    );
+    expect(isSpentQuotaError({ data: { code: 'usage exceeded' } })).toBe(true);
+    expect(isSpentQuotaError({ message: 'Monthly usage limit exceeded' })).toBe(
+      false,
+    );
+    // Short-horizon phrasing in an unrelated carrier does not lift the mark.
+    expect(
+      isSpentQuotaError({
+        message: 'quota exceeded',
+        data: { responseBody: 'try again later for other errors' },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(1_000_000);
+  });
+  afterEach(() => jest.useRealTimers());
+
+  const SPENT = {
+    message: 'AI_APICallError: The usage limit has been reached',
+  };
+
+  const failed = (
+    sessionID: string,
+    model: string,
+    error: unknown,
+    id = `assistant-${sessionID}-${model}`,
+  ) => {
+    const [providerID, modelID] = model.split('/');
+    return {
+      type: 'message.updated',
+      properties: {
+        info: {
+          id,
+          sessionID,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID,
+          modelID,
+          error,
+        },
+      },
+    };
+  };
+
+  const prompted = (mocks: { promptAsync: { mock: { calls: unknown[][] } } }) =>
+    mocks.promptAsync.mock.calls.map(([args]) => {
+      const { providerID, modelID } = (args as any).body.model;
+      return `${providerID}/${modelID}`;
+    });
+
+  test('a cross-provider chain fails over on spent quota', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'ollama/glm'],
+    });
+    const sid = 'spent-cross-provider';
+    await manager.handleEvent(failed(sid, 'openai/luna', SPENT));
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(manager.getActiveFallback(sid)?.downProviders).toEqual(
+      new Set(['openai']),
+    );
+  });
+
+  test('a paired error and repeated updates mark only the failing provider', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'ollama/glm', 'anthropic/opus'],
+    });
+    const sid = 'spent-attribution';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    await manager.handleEvent(failed(sid, 'openai/luna', SPENT, 'luna-msg'));
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(exhausted()).toEqual(new Set(['openai']));
+    // The paired session.error arrives after the switch: it belongs to
+    // luna, not to the replacement now held in sessionModel.
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, info: { id: 'luna-msg' }, error: SPENT },
+    });
+    // A late observation of the handled incident, past the dedup window.
+    jest.advanceTimersByTime(6_000);
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, info: { id: 'luna-msg' }, error: SPENT },
+    });
+    // Re-emitted updates of the same assistant message keep its own model.
+    for (let i = 0; i < 3; i++) {
+      await manager.handleEvent(failed(sid, 'openai/luna', SPENT, 'luna-msg'));
+    }
+    expect(exhausted()).toEqual(new Set(['openai']));
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('a cascade of spent quotas via session.error reaches the third provider', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const exhausted = (sid: string) =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    // Message-tied errors: distinct message IDs are distinct incidents.
+    const tied = 'spent-cascade-tied';
+    await manager.handleEvent(redoEvents.assistant(tied, 'a'));
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'm0',
+          sessionID: tied,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p1',
+          modelID: 'a',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: tied, info: { id: 'm1' }, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: tied, info: { id: 'm2' }, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+    expect(exhausted(tied)).toEqual(new Set(['p1', 'p2']));
+
+    // Uncorrelated errors: once p2 has emitted a message, a repeated
+    // signature is p2's own failure, not p1's echo.
+    mocks.promptAsync.mockClear();
+    jest.advanceTimersByTime(6_000);
+    const seeded = 'spent-cascade-uncorrelated';
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'u0',
+          sessionID: seeded,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p1',
+          modelID: 'a',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    // The echo before p2 speaks changes nothing.
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    expect(exhausted(seeded)).toEqual(new Set(['p1']));
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'u1',
+          sessionID: seeded,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'b',
+        },
+      },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: seeded, error: SPENT },
+    });
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+    expect(exhausted(seeded)).toEqual(new Set(['p1', 'p2']));
+  });
+
+  test('a no-chain session never replays the same model on spent quota', async () => {
+    const { mocks } = createMockClient();
+    const manager = new ForegroundFallbackManager(
+      {},
+      true,
+      { directory: '/test' } as never,
+      3,
+    );
+    const update = (sid: string, error: unknown) => ({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: `${sid}-msg`,
+          sessionID: sid,
+          role: 'assistant',
+          agent: 'councillor',
+          providerID: 'p1',
+          modelID: 'a',
+          error,
+        },
+      },
+    });
+    // Control: a transient error does take the same-model replay.
+    await manager.handleEvent(
+      update('nochain-transient', { message: 'rate limit' }),
+    );
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    mocks.promptAsync.mockClear();
+    const sid = 'nochain-spent';
+    await manager.handleEvent(update(sid, SPENT));
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt: 1, message: SPENT.message },
+      },
+    });
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(mocks.abort).not.toHaveBeenCalled();
+    // The replay path itself refuses spent quota as well.
+    await (manager as any).trySameModelRetry(sid, { error: SPENT, epoch: 0 });
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+  });
+
+  test('a status retry echoing the switch trigger leaves the replacement healthy', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const sid = 'spent-status-echo';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    const status = (attempt: number, error: unknown = SPENT) => ({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt, message: 'retrying...' },
+        error,
+      },
+    });
+    const rich = {
+      name: 'AI_APICallError',
+      message: SPENT.message,
+      data: { statusCode: 429 },
+    };
+    await manager.handleEvent(failed(sid, 'p1/a', rich, 'p1-msg'));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    // attempt 1 passes the stale-retry guard; the signature marks it p1's.
+    await manager.handleEvent(status(1));
+    // A status carrying only the spent text is the same signal.
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt: 1, message: SPENT.message },
+      },
+    });
+    expect(exhausted()).toEqual(new Set(['p1']));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+    // Once p2 has emitted a message, its own spent quota moves on to p3.
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'p2-msg',
+          sessionID: sid,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'b',
+        },
+      },
+    });
+    await manager.handleEvent(status(1));
+    expect(exhausted()).toEqual(new Set(['p1', 'p2']));
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+  });
+
+  test("a different spent signal right after a switch is the replacement's own", async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+    });
+    const sid = 'spent-status-new-signal';
+    await manager.handleEvent(failed(sid, 'p1/a', SPENT, 'p1-msg'));
+    expect(prompted(mocks)).toEqual(['p2/b']);
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'Weekly usage limit reached. Resets in 2 days.',
+        },
+      },
+    });
+    expect((manager as any).quotaExhaustedProviders.get(sid)).toEqual(
+      new Set(['p1', 'p2']),
+    );
+    expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
+  });
+
+  test('v2 retry hook attributes spent quota to the model it names', async () => {
+    const { manager } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+      hostFlavor: 'v2',
+    });
+    const sid = 'spent-v2-cascade';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    const switchModel = mock(async () => {});
+    // Host retry-hook input as the v2 bridge delivers it (src/v2/setup.ts):
+    // the failing attempt's model, the host error and its retry decision.
+    const retry = (providerID: string, id: string) => ({
+      sessionID: sid,
+      agent: 'orchestrator',
+      model: { providerID, id },
+      error: { message: SPENT.message, statusCode: 429, isRetryable: true },
+      decision: { retry: true } as { retry: boolean; delay?: number },
+    });
+    await manager.handleV2Retry(retry('p1', 'a'), switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(1);
+    // True echo: the host's late retry for p1 after the switch.
+    const echo = retry('p1', 'a');
+    await manager.handleV2Retry(echo, switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(1);
+    expect(echo.decision).toEqual({ retry: true });
+    expect(exhausted()).toEqual(new Set(['p1']));
+    // p2 rejects at once with the same text and no message in between:
+    // the hook names p2, so p2 is exhausted and p3 takes over.
+    await manager.handleV2Retry(retry('p2', 'b'), switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(2);
+    expect((switchModel.mock.calls[1] as unknown[])[1]).toMatchObject({
+      providerID: 'p3',
+      id: 'c',
+    });
+    expect(exhausted()).toEqual(new Set(['p1', 'p2']));
+    // p3 spent too: every provider is exhausted, the decision stands.
+    const last = retry('p3', 'c');
+    await manager.handleV2Retry(last, switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(2);
+    expect(last.decision).toEqual({ retry: true });
+  });
+
+  test('a same-provider-only chain surfaces the error', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'openai/sol'],
+    });
+    const sid = 'spent-same-provider';
+    await manager.handleEvent(failed(sid, 'openai/luna', SPENT));
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: sid,
+        status: { type: 'retry', attempt: 1, message: SPENT.message },
+      },
+    });
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('a mixed chain skips the exhausted provider and surfaces at the end', async () => {
+    const chain = ['p1/a', 'p1/b', 'p2/c', 'p1/d', 'p3/e'];
+    const { manager, mocks } = makeManager({ chain });
+    const sid = 'spent-mixed';
+    await manager.handleEvent(failed(sid, 'p1/a', SPENT));
+    expect(prompted(mocks)).toEqual(['p2/c']);
+    // A non-quota failure on p2 still skips p1's remaining entry p1/d.
+    await manager.handleEvent(failed(sid, 'p2/c', { message: 'rate limit' }));
+    expect(prompted(mocks)).toEqual(['p2/c', 'p3/e']);
+    // p3 spends its allowance as well: p2 is down but not exhausted, so the
+    // bounded sticky retry lands on p2/c rather than an exhausted provider.
+    await manager.handleEvent(failed(sid, 'p3/e', SPENT));
+    expect(prompted(mocks)).toEqual(['p2/c', 'p3/e', 'p2/c']);
+    // p2 spent too: every chain provider is exhausted, so it surfaces.
+    await manager.handleEvent(failed(sid, 'p2/c', SPENT, 'second-c'));
+    expect(prompted(mocks)).toEqual(['p2/c', 'p3/e', 'p2/c']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('short-horizon quota wording still fails over on the same provider', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'openai/sol'],
+    });
+    const sid = 'spent-short-horizon';
+    await manager.handleEvent(
+      failed(sid, 'openai/luna', {
+        message: 'quota exceeded, retry after 20s',
+      }),
+    );
+    expect(prompted(mocks)).toEqual(['openai/sol']);
+  });
+
+  test('repeated spent-quota errors never loop', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'ollama/glm'],
+    });
+    const sid = 'spent-no-loop';
+    for (let i = 0; i < 10; i++) {
+      jest.advanceTimersByTime(6_000);
+      for (const model of ['openai/luna', 'ollama/glm']) {
+        await manager.handleEvent(failed(sid, model, SPENT, `${model}-${i}`));
+        await manager.handleEvent({
+          type: 'session.error',
+          properties: { sessionID: sid, error: SPENT },
+        });
+        await manager.handleEvent({
+          type: 'session.status',
+          properties: {
+            sessionID: sid,
+            status: { type: 'retry', attempt: i + 1, message: SPENT.message },
+          },
+        });
+      }
+    }
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('a successful response re-arms the exhausted providers', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['p1/a', 'p1/b', 'p2/c'],
+    });
+    const sid = 'spent-rearm';
+    await manager.handleEvent(failed(sid, 'p1/a', SPENT));
+    expect(prompted(mocks)).toEqual(['p2/c']);
+    await manager.handleEvent(redoEvents.success(sid, 'c'));
+    await manager.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          sessionID: sid,
+          role: 'assistant',
+          agent: 'orchestrator',
+          providerID: 'p2',
+          modelID: 'c',
+          time: { completed: 2 },
+        },
+      },
+    });
+    jest.advanceTimersByTime(6_000);
+    await manager.handleEvent(failed(sid, 'p2/c', SPENT, 'after-recovery'));
+    // p1 is no longer exhausted, only down (activeFallback keeps abandoned
+    // providers), so the bounded sticky retry may use p1 again instead of
+    // surfacing as it would without the recovery.
+    expect(prompted(mocks)).toEqual(['p2/c', 'p1/b']);
+  });
+
+  test('session delete clears the exhausted providers', () => {
+    const coordinator = new SessionLifecycle(() => {});
+    createMockClient();
+    const mgr = new ForegroundFallbackManager(
+      { orchestrator: ['p1/a', 'p2/b'] },
+      true,
+      { directory: '/test' } as any,
+      3,
+      coordinator,
+    );
+    (mgr as any).quotaExhaustedProviders.set('gone', new Set(['p1']));
+    coordinator.dispatchSessionDeleted('gone');
+    expect((mgr as any).quotaExhaustedProviders.has('gone')).toBe(false);
+  });
+
+  test('v2 retry hook steers a spent quota to another provider', async () => {
+    const { manager } = makeManager({ chain: ['p1/a', 'p1/b', 'p2/c'] });
+    const switchModel = mock(async () => {});
+    const event = {
+      sessionID: 'spent-v2',
+      agent: 'orchestrator',
+      model: { providerID: 'p1', id: 'a' },
+      error: SPENT,
+      decision: { retry: true },
+    };
+    await manager.handleV2Retry(event, switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(1);
+    expect((switchModel.mock.calls[0] as unknown[])[1]).toMatchObject({
+      providerID: 'p2',
+      id: 'c',
+    });
+  });
+
+  test('v2 retry hook leaves the host decision on a same-provider chain', async () => {
+    const { manager } = makeManager({ maxRetries: 0 });
+    const switchModel = mock(async () => {});
+    const event = {
+      sessionID: 'spent-v2-same',
+      agent: 'orchestrator',
+      model: { providerID: 'test', id: 'a' },
+      error: SPENT,
+      decision: { retry: false },
+    };
+    await manager.handleV2Retry(event, switchModel);
+    expect(switchModel).not.toHaveBeenCalled();
+    expect(event.decision).toEqual({ retry: false });
+  });
+
+  test('spent quota cancels a queued initial fallback when it surfaces', async () => {
+    const { manager, mocks } = makeManager({ initialRetryDelayMs: 1_000 });
+    const sid = 'spent-cancels-queued-delay';
+    await manager.handleEvent(redoEvents.assistant(sid));
+    await manager.handleEvent(
+      redoEvents.assistant(sid, 'a', {
+        message: 'rate limit, try again in 20s',
+      }),
+    );
+    expect(jest.getTimerCount()).toBe(1);
+    await manager.handleEvent(
+      redoEvents.assistant(sid, 'b', {
+        message: 'Monthly usage limit reached. Resets in X days.',
+      }),
+    );
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+  });
+
+  test('short-horizon quota keeps the configured initial delay', async () => {
+    const { manager, mocks } = makeManager({ initialRetryDelayMs: 1_000 });
+    const sid = 'short-horizon-keeps-delay';
+    await manager.handleEvent(redoEvents.assistant(sid));
+    await manager.handleEvent(
+      redoEvents.assistant(sid, 'a', {
+        message: 'quota exceeded, retry after 20s',
+      }),
+    );
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(1);
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
   });
 });
 

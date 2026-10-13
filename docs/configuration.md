@@ -695,6 +695,21 @@ entry remains, Slim retries the last chain entry once, ignoring provider
 exclusions and retaining the tried set; another failure ends intervention
 (v1 aborts once, while v2 leaves the host's retry decision unchanged).
 
+A spent allowance (for example `The usage limit has been reached`,
+`quota exceeded`, or `Weekly usage limit reached. Resets in 2 days.`) marks
+the failing model's provider exhausted, so the next pick skips every
+remaining entry on that provider, including the current provider's other
+models and the sticky retry. When no chain entry remains on a provider with
+allowance left, the error surfaces to the user: Slim neither switches models
+nor aborts. A spent allowance also skips the `fallback.maxRetries` host-retry
+budget, but keeps `fallback.initialRetryDelayMs`. Short-horizon wording in the
+same error (`retry after 20s`, `try again`, `per minute`, `resets at 15:00`)
+is treated as an ordinary rate limit, and free-tier exhaustion (`Free usage
+exceeded, subscribe to Go`) stays permanent billing. Exhausted providers are
+re-armed with the retry budget: a successful response, a new v1 user turn, a
+fresh descent from the configured primary, or session deletion. Landing back
+on a primary whose allowance is spent does not count as a fresh descent.
+
 On v2 hosts, the two fallback paths are gated separately. The replay path
 (abort + re-prompt driven by `session.error`, `message.updated` and
 `session.status` retry) stays disabled: the v2 `switchModel` has no
