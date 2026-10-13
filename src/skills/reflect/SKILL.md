@@ -44,8 +44,8 @@ repeated patterns, friction, and improvement opportunities.
 
    Write the probe below to a temp file (for example `/tmp/reflect-sessions.mjs`)
    and run `bun /tmp/reflect-sessions.mjs`. Do not inline it with `bun -e "…"`:
-   nested quotes get mangled by PowerShell on Windows; a temp script runs
-   unchanged on Windows, Linux, and macOS.
+   nested quotes get mangled by PowerShell on Windows; a temp script sidesteps
+   shell quoting entirely.
 
    ```js
    import Database from 'bun:sqlite';
@@ -53,23 +53,19 @@ repeated patterns, friction, and improvement opportunities.
    const db = new Database(`${homedir()}/.local/share/opencode/opencode.db`, { readonly: true });
    const isV2 = !!db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_v2'").get();
    const LIMIT = 50; // set to the --last N value when specified
-   let sessions;
-   if (isV2) {
-     const projects = db.query('SELECT id FROM project WHERE worktree LIKE ?').all('%<repo-name>%');
-     const marks = projects.map(() => '?').join(',');
-     sessions = db.query(
-       `SELECT id, project_id, title, agent, model, time_created, time_updated, cost, tokens_input, tokens_output, time_archived FROM session_v2 WHERE project_id IN (${marks}) ORDER BY time_created DESC LIMIT ${LIMIT}`
-     ).all(...projects.map((p) => p.id));
-   } else {
-     sessions = db.query(
-       `SELECT id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT ${LIMIT}`
-     ).all();
-   }
+   const sessions = isV2
+     ? db.query(
+         `SELECT s.id, p.worktree AS project, s.title, s.agent, s.model, s.time_created, s.cost, s.tokens_input, s.tokens_output, s.time_archived FROM session_v2 s LEFT JOIN project p ON p.id = s.project_id ORDER BY s.time_created DESC LIMIT ${LIMIT}`
+       ).all()
+     : db.query(
+         `SELECT id, directory AS project, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT ${LIMIT}`
+       ).all();
    console.log(sessions);
    ```
 
-   Timestamps are epoch **milliseconds**. On v2, a non-null `time_archived`
-   means the session was archived inside OpenCode.
+   Both branches emit a `project` path for the Per-Session Analysis. Timestamps
+   are epoch **milliseconds**. On v2, a non-null `time_archived` means the
+   session was archived inside OpenCode.
 
 2. **Load session messages** - for each session ID, query the matching message
    table and parse `data`:
