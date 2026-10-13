@@ -542,6 +542,7 @@ describe('trackProgress', () => {
 describe('acp_run integration', () => {
   test('streams tool progress through ctx.metadata and returns final text', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'acp-progress-'));
+    tempDirs.push(dir);
     const serverPath = join(dir, 'server.js');
     await writeFile(
       serverPath,
@@ -611,6 +612,7 @@ describe('acp_run integration', () => {
 
   test('waits for graceful bridge shutdown after a timeout', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'acp-shutdown-'));
+    tempDirs.push(dir);
     const serverPath = join(dir, 'server.js');
     const eventsPath = join(dir, 'events.log');
     await writeFile(
@@ -676,6 +678,7 @@ describe('acp_run integration', () => {
 
   test('abort settles while an ACP permission request is pending', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'acp-abort-permission-'));
+    tempDirs.push(dir);
     const serverPath = join(dir, 'server.js');
     const eventsPath = join(dir, 'events.log');
     await writeFile(
@@ -755,6 +758,7 @@ describe('acp_run integration', () => {
 
   test('a spawn failure does not wait through shutdown grace periods', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'acp-spawn-error-'));
+    tempDirs.push(dir);
     const tool = createAcpRunTool({
       cursor: {
         command: join(dir, 'missing-acp-command'),
@@ -785,6 +789,7 @@ describe('acp_run integration', () => {
 
   test('does not wait for descendant-held stdio after the bridge exits', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'acp-exit-before-close-'));
+    tempDirs.push(dir);
     const serverPath = join(dir, 'server.js');
     await writeFile(
       serverPath,

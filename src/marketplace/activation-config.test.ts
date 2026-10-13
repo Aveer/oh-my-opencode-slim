@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +22,15 @@ import { MarketplaceStore } from './store';
 
 const PACKAGE_A = 'community/docs-researcher';
 const PACKAGE_B = 'community/other';
+
+const activeFixtures: Array<{ cleanup: () => void }> = [];
+
+afterEach(() => {
+  while (activeFixtures.length > 0) {
+    const fixture = activeFixtures.pop();
+    fixture?.cleanup();
+  }
+});
 
 function bundle(id: string, agentName: string) {
   return {
@@ -69,13 +78,16 @@ function setup() {
     pluginVersion: '3.2.0',
   });
 
-  return {
+  let cleaned = false;
+  const handle = {
     root,
     project,
     userConfig,
     projectConfig,
     store,
     cleanup() {
+      if (cleaned) return;
+      cleaned = true;
       if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = previousConfigHome;
       if (previousPreset === undefined)
@@ -84,6 +96,8 @@ function setup() {
       rmSync(root, { recursive: true, force: true });
     },
   };
+  activeFixtures.push(handle);
+  return handle;
 }
 
 function resolveStoredPreset(
