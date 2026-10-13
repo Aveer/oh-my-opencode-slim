@@ -130,7 +130,7 @@ is rejected, not applied):
 
 | Field | Description |
 |-------|-------------|
-| `model` | Model ID in `provider/model` format. Array form (fallback chains) is resolved to the first entry, and the full fallback chain is refreshed with it — new child sessions descend the refreshed chain, a child already registered keeps the chain generation it registered with |
+| `model` | Model ID in `provider/model` format. Array form (fallback chains) is resolved to the first entry, and the full fallback chain is refreshed with it — new child sessions descend the refreshed chain, a child already registered keeps the chain generation it registered with. Removing a marketplace agent's override reverts new children to the package's own chain |
 | `temperature` | Inference temperature (0-2) |
 | `variant` | Model variant (e.g. `"thinking"`) |
 | `options` | Provider-specific options (e.g. thinking budget) |

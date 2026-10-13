@@ -629,6 +629,80 @@ describe('v2 chain refresh', () => {
     }
   });
 
+  test('removed user override falls back to the manifest chain on refresh', async () => {
+    // The startup modelCandidates merge user overrides. A refresh that
+    // removes the override must serve the package's own manifest chain,
+    // not republish the stale merged candidates.
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-v2cr-ovr-'));
+    const priorDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = dataDir;
+    try {
+      new MarketplaceStore({ pluginVersion: '3.0.2' }).install({
+        manifest: {
+          schemaVersion: 2,
+          id: 'team/ovr',
+          version: '1.0.0',
+          displayName: 'ovr-agent',
+          description: 'Override removal chain refresh regression',
+          agentName: 'ovr-agent',
+          prompt: 'Marketplace prompt',
+          skills: [],
+          mcps: [],
+          tools: ['read'],
+          author: { name: 'Test author' },
+          tags: [],
+          license: 'MIT',
+          compatibility: { plugin: '>=1.0.0' },
+          model: {
+            source: 'explicit',
+            candidates: ['pkg/one', 'pkg/two'],
+          },
+          routing: {
+            description: 'Marketplace lane',
+            when: 'Marketplace task',
+            keywords: ['marketplace'],
+          },
+        },
+      } as never);
+      env.writeUserConfig({
+        preset: 'ovr',
+        presets: { ovr: { marketplace: { agents: ['team/ovr'] } } },
+        agents: { 'ovr-agent': { model: ['cfg/a', 'cfg/b'] } },
+        fallback: { enabled: true, maxRetries: 0 },
+      });
+
+      await withFactory(async ({ hooks, refresh }) => {
+        // The user override wins at startup.
+        expect(
+          await retryOnce(hooks as HooksWithV2, 'o-user', 'ovr-agent', 'cfg/a'),
+        ).toBe('cfg/b');
+
+        // Refresh with the override removed; the package stays selected.
+        env.writeUserConfig({
+          preset: 'ovr',
+          presets: { ovr: { marketplace: { agents: ['team/ovr'] } } },
+          fallback: { enabled: true, maxRetries: 0 },
+        });
+        expect((await refresh()).ok).toBe(true);
+
+        // New children descend the manifest chain, never the removed
+        // override.
+        expect(
+          await retryOnce(
+            hooks as HooksWithV2,
+            'o-manifest',
+            'ovr-agent',
+            'pkg/one',
+          ),
+        ).toBe('pkg/two');
+      });
+    } finally {
+      if (priorDataHome === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = priorDataHome;
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   test('model-switch disables survive a refresh that changes the chain source', async () => {
     // A switched agent disabled at finalize must stay disabled even when a
     // refresh resolves its chain from a different source (config array →

@@ -334,6 +334,10 @@ export function createSessionProfileBridge(
       if (typeof switchModel !== 'function') {
         throw new Error('session.switchModel unavailable for runtime profile');
       }
+      // Pin the chain generation at profile-capture time — before the
+      // awaited switch — so a refresh landing mid-switch cannot pair the
+      // old profile with a newer chain generation.
+      options.onSessionCaptured?.(sessionID);
       // Bounded and fail-closed: this rejection propagates to the prompt hook
       // and aborts the admission BEFORE any request can run on the wrong
       // model. The host call cannot be cancelled, but a late switch can only
@@ -347,7 +351,6 @@ export function createSessionProfileBridge(
         options.switchTimeoutMs ?? PROFILE_SWITCH_TIMEOUT_MS,
       );
       captured.set(sessionID, profile);
-      options.onSessionCaptured?.(sessionID);
       prune();
       emitLog('[v2][profile] applied model to child session', {
         sessionID,

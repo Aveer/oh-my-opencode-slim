@@ -41,6 +41,13 @@ export interface ResolvedAgentRegistry {
   readonly modelCandidates: Readonly<
     Record<string, readonly { id: string; variant?: string }[]>
   >;
+  /** Marketplace agents' pre-override manifest chains. Owner overrides
+   *  rewrite `definition._modelArray`, so these are the only copy of the
+   *  package's own chain — a refresh needs them when an override is
+   *  removed while the package stays selected. */
+  readonly marketplaceManifestChains: Readonly<
+    Record<string, readonly { id: string; variant?: string }[]>
+  >;
   readonly effectiveStartupModels: Readonly<
     Record<string, { model?: string; variant?: string }>
   >;
@@ -460,6 +467,14 @@ export function buildResolvedAgentRegistry(
 ): ResolvedAgentRegistry {
   const host = clone(options.hostSnapshot);
   const nativeRules = clone(options.nativePermissionsByAgent ?? {});
+  // Populated when marketplace agents are constructed (before line-order
+  // declarations below); owner overrides rewrite `_modelArray` on the
+  // admitted definitions afterwards, so this pre-override snapshot is the
+  // only copy of each package's own chain.
+  const marketplaceManifestChains: Record<
+    string,
+    readonly { id: string; variant?: string }[]
+  > = {};
   const hostFlavor = options.hostFlavor;
   const pluginMcps = clone(options.pluginMcps ?? {});
   let definitions = options.definitions
@@ -519,6 +534,17 @@ export function buildResolvedAgentRegistry(
     const admittedNames = new Set(
       constructed.agents.map((agent) => agent.name),
     );
+    // Snapshot the manifest chains BEFORE owner overrides rewrite
+    // `_modelArray` on the admitted definitions (see
+    // applyMarketplaceOwnerOverride) — the merged modelCandidates cannot
+    // serve a refresh that removes an override.
+    for (const sourceAgent of constructed.agents) {
+      const manifest = sourceAgent._modelArray;
+      if (!manifest || manifest.length <= 1) continue;
+      marketplaceManifestChains[sourceAgent.name] = manifest.map((entry) =>
+        typeof entry === 'string' ? { id: entry } : { ...entry },
+      );
+    }
     const marketplaceAgents = constructed.agents.map((sourceAgent) => {
       const agent = clone(sourceAgent);
       const owner = runtime.agents()[agent.name];
@@ -1203,6 +1229,7 @@ export function buildResolvedAgentRegistry(
     marketplacePackages: freeze(clone(frozenMarketplacePackages)),
     identities: frozenIdentities,
     modelCandidates: frozenCandidates,
+    marketplaceManifestChains: freeze(marketplaceManifestChains),
     effectiveStartupModels: frozenEffective,
     tuiAgentModels: frozenTuiModels,
     tuiAgentVariants: frozenTuiVariants,

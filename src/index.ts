@@ -2038,12 +2038,17 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       // after validation succeeded — profiles and chains always come from the
       // same generation (the caller swaps the profile table on this ok
       // result; an invalid refresh keeps the last-known-good generation).
+      // Manifest chains overlay the startup candidates: a user override
+      // removed since startup must fall back to the package's own chain,
+      // not the stale merged candidates.
+      const freshCandidates = resolvedAgentRegistry
+        ? {
+            ...resolvedAgentRegistry.modelCandidates,
+            ...resolvedAgentRegistry.marketplaceManifestChains,
+          }
+        : undefined;
       publishChainGeneration(
-        buildChainGeneration(
-          freshRuntime,
-          freshAgentDefs,
-          resolvedAgentRegistry?.modelCandidates,
-        ),
+        buildChainGeneration(freshRuntime, freshAgentDefs, freshCandidates),
         freshRuntime,
         (name) => runtime.hasModelSwitched(name),
       );
