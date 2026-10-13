@@ -133,19 +133,34 @@ describe('RuntimeConfig', () => {
     expect(RuntimeConfig.get(DIRECTORY).agent('explorer')?.model).toBe('m2');
   });
 
-  test('getter defaults with an empty plugin config', () => {
+  test('core feature and display getter defaults with an empty config', () => {
     resetRegistry();
     const runtime = RuntimeConfig.init(DIRECTORY, {});
     expect(runtime.preset).toBeUndefined();
-    expect(runtime.agents()).toEqual({});
-    expect(runtime.agent('explorer')).toBeUndefined();
+    expect(runtime.autoUpdate).toBe(true);
+    expect(runtime.stripOrchestratorModel).toBe(false);
+    expect(runtime.routingBlock).toBe(true);
+    expect(runtime.setDefaultAgent).toBe(true);
+    expect(runtime.compactSidebar).toBe(true);
+    expect(runtime.imageRouting).toBe('direct');
+    expect(runtime.companion).toBeUndefined();
+    expect(runtime.council).toBeUndefined();
+  });
+
+  test('disabled collection defaults with an empty config', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
     expect(runtime.disabledAgents).toEqual(new Set(['observer']));
     expect(runtime.disabledTools).toEqual([]);
     expect(runtime.disabledMcps).toEqual([]);
     expect(runtime.disabledSkills).toEqual([]);
-    expect(runtime.customAgentNames).toEqual([]);
-    expect(runtime.modelArrays).toEqual({});
-    expect(runtime.imageRouting).toBe('direct'); // observer disabled
+    expect(runtime.disabledHooks).toEqual(new Set());
+    expect(runtime.disabledCommands).toEqual(new Set());
+  });
+
+  test('subsystem defaults with an empty config', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
     expect(runtime.multiplexer).toEqual({
       type: 'none',
       layout: 'main-vertical',
@@ -153,11 +168,7 @@ describe('RuntimeConfig', () => {
     });
     expect(runtime.backgroundJobs.maxSessionsPerAgent).toBe(2);
     expect(runtime.backgroundJobs.strategy).toBe('latest');
-    // v1-parity defaults: board injection and periodic wake evaluation stay
-    // enabled when no config layer sets them (v2 hosts derive otherwise at
-    // load time; RuntimeConfig itself is flavor-agnostic).
     expect(runtime.backgroundJobs.boardInjection).toBe(true);
-    // Terminal-session GC is opt-in everywhere (no v2 default derivation).
     expect(runtime.backgroundJobs.pruneEvictedSessions).toBe(false);
     expect(runtime.backgroundJobs.orchestratorWake.periodicWakeEnabled).toBe(
       true,
@@ -176,13 +187,15 @@ describe('RuntimeConfig', () => {
     });
     expect(runtime.webfetch.enabled).toBe(true);
     expect(runtime.acpAgents).toEqual({});
-    expect(runtime.companion).toBeUndefined();
-    expect(runtime.council).toBeUndefined();
-    expect(runtime.autoUpdate).toBe(true);
-    expect(runtime.stripOrchestratorModel).toBe(false);
-    expect(runtime.routingBlock).toBe(true);
-    expect(runtime.setDefaultAgent).toBe(true);
-    expect(runtime.compactSidebar).toBe(true);
+  });
+
+  test('model and host defaults with an empty config', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    expect(runtime.agents()).toEqual({});
+    expect(runtime.agent('explorer')).toBeUndefined();
+    expect(runtime.customAgentNames).toEqual([]);
+    expect(runtime.modelArrays).toEqual({});
     expect(runtime.runtimeChains).toEqual({});
     expect(runtime.primaryModel).toBeUndefined();
     expect(runtime.host()).toBeUndefined();
@@ -191,8 +204,6 @@ describe('RuntimeConfig', () => {
     expect(runtime.hostMcp()).toBeUndefined();
     expect(runtime.getRuntimePreset()).toBeNull();
     expect(runtime.hasModelSwitched('explorer')).toBe(false);
-    expect(runtime.disabledHooks).toEqual(new Set());
-    expect(runtime.disabledCommands).toEqual(new Set());
   });
 
   test('explicit config values override defaults', () => {

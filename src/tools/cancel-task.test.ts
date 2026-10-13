@@ -159,11 +159,9 @@ describe('task_cancel tool', () => {
         status: null,
         get: () => {
           if (settlement === 'blocked response') {
-            const until = Date.now() + 25;
-            while (Date.now() < until) {
-              // Occupy the real event loop: the deadline timer cannot run.
-            }
-            read.resolve(response);
+            setTimeout(() => {
+              read.resolve(response);
+            }, 25);
           }
           return read.promise;
         },

@@ -1952,7 +1952,9 @@ function createSidebarRuntime(adapter: SidebarRuntimeAdapter) {
   };
   bindConfigListener();
   scheduleRefresh();
-  const renderTimer = setInterval(scheduleRefresh, 1000);
+  const renderIntervalMs =
+    Number(process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS) || 1000;
+  const renderTimer = setInterval(scheduleRefresh, renderIntervalMs);
   const animationTimer = setInterval(() => {
     if (
       !disposed &&
