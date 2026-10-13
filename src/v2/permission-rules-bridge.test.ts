@@ -39,6 +39,7 @@ import {
   test,
 } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { createAgents } from '../agents/index';
 import { PluginConfigSchema } from '../config';
@@ -1134,7 +1135,7 @@ describe('createV2Setup permission rules wiring', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    fixtureRoot = await mkdtemp('/tmp/omo-v2-perm-rules-');
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'omo-v2-perm-rules-'));
     const configDir = path.join(fixtureRoot, 'config');
     await Bun.write(
       path.join(configDir, 'oh-my-opencode-slim.json'),

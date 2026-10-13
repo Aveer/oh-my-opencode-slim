@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { readdirSync as readDirSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { createTaggedSyntheticPart } from '../hooks/cache-safe-injection';
 import { GOAL_POINTER_METADATA_KEY } from '../hooks/deepwork-goal';
@@ -265,7 +266,7 @@ describe('createV2Setup compaction hook', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    fixtureRoot = await mkdtemp('/tmp/omo-v2-compaction-');
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'omo-v2-compaction-'));
     projectDir = path.join(fixtureRoot, 'project');
     configDir = path.join(fixtureRoot, 'config');
     logDir = path.join(fixtureRoot, 'logs');

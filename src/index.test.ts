@@ -347,7 +347,7 @@ describe('plugin tool registration', () => {
   test('activates only marketplace packages selected by the resolved preset at first host finalization', async () => {
     const originalEnv = { ...process.env };
     const root = await mkdtemp(
-      '/tmp/oh-my-opencode-slim-marketplace-finalize-',
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-marketplace-finalize-'),
     );
     const configDir = path.join(root, 'config');
     const dataDir = path.join(root, 'data');
@@ -638,7 +638,9 @@ describe('plugin tool registration', () => {
 
   test('v1 config hook rejects selected packages with MCPs absent from an MCP-less host config', async () => {
     const originalEnv = { ...process.env };
-    const root = await mkdtemp('/tmp/oh-my-opencode-slim-marketplace-mcp-');
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-marketplace-mcp-'),
+    );
     const configDir = path.join(root, 'config');
     await mkdir(configDir, { recursive: true });
     process.env = {
@@ -3070,7 +3072,9 @@ describe('background task admission model resolution', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-concurrency-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-concurrency-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -3394,7 +3398,8 @@ describe('plugin config model inheritance', () => {
     hostFlavor?: 'v2',
   ) {
     const configDir =
-      existingDirectory ?? (await mkdtemp('/tmp/oh-my-opencode-inheritance-'));
+      existingDirectory ??
+      (await mkdtemp(path.join(os.tmpdir(), 'oh-my-opencode-inheritance-')));
     if (!existingDirectory) configDirs.push(configDir);
     lastConfigDir = configDir;
     await Bun.write(
@@ -4599,7 +4604,9 @@ describe('system.transform orchestrator injection', () => {
   async function loadPluginWithOrchestratorSession(
     config: Record<string, unknown> = {},
   ) {
-    const configDir = await mkdtemp('/tmp/oh-my-system-transform-');
+    const configDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-system-transform-'),
+    );
     configDirs.push(configDir);
     await Bun.write(
       `${configDir}/oh-my-opencode-slim.json`,
@@ -4800,7 +4807,9 @@ describe('plugin foreground fallback host gating', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-fallback-gate-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-fallback-gate-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -5384,7 +5393,9 @@ describe('plugin command registration gating', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-command-gate-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-command-gate-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -5542,7 +5553,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-gc-wiring-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-gc-wiring-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
