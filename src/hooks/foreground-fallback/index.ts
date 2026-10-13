@@ -188,14 +188,20 @@ const REQUEST_ERROR_PATTERNS = [
   /(?:^|\s)Gone(?:$|\s)/i,
   /\bHTTP 410\b/i,
   /\bstatus.?410\b/i,
-  // Streaming/proxy backpressure (issue #947: same-model retry for agents
-  // without chains). Gateways shed load with these wordings instead of an
-  // HTTP status; the failure carries no 4xx determinism, so the next model
-  // (or a same-model replay on a different worker) should be tried.
+];
+// Streaming/proxy backpressure (issue #947: same-model retry for agents
+// without chains). Gateways shed load with these wordings instead of an
+// HTTP status, so the next model (or a same-model replay on a different
+// worker) should be tried — unless the same failure carries a
+// deterministic 4xx (e.g. "Streaming response failed: [400] invalid
+// request"), which every replay would reproduce.
+const GATEWAY_BACKPRESSURE_PATTERNS = [
   /\bstreaming response failed\b/i,
   /\brequest queue is full\b/i,
   /\bworker local total request limit reached\b/i,
 ];
+/** 4xx other than 408 (timeout) and 429 (rate limit). */
+const DETERMINISTIC_4XX_PATTERN = /\b4(?!08\b|29\b)\d\d\b/;
 // "upstream error" alone is ambiguous: proxies wrap deterministic 4xx (a
 // 400-bodied validation failure, a policy rejection) in the same wording.
 // Only treat it as transient when the same message carries a 5xx status,
@@ -217,6 +223,24 @@ function isTransientUpstreamError(text: string): boolean {
   return (
     UPSTREAM_ERROR_PATTERN.test(text) &&
     UPSTREAM_TRANSIENT_MARKERS.some((pattern) => pattern.test(text))
+  );
+}
+
+/** True for gateway backpressure wording without a deterministic 4xx. */
+function isTransientBackpressureError(
+  text: string,
+  statusCode: number | undefined,
+): boolean {
+  const deterministic4xx =
+    (statusCode !== undefined &&
+      statusCode >= 400 &&
+      statusCode < 500 &&
+      statusCode !== 408 &&
+      statusCode !== 429) ||
+    DETERMINISTIC_4XX_PATTERN.test(text);
+  return (
+    !deterministic4xx &&
+    GATEWAY_BACKPRESSURE_PATTERNS.some((pattern) => pattern.test(text))
   );
 }
 
@@ -314,7 +338,12 @@ function failoverScope(error: unknown): 'provider' | 'request' | undefined {
   // (a 400-bodied validation failure, a policy rejection) in the same
   // wording. Only treat it as failover with transient context in the
   // same message.
-  if (isTransientUpstreamError(text)) return 'provider';
+  if (
+    isTransientUpstreamError(text) ||
+    isTransientBackpressureError(text, statusCode)
+  ) {
+    return 'provider';
+  }
   if (!isRecord(error)) return undefined;
   if (
     (statusCode !== undefined && PROVIDER_STATUS_CODES.has(statusCode)) ||

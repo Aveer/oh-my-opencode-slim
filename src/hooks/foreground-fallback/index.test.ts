@@ -7753,3 +7753,19 @@ describe('ForegroundFallbackManager dispose', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('ForegroundFallbackManager same-model retry classification', () => {
+  test('backpressure wording with a deterministic 4xx stays a hard error', () => {
+    const message = 'Streaming response failed: [400] invalid request';
+    expect(isFailoverError(message)).toBe(false);
+    expect(isFailoverError({ message })).toBe(false);
+    expect(
+      isFailoverError({
+        statusCode: 400,
+        message: 'streaming response failed',
+      }),
+    ).toBe(false);
+    // 429 is transient backpressure, not a deterministic rejection.
+    expect(isFailoverError('request queue is full (429)')).toBe(true);
+  });
+});
