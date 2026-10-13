@@ -196,6 +196,36 @@ const REQUEST_ERROR_PATTERNS = [
   /\brequest queue is full\b/i,
   /\bworker local total request limit reached\b/i,
 ];
+// "upstream error" alone is ambiguous: proxies wrap deterministic 4xx (a
+// 400-bodied validation failure, a policy rejection) in the same wording.
+// Only treat it as transient when the same message carries a 5xx status,
+// an outage marker, or a timeout/unavailable marker.
+const UPSTREAM_ERROR_PATTERN = /\bupstream error\b/i;
+const UPSTREAM_TRANSIENT_MARKERS = [
+  /\b5\d\d\b/,
+  /time.?out/i,
+  /timed out/i,
+  /\bunavailable\b/i,
+  /\boverload/i,
+  /\btry again\b/i,
+  /\brate.?limit\b/i,
+  /\b429\b/,
+];
+
+/** True when the text reports an "upstream error" with transient context. */
+function isTransientUpstreamError(text: string): boolean {
+  return (
+    UPSTREAM_ERROR_PATTERN.test(text) &&
+    UPSTREAM_TRANSIENT_MARKERS.some((pattern) => pattern.test(text))
+  );
+}
+
+/** True when a promptAsync rejection proves the session is busy (the only
+ *  rejection that justifies aborting and re-sending the replay). */
+function isBusyRefusalError(error: unknown): boolean {
+  return /\bbusy\b/i.test(stringifyError(error));
+}
+
 const CONTENT_FILTER_ERROR = {
   name: 'ContentFilterError',
   message: "The response was blocked by the provider's content filter",
@@ -280,6 +310,11 @@ function failoverScope(error: unknown): 'provider' | 'request' | undefined {
   ) {
     return 'provider';
   }
+  // "upstream error" alone is ambiguous: proxies wrap deterministic 4xx
+  // (a 400-bodied validation failure, a policy rejection) in the same
+  // wording. Only treat it as failover with transient context in the
+  // same message.
+  if (isTransientUpstreamError(text)) return 'provider';
   if (!isRecord(error)) return undefined;
   if (
     (statusCode !== undefined && PROVIDER_STATUS_CODES.has(statusCode)) ||
@@ -432,12 +467,12 @@ export class ForegroundFallbackManager {
    *  observed for that session. */
   private readonly disabledAgents = new Set<string>();
 
-    /** True when the agent's chain was explicitly disabled. Unknown agents
-     * (never observed, never configured) are NOT disabled — failing open
-     * preserves recovery where no owner claimed the session. */
-    private isChainExplicitlyDisabled(agentName: string | undefined): boolean {
-        return agentName !== undefined && this.disabledAgents.has(agentName);
-    }
+  /** True when the agent's chain was explicitly disabled. Unknown agents
+   * (never observed, never configured) are NOT disabled — failing open
+   * preserves recovery where no owner claimed the session. */
+  private isChainExplicitlyDisabled(agentName: string | undefined): boolean {
+    return agentName !== undefined && this.disabledAgents.has(agentName);
+  }
   /** child sessionID → parent sessionID (from session.created info).
    *  Lets the fallback abort path promote a foreground task() waiter to
    *  background first, so the waiting tool resolves via backgroundResult
@@ -582,13 +617,16 @@ export class ForegroundFallbackManager {
     if (this.inProgress.has(sessionID)) return true;
     if ((this.chainExhaustion.get(sessionID) ?? 0) >= 2) return false;
     if (this.deterministicTerminal.has(sessionID)) return false;
+    // Chain check BEFORE the child exclusion: chained background children
+    // still recover via their chain; the exclusion only stops the
+    // foreground-only same-model retry below.
+    if (this.hasFallbackChain(sessionID)) return true;
     if (
       this.sessionParent.has(sessionID) ||
       this.readBackgroundGeneration?.(sessionID) !== undefined
     ) {
       return false;
     }
-    if (this.hasFallbackChain(sessionID)) return true;
     return (
       (this.sessionRetries.get(sessionID) ?? 0) < this.maxRetries &&
       this.sessionModel.get(sessionID) !== undefined &&
@@ -1630,6 +1668,15 @@ export class ForegroundFallbackManager {
    *  The counter is shared: host-retry absorbs and same-model replay
    *  charges draw from the same sessionRetries budget. */
   private absorbHostRetry(sessionID: string): boolean {
+    // No-chain sessions only absorb to fund a same-model replay; once the
+    // session is terminal or this failure episode already charged the
+    // shared budget, the absorb must not charge again.
+    if (
+      !this.hasFallbackChain(sessionID) &&
+      this.skipNoChainAbsorbCharge(sessionID)
+    ) {
+      return false;
+    }
     const tried = this.sessionRetries.get(sessionID) ?? 0;
     if (tried < this.maxRetries) {
       this.sessionRetries.set(sessionID, tried + 1);
@@ -1892,11 +1939,12 @@ export class ForegroundFallbackManager {
           if (opts.charged) this.refundSessionRetry(sessionID, opts.epoch);
           return false;
         }
-        if (lastChance || isV2Host) {
-          // Exhausted admissions, or a v2 host: a rejected v2 replay is
-          // final — an abort cannot make the admission succeed and may
-          // kill a promoted background job. Log and stop; never let the
-          // re-send escape through try/finally-only callers.
+        if (lastChance || isV2Host || !isBusyRefusalError(promptErr)) {
+          // Exhausted admissions, an unproven-busy rejection, or a v2
+          // host: a rejected v2 replay is final, and only a proven busy
+          // refusal justifies aborting and re-sending. Log and stop;
+          // never let the re-send escape through try/finally-only
+          // callers.
           log('[foreground-fallback] same-model re-prompt failed', {
             sessionID,
             error: stringifyError(promptErr),
