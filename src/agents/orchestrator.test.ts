@@ -307,20 +307,15 @@ describe('v2 slim prompt (buildOrchestratorPromptV2)', () => {
     expect(disabled).not.toBe(enabled);
   });
 
-  test('waitForUser disabled swaps the manual-wait line for the question boundary', () => {
+  test('waitForUser flag no longer changes v2 bytes (question is the single blocking boundary)', () => {
     const enabled = buildOrchestratorPromptV2();
     const disabled = buildOrchestratorPromptV2(undefined, undefined, false);
 
+    expect(disabled).toBe(enabled);
     expect(enabled).toContain(
-      'call `wait_for_user` as the final action, and end the turn',
-    );
-    expect(enabled).not.toContain('`wait_for_user` is disabled');
-    expect(disabled).toContain(
       'use the `question` tool as the blocking boundary',
     );
-    expect(disabled).toContain('`wait_for_user` is disabled');
-    expect(disabled).not.toContain('call `wait_for_user` as the final action');
-    expect(disabled).not.toBe(enabled);
+    expect(enabled).not.toContain('wait_for_user');
   });
 
   test('disabledAgents and excludeDescriptions filter routing lines', () => {
@@ -346,11 +341,11 @@ describe('v2 slim prompt (buildOrchestratorPromptV2)', () => {
     ).toBe(buildOrchestratorPromptV2(new Set(['explorer']), undefined, false));
   });
 
-  test('v2 render is snapshot-pinned (all-default and waitForUser off)', () => {
+  test('v2 render is snapshot-pinned (waitForUser flag is byte-inert)', () => {
     expect(buildOrchestratorPromptV2()).toMatchSnapshot();
-    expect(
-      buildOrchestratorPromptV2(undefined, undefined, false),
-    ).toMatchSnapshot();
+    expect(buildOrchestratorPromptV2(undefined, undefined, false)).toBe(
+      buildOrchestratorPromptV2(),
+    );
   });
 });
 

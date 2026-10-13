@@ -12,7 +12,10 @@ import { pluginDisposedMessage } from '../hooks/task-session-manager/session-rec
 import type { BackgroundJobStore } from '../utils/background-job-store';
 import { getClient } from '../utils/opencode-client';
 import { OperationTimeoutError, withTimeout } from '../utils/session';
-import { delegationWording } from '../v2/delegation';
+import {
+  delegationWording,
+  TASK_REPLY_PERMISSION_ONLY_DESCRIPTION,
+} from '../v2/delegation';
 import {
   type CanonicalTaskResolver,
   idParamFor,
@@ -123,7 +126,9 @@ export function createTaskReplyTool(options: {
   }
   const task_reply = tool({
     description:
-      'Reply to a tracked child request by task ID/alias and request ID.',
+      hostFlavor === 'v2'
+        ? TASK_REPLY_PERMISSION_ONLY_DESCRIPTION
+        : 'Answer a background child ask (question/permission requests) by task ID/alias and request ID.',
     args: replyArgs,
     async execute(args, toolContext) {
       const parentSessionID = toolContext?.sessionID;

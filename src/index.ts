@@ -1505,6 +1505,11 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         backgroundJobCoordinator.hasRunning(sessionID),
     });
 
+    // v2 hosts skip wait_for_user: the native `question` tool covers the
+    // blocking boundary there. v1 has no question tool and keeps the
+    // registration unchanged; the generic disabled_tools filter below
+    // still removes it on either flavor when listed.
+    const shouldRegisterWaitForUser = hostFlavor !== 'v2';
     const shouldRegisterWebfetch = runtime.webfetch.enabled !== false;
     const shouldRegisterInterview = !runtime.disabledCommands.has('interview');
     const interviewTools = shouldRegisterInterview
@@ -1520,7 +1525,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       ...taskResultTools,
       ...taskReviveTools,
       ...taskStatusTools,
-      ...waitForUserTools,
+      ...(shouldRegisterWaitForUser ? waitForUserTools : {}),
       ...interviewTools,
       ...acpRunTools,
       ...(shouldRegisterWebfetch ? { webfetch } : {}),
@@ -1566,6 +1571,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
   const toolThreshold = minimumExpectedToolCount(
     runtime.disabledTools,
     runtime.webfetch.enabled !== false,
+    hostFlavor !== 'v2',
   );
   if (
     agentCount < HEALTH_CHECK.minAgents ||
