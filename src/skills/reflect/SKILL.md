@@ -35,20 +35,59 @@ repeated patterns, friction, and improvement opportunities.
 
 ### Session Discovery
 
-1. **Load recent sessions** - Query the SQLite database directly:
-   ```bash
-   bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT 50').all())"
+1. **Detect the schema, then load recent sessions.** OpenCode v2 keeps live
+   data in `session_v2` + `session_message`; legacy v1 databases keep `session`
+   + `message` (on v2 hosts those may still exist but are empty leftovers).
+   Detect by probing `session_v2` in `sqlite_master` and select the pair
+   together — never per-table: `session_message` can exist on v1 hosts holding
+   only metadata rows.
+
+   Write the probe below to a temp file (for example `/tmp/reflect-sessions.mjs`)
+   and run `bun /tmp/reflect-sessions.mjs`. Do not inline it with `bun -e "…"`:
+   nested quotes get mangled by PowerShell on Windows; a temp script runs
+   unchanged on Windows, Linux, and macOS.
+
+   ```js
+   import Database from 'bun:sqlite';
+   import { homedir } from 'os';
+   const db = new Database(`${homedir()}/.local/share/opencode/opencode.db`, { readonly: true });
+   const isV2 = !!db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_v2'").get();
+   const LIMIT = 50; // set to the --last N value when specified
+   let sessions;
+   if (isV2) {
+     const projects = db.query('SELECT id FROM project WHERE worktree LIKE ?').all('%<repo-name>%');
+     const marks = projects.map(() => '?').join(',');
+     sessions = db.query(
+       `SELECT id, project_id, title, agent, model, time_created, time_updated, cost, tokens_input, tokens_output, time_archived FROM session_v2 WHERE project_id IN (${marks}) ORDER BY time_created DESC LIMIT ${LIMIT}`
+     ).all(...projects.map((p) => p.id));
+   } else {
+     sessions = db.query(
+       `SELECT id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT ${LIMIT}`
+     ).all();
+   }
+   console.log(sessions);
    ```
-   Adjust `LIMIT 50` to `--last N` if specified.
 
-   **Session table columns:** `id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output`
+   Timestamps are epoch **milliseconds**. On v2, a non-null `time_archived`
+   means the session was archived inside OpenCode.
 
-2. **Load session messages** - For each session ID, query the message table:
-   ```bash
-   bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT data FROM message WHERE session_id = ?').all('<session_id>'))"
+2. **Load session messages** - for each session ID, query the matching message
+   table and parse `data`:
+
+   ```js
+   const rows = isV2
+     ? db.prepare('SELECT type, seq, data FROM session_message WHERE session_id = ? ORDER BY seq').all('<session_id>')
+     : db.prepare('SELECT data FROM message WHERE session_id = ?').all('<session_id>');
    ```
 
-   **Message table columns:** `id, session_id, time_created, time_updated, data` (data is JSON with role, agent, model, summary, etc.)
+   v2 rows carry a `type` column — parse `data` JSON by it:
+   - `user` → `data.text`
+   - `assistant` → join `data.content[]` entries where `entry.type === 'text'` (use `.text`)
+   - `summary` → `data.summary` (compaction summaries; useful for reconstructing goals)
+   - tool / reasoning types → skip
+
+   v1 rows have no `type` column — `data` is JSON with `role`, `agent`,
+   `model`, `summary`, etc.
 
 ### Per-Session Analysis
 
