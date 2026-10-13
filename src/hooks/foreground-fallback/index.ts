@@ -12,8 +12,9 @@
  *      with the new model - promptAsync returns immediately so we never
  *      block the event handler waiting for a full LLM response.
  *
- * Spent-allowance errors (issue #966) surface to the user instead of
- * failing over — switching models cannot recover exhausted quota.
+ * Spent-allowance errors (issue #966) mark the failing provider exhausted
+ * for the descent: failover skips that provider's remaining chain entries,
+ * and the error surfaces to the user once no other provider remains.
  *
  * This mirrors the same fallback loop used for delegated sessions, but operates
  * reactively through the event system instead of wrapping prompt() in a
@@ -71,9 +72,8 @@ const PROVIDER_ERROR_PATTERNS = [
   /\b429\b/,
   /rate.?limit/i,
   /too many requests/i,
-  // NOTE: `quota/usage exceeded` are vetoed by isSurfaceQuotaError (issue
-  // #966) before failoverScope reaches these patterns; they stay here so
-  // short-horizon retry phrasing still fails over.
+  // NOTE: spent-allowance wording (isSpentQuotaError, issue #966) still
+  // fails over, but excludes the failing provider for the descent.
   /quota.?exceeded/i,
   /\bquota\b.*\bexhausted/i,
   /quota.?threshold/i,
@@ -109,18 +109,18 @@ const PROVIDER_ERROR_PATTERNS = [
   ...QUOTA_BILLING_PATTERNS,
 ];
 
-// Spent allowance surfaces (issue #966): waiting or switching models cannot
-// recover, so surface to the user — fail over only when the same carrier
-// carries short-horizon retry phrasing.
-const SURFACE_QUOTA_PATTERNS = [
+// Spent allowance (issue #966): waiting on this provider cannot recover, so
+// the provider is skipped for the descent — unless the same carrier carries
+// short-horizon retry phrasing.
+const SPENT_QUOTA_PATTERNS = [
   /quota.?exceeded/i,
   /usage.?exceeded/i,
   /usage.?limit has been reached/i,
   /usage.?limit reached/i,
 ];
 
-// Short-horizon retry phrasing: the quota may reset soon, so fail over.
-// Excludes bare "Resets in X days/min" (issue #966 stays surfaced).
+// Short-horizon retry phrasing: the quota may reset soon, so the normal
+// failover applies. Excludes bare "Resets in X days/min" (issue #966).
 const SHORT_HORIZON_RETRY_PATTERN =
   /retry (after|in)|resets? (after|at)|will reset at|try again|per minute|per day|\btpm\b|\brpm\b/i;
 
@@ -272,18 +272,18 @@ function failoverCarriers(err: Record<string, unknown>): string[] {
 }
 
 /**
- * Spent-allowance veto (issue #966): an error carrying spent-quota wording
- * surfaces to the user instead of failing over — unless the same carrier
- * carries short-horizon retry phrasing, in which case the provider checks in
- * failoverScope still apply. Free-tier plan exhaustion is exempt: upstream
- * routes it as permanent billing (immediate failover, budget skip).
+ * Spent allowance (issue #966): spent-quota wording without short-horizon
+ * retry phrasing in the same carrier. The manager excludes the failing
+ * provider for the rest of the descent and surfaces the error once no chain
+ * entry on another provider remains. Free-tier plan exhaustion is exempt:
+ * upstream routes it as permanent billing (immediate failover, budget skip).
  */
 const FREE_TIER_BILLING_PATTERN = /free usage exceeded|subscribe to go/i;
 
-function isSurfaceQuotaError(error: unknown): boolean {
+export function isSpentQuotaError(error: unknown): boolean {
   if (typeof error === 'string') {
     return (
-      SURFACE_QUOTA_PATTERNS.some((pattern) => pattern.test(error)) &&
+      SPENT_QUOTA_PATTERNS.some((pattern) => pattern.test(error)) &&
       !SHORT_HORIZON_RETRY_PATTERN.test(error) &&
       !FREE_TIER_BILLING_PATTERN.test(error)
     );
@@ -291,7 +291,7 @@ function isSurfaceQuotaError(error: unknown): boolean {
   if (!isRecord(error)) return false;
   return failoverCarriers(error).some(
     (carrier) =>
-      SURFACE_QUOTA_PATTERNS.some((pattern) => pattern.test(carrier)) &&
+      SPENT_QUOTA_PATTERNS.some((pattern) => pattern.test(carrier)) &&
       !SHORT_HORIZON_RETRY_PATTERN.test(carrier) &&
       !FREE_TIER_BILLING_PATTERN.test(carrier),
   );
@@ -323,11 +323,6 @@ function failoverScope(error: unknown): 'provider' | 'request' | undefined {
   ) {
     return 'request';
   }
-  // Spent allowance surfaces (issue #966): switching models cannot recover
-  // exhausted quota, so leave the error to the host instead of failing over.
-  // Short-horizon retry phrasing in the same carrier still falls through to
-  // the provider checks below.
-  if (isSurfaceQuotaError(error)) return undefined;
   if (
     PROVIDER_ERROR_PATTERNS.some((pattern) => pattern.test(text)) ||
     PROVIDER_OUTAGE_PATTERNS.some((pattern) => pattern.test(text)) ||
@@ -362,14 +357,13 @@ const PERMANENT_QUOTA_BILLING_PATTERNS = [
   /\bfree usage exceeded\b/i,
   /\bsubscribe to go\b/i,
   /\b(?:1113|1308|1309|1310)\b/,
-  // Spent-allowance wording stays out: pure-surface errors never fail over,
-  // and short-horizon quota errors keep the configured initial delay.
+  // Spent-allowance wording stays out: it keeps the configured initial
+  // delay (a recovery window for intercepting plugins).
 ];
 
 /**
  * Permanent exhaustion skips the initial delay and fails over immediately.
- * Spent-allowance wording is excluded: pure-surface errors never fail over,
- * and short-horizon quota errors keep the configured initial delay.
+ * Spent-allowance wording is excluded and keeps the configured initial delay.
  */
 export function isPermanentQuotaBillingError(error: unknown): boolean {
   if (extractStatusCode(error) === 402) return true;
@@ -489,6 +483,12 @@ export class ForegroundFallbackManager {
   private readonly sessionParent = new Map<string, string>();
   /** sessionID → set of models already attempted this session */
   private readonly sessionTried = new Map<string, Set<string>>();
+  /** sessionID → providers whose allowance is spent (issue #966). The chain
+   *  walk skips them; once every chain provider is listed the error
+   *  surfaces. Holds at most the providers seen failing, and re-arms with
+   *  the retry budget (external turn, recovery, return to primary). A
+   *  switch still records the provider in activeFallback.downProviders. */
+  private readonly quotaExhaustedProviders = new Map<string, Set<string>>();
   /** Process-local sessions with an active fallback switch in flight. */
   private readonly inProgress = getProcessFallbacksInProgress();
   /** One-shot v2 retry-hook delivery notices, keyed by sessionID and the
@@ -700,6 +700,7 @@ export class ForegroundFallbackManager {
     this.lastFallbackTime.delete(sessionID);
     this.initialDelayUsed.delete(sessionID);
     this.sessionRetries.delete(sessionID);
+    this.quotaExhaustedProviders.delete(sessionID);
     this.unknownFinishStreak.delete(sessionID);
     this.retryAttempt.delete(sessionID);
     this.v2RetryNotices.delete(sessionID);
@@ -979,6 +980,7 @@ export class ForegroundFallbackManager {
         this.retryAttempt.delete(id);
         this.sessionRetries.delete(id);
         this.chainExhaustion.delete(id);
+        this.quotaExhaustedProviders.delete(id);
         this.lastFallbackTime.delete(id);
         this.initialDelayUsed.delete(id);
         // Cancel any pending initial delay
@@ -1209,7 +1211,12 @@ export class ForegroundFallbackManager {
           : info.finish === 'content-filter' && !isFailoverError(info.error)
             ? CONTENT_FILTER_ERROR
             : info.error;
-        if (this.enabled && messageError && isFailoverError(messageError)) {
+        if (
+          this.enabled &&
+          messageError &&
+          isFailoverError(messageError) &&
+          !this.surfacesSpentQuota(sessionID, messageError)
+        ) {
           const incidentID = this.incidentForMessageError(
             sessionID,
             messageID,
@@ -1236,11 +1243,6 @@ export class ForegroundFallbackManager {
               await this.tryFallback(sessionID, messageError, incidentID);
             }
           }
-        } else if (messageError && isSurfaceQuotaError(messageError)) {
-          // Spent-quota veto (greptile P1 on #1551): the surfaced error
-          // supersedes any queued initial fallback — cancel it, or the
-          // pending timer replays over the surfaced error.
-          this.cancelInitialDelay(sessionID);
         } else if (
           !isV2Host &&
           isCompletedSuccessfulAssistant &&
@@ -1277,13 +1279,13 @@ export class ForegroundFallbackManager {
           | undefined;
         if (!props) break;
         const sessionID = eventSessionID(props);
-        if (!this.enabled || !sessionID || !props.error) break;
-        if (!isFailoverError(props.error)) {
-          // Spent-quota veto (greptile P1 on #1551): cancel any queued
-          // initial fallback so it cannot replay over the surfaced error.
-          if (isSurfaceQuotaError(props.error)) {
-            this.cancelInitialDelay(sessionID);
-          }
+        if (
+          !this.enabled ||
+          !sessionID ||
+          !props.error ||
+          !isFailoverError(props.error) ||
+          this.surfacesSpentQuota(sessionID, props.error)
+        ) {
           break;
         }
         const incidentID = this.incidentForSessionError(
@@ -1324,22 +1326,6 @@ export class ForegroundFallbackManager {
           (isFailoverError(props.error) ||
             (props.status.message !== undefined &&
               isFailoverError({ message: props.status.message })));
-        if (
-          !isFailoverRetry &&
-          this.enabled &&
-          props.status?.type === 'retry'
-        ) {
-          // Spent-quota veto (greptile P1 on #1551): cancel any queued
-          // initial fallback so it cannot replay over the surfaced retry.
-          const signal =
-            props.error ??
-            (props.status.message !== undefined
-              ? { message: props.status.message }
-              : undefined);
-          if (signal !== undefined && isSurfaceQuotaError(signal)) {
-            this.cancelInitialDelay(sessionID);
-          }
-        }
         if (isFailoverRetry && this.enabled) {
           // Guard: stale retry event from a previous model's retry loop.
           // After a fallback, lastTriggerModel holds the OLD model (set by
@@ -1372,12 +1358,15 @@ export class ForegroundFallbackManager {
           const retryError = props.error ?? {
             message: props.status?.message ?? '',
           };
-          // Permanent quota/billing exhaustion never recovers by waiting on
-          // this model — skip the host-retry budget and fall back at once.
-          // Otherwise (attempt === 1, or model didn't change, or outside
-          // dedup window): process as genuine retry for current model.
+          if (this.surfacesSpentQuota(sessionID, retryError)) break;
+          // Permanent quota/billing exhaustion and spent allowance never
+          // recover by host retries on this provider — skip the host-retry
+          // budget and fall back at once. Otherwise (attempt === 1, or model
+          // didn't change, or outside dedup window): process as genuine
+          // retry for current model.
           if (
             !isPermanentQuotaBillingError(retryError) &&
+            !isSpentQuotaError(retryError) &&
             this.absorbHostRetry(sessionID)
           ) {
             this.recordRetryAttempt(sessionID, attempt);
@@ -1516,14 +1505,7 @@ export class ForegroundFallbackManager {
         this.inProgress.has(sessionID)
       )
         return;
-      if (!failover) {
-        // Spent-quota veto (greptile P1 on #1551): a queued replay
-        // fallback is stale once the surface error arrives — cancel it.
-        if (isSurfaceQuotaError(event.error)) {
-          this.cancelInitialDelay(sessionID);
-        }
-        return;
-      }
+      if (!failover) return;
       // initialRetryDelayMs has no steering form: the delay exists to give
       // intercepting plugins a recovery window before a REPLAY, and
       // steering performs no replay — the host's own retry backoff is
@@ -1548,17 +1530,21 @@ export class ForegroundFallbackManager {
         return;
       if (event.agent) this.registerSessionAgent(sessionID, event.agent);
       this.sessionModel.set(sessionID, from);
+      // Spent allowance on every chain provider: leave the host decision.
+      if (this.surfacesSpentQuota(sessionID, event.error, from)) return;
       if (event.decision?.retry === true) {
         this.rearmIfFreshDescent(sessionID);
-        // Permanent quota/billing exhaustion never recovers by waiting on
-        // this model — skip the host-retry budget and steer at once.
+        // Permanent quota/billing exhaustion and spent allowance never
+        // recover by host retries on this provider — skip the host-retry
+        // budget and steer at once.
         if (
           !isPermanentQuotaBillingError(event.error) &&
+          !isSpentQuotaError(event.error) &&
           this.absorbHostRetry(sessionID)
         )
           return;
       }
-      const selected = this.selectFallbackModel(sessionID);
+      const selected = this.selectFallbackModel(sessionID, event.error);
       if (!selected || selected === 'exhausted') return;
       const { agentName, nextModel, ref, variant } = selected;
       picked = nextModel;
@@ -1654,7 +1640,59 @@ export class ForegroundFallbackManager {
     this.initialDelayUsed.delete(sessionID);
     this.v2RetryNotices.delete(sessionID);
     this.sessionTried.delete(sessionID);
+    this.quotaExhaustedProviders.delete(sessionID);
     this.cancelInitialDelay(sessionID);
+  }
+
+  /** Record a spent allowance (issue #966) against the failing model's
+   *  provider. Other errors leave the record untouched. */
+  private markQuotaExhausted(
+    sessionID: string,
+    model: string | undefined,
+    error: unknown,
+  ): ReadonlySet<string> | undefined {
+    const provider = model ? parseModelReference(model)?.providerID : undefined;
+    if (provider && isSpentQuotaError(error)) {
+      let exhausted = this.quotaExhaustedProviders.get(sessionID);
+      if (!exhausted) {
+        exhausted = new Set();
+        this.quotaExhaustedProviders.set(sessionID, exhausted);
+      }
+      exhausted.add(provider);
+    }
+    return this.quotaExhaustedProviders.get(sessionID);
+  }
+
+  /** Spent allowance (issue #966): mark the failing provider and report
+   *  whether the error must surface because no chain entry remains on a
+   *  provider with allowance left. Surfacing performs no failover and no
+   *  abort, and cancels any queued initial fallback. */
+  private surfacesSpentQuota(
+    sessionID: string,
+    error: unknown,
+    model = this.sessionModel.get(sessionID),
+  ): boolean {
+    if (!isSpentQuotaError(error)) return false;
+    const { chain } = this.resolveChain(
+      this.sessionAgent.get(sessionID),
+      model,
+    );
+    const failing = model ?? chain[0];
+    const exhausted = this.markQuotaExhausted(sessionID, failing, error);
+    const viable = chain.some(
+      (entry) => !exhausted?.has(parseModelReference(entry)?.providerID ?? ''),
+    );
+    if (viable) return false;
+    this.cancelInitialDelay(sessionID);
+    log(
+      '[foreground-fallback] spent quota on every chain provider; surfacing',
+      {
+        sessionID,
+        model: failing,
+        exhausted: [...(exhausted ?? [])].sort(),
+      },
+    );
+    return true;
   }
 
   private bypassInitialFallbackDelay(
@@ -1931,14 +1969,24 @@ export class ForegroundFallbackManager {
       configuredChain?.[0] ??
       this.resolveChain(agentName, observedModel).chain[0];
     if (observedModel !== rearmHead) return;
+    // A head whose allowance is spent (issue #966) is not a recovery: the
+    // descent continues, so replays landing on it cannot reopen the chain.
+    // A new external turn or a successful response re-arms it instead.
+    const headProvider = parseModelReference(observedModel)?.providerID;
+    if (
+      headProvider &&
+      this.quotaExhaustedProviders.get(sessionID)?.has(headProvider)
+    )
+      return;
     this.sessionTried.set(sessionID, new Set());
+    this.quotaExhaustedProviders.delete(sessionID);
     this.sessionRetries.delete(sessionID);
     this.chainExhaustion.delete(sessionID);
     this.retryAttempt.delete(sessionID);
     this.initialDelayUsed.delete(sessionID);
   }
 
-  private selectFallbackModel(sessionID: string) {
+  private selectFallbackModel(sessionID: string, error?: unknown) {
     const observedModel = this.sessionModel.get(sessionID);
     let currentModel = observedModel;
     const agentName = this.sessionAgent.get(sessionID);
@@ -1972,6 +2020,14 @@ export class ForegroundFallbackManager {
     const exhaustion = this.chainExhaustion.get(sessionID) ?? 0;
     if (exhaustion === 2) return;
     if (currentModel) tried.add(currentModel);
+    // Re-mark after a re-arm above: the failing provider stays excluded.
+    const quotaExhausted = this.markQuotaExhausted(
+      sessionID,
+      currentModel,
+      error,
+    );
+    const hasAllowance = (model: string) =>
+      !quotaExhausted?.has(parseModelReference(model)?.providerID ?? '');
 
     const downProviders = this.activeFallback.get(sessionID)?.downProviders;
     const parentID = this.sessionParent.get(sessionID);
@@ -1986,6 +2042,7 @@ export class ForegroundFallbackManager {
           const provider = parseModelReference(model)?.providerID ?? '';
           return (
             !tried.has(model) &&
+            hasAllowance(model) &&
             !downProviders?.has(provider) &&
             !parentDownProviders?.has(provider)
           );
@@ -1994,8 +2051,23 @@ export class ForegroundFallbackManager {
       if (chain.length > 1) {
         // Retry the last chain entry once, ignoring provider exclusions but
         // retaining tried models. If that sticky retry fails, abort once and
-        // stop intervening instead of reopening the chain.
-        const stickyFallback = chain[chain.length - 1];
+        // stop intervening instead of reopening the chain. A spent allowance
+        // (issue #966) is never retried: with no entry left on another
+        // provider the error surfaces without an abort.
+        const stickyFallback = chain.findLast(hasAllowance);
+        if (stickyFallback === undefined) {
+          this.cancelInitialDelay(sessionID);
+          log(
+            '[foreground-fallback] spent quota on every chain provider; surfacing',
+            {
+              sessionID,
+              agentName,
+              currentModel,
+              exhausted: [...(quotaExhausted ?? [])].sort(),
+            },
+          );
+          return;
+        }
         if (exhaustion >= 1) {
           this.chainExhaustion.set(sessionID, 2);
           log('[foreground-fallback] chain exhausted after re-fallback', {
@@ -2057,7 +2129,7 @@ export class ForegroundFallbackManager {
     if (!this.isCurrentTurn(sessionID, expectedEpoch)) return;
     const session = getClient(this.input).session;
     try {
-      const selection = this.selectFallbackModel(sessionID);
+      const selection = this.selectFallbackModel(sessionID, error);
       if (!selection) return;
       if (selection === 'exhausted') {
         // Same withhold as the retry and busy paths: the merged chain
