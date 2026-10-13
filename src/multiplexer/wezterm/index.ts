@@ -293,9 +293,16 @@ export class WeztermMultiplexer implements Multiplexer {
     const closed = await gracefulClosePane(wezterm, paneId, {
       ctrlC: cliArgs(['send-text', '--pane-id', paneId, '--no-paste', '\x03']),
       close: cliArgs(['kill-pane', '--pane-id', paneId]),
-      acceptExitCode1: true,
+      // `kill-pane` also exits 1 on transport/protocol errors while the pane
+      // still exists, so only WezTerm's missing-pane error counts as closed.
+      isAlreadyClosed: (stderr) => isPaneMissing(stderr, paneId),
       emptyPaneReturnsTrue: true,
     });
+    if (!closed) {
+      log('[wezterm] closePane: kill-pane failed; keeping the pane tracked', {
+        paneId,
+      });
+    }
     if (closed && paneId === this.agentAreaPaneId) {
       this.agentAreaPaneId = null;
     }
@@ -449,6 +456,11 @@ export class WeztermMultiplexer implements Multiplexer {
     const paneId = process.env.WEZTERM_PANE?.trim();
     return paneId ? paneId : null;
   }
+}
+
+/** WezTerm's server-side error when the pane being closed no longer exists. */
+function isPaneMissing(stderr: string, paneId: string): boolean {
+  return new RegExp(`no such pane ${paneId}\\b`).test(stderr);
 }
 
 /** `wezterm cli` argv; never auto-start a mux server from a stale socket. */
