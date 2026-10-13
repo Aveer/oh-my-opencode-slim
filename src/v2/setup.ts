@@ -1928,6 +1928,9 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
     // First logged line: identify the build that produced every following
     // log entry (logging-only — build info never enters prompt payloads).
     log('[v2] build info', getBuildInfo());
+    // The v1 factory returns an empty hook object when disabled. Stop here
+    // instead of continuing through v2 bridge setup, which requires the
+    // registry bridge that only an enabled factory creates.
     if (isPluginDisabledByEnv()) {
       log('[v2] setup skipped: disabled by OH_MY_OPENCODE_SLIM_DISABLE');
       return async () => {};
