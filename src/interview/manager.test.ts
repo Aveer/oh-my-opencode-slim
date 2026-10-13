@@ -199,10 +199,10 @@ describe('interview manager - per-session mode', () => {
           },
           { parts: [] },
         );
-        await manager.dispose();
-        await manager.dispose();
+        expect(manager.dispose()).toBeUndefined();
+        expect(manager.dispose()).toBeUndefined();
       } finally {
-        await fs.rm(tempDir, { recursive: true, force: true });
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       }
     });
 

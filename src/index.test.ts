@@ -10,6 +10,7 @@ import {
 } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import * as os from 'node:os';
 import path from 'node:path';
 import type { RegistryFactoryBridge } from './agents/registry-bridge';
 import {
@@ -144,25 +145,40 @@ describe('plugin env disable', () => {
 });
 
 describe('plugin tool registration', () => {
-  let originalEnv: typeof process.env;
+  const ENV_KEYS = [
+    'OH_MY_OPENCODE_SLIM_DISABLE',
+    'OPENCODE_CONFIG_DIR',
+    'XDG_CONFIG_HOME',
+    'XDG_DATA_HOME',
+    'XDG_CACHE_HOME',
+    'OPENCODE_LOG_DIR',
+  ] as const;
+  const originalEnv: Partial<
+    Record<(typeof ENV_KEYS)[number], string | undefined>
+  > = {};
 
   beforeEach(() => {
-    originalEnv = { ...process.env };
+    for (const key of ENV_KEYS) {
+      originalEnv[key] = process.env[key];
+    }
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
-    process.env.OPENCODE_CONFIG_DIR =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-config';
-    process.env.XDG_CONFIG_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-xdg';
-    process.env.XDG_DATA_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-data';
-    process.env.XDG_CACHE_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-cache';
-    process.env.OPENCODE_LOG_DIR =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-logs';
+    const base = path.join(os.tmpdir(), 'oh-my-opencode-slim-hitl-empty');
+    process.env.OPENCODE_CONFIG_DIR = `${base}-config`;
+    process.env.XDG_CONFIG_HOME = `${base}-xdg`;
+    process.env.XDG_DATA_HOME = `${base}-data`;
+    process.env.XDG_CACHE_HOME = `${base}-cache`;
+    process.env.OPENCODE_LOG_DIR = `${base}-logs`;
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    for (const key of ENV_KEYS) {
+      const orig = originalEnv[key];
+      if (orig === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = orig;
+      }
+    }
   });
 
   test('registers wait_for_user and recovers a stale orchestrator session mapping', async () => {
@@ -5672,7 +5688,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
         agent: 'fixer',
         background: true,
       });
-      gcCallbackOf(coordinator)?.(evicted());
+      const callback1 = gcCallbackOf(coordinator);
+      expect(typeof callback1).toBe('function');
+      callback1?.(evicted());
       await pendingSessionPrune('ses_gc_child');
       expect(remove).not.toHaveBeenCalled();
     } finally {
@@ -5685,7 +5703,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
     // missing method — the shim's capability-probed degradation shape.
     const { hooks, coordinator } = await createHooksWithBoard();
     try {
-      expect(() => gcCallbackOf(coordinator)?.(evicted())).not.toThrow();
+      const callback2 = gcCallbackOf(coordinator);
+      expect(typeof callback2).toBe('function');
+      expect(() => callback2?.(evicted())).not.toThrow();
     } finally {
       await hooks.dispose?.();
     }

@@ -29,14 +29,21 @@ async function loadPlugin(
   options: LoadPluginOptions = {},
 ) {
   const projectDir = await mkdtemp(join(tmpdir(), 'omo-lifecycle-fence-'));
-  const previous = { ...process.env };
-  process.env = {
-    ...previous,
-    OPENCODE_CONFIG_DIR: projectDir,
-    XDG_DATA_HOME: `${projectDir}/data`,
-    XDG_CACHE_HOME: `${projectDir}/cache`,
-    OPENCODE_LOG_DIR: `${projectDir}/logs`,
-  };
+  const trackedKeys = [
+    'OPENCODE_CONFIG_DIR',
+    'XDG_DATA_HOME',
+    'XDG_CACHE_HOME',
+    'OPENCODE_LOG_DIR',
+    'OH_MY_OPENCODE_SLIM_DISABLE',
+  ] as const;
+  const previousValues = new Map<string, string | undefined>();
+  for (const key of trackedKeys) {
+    previousValues.set(key, process.env[key]);
+  }
+  process.env.OPENCODE_CONFIG_DIR = projectDir;
+  process.env.XDG_DATA_HOME = `${projectDir}/data`;
+  process.env.XDG_CACHE_HOME = `${projectDir}/cache`;
+  process.env.OPENCODE_LOG_DIR = `${projectDir}/logs`;
   delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
   await Bun.write(
     `${projectDir}/oh-my-opencode-slim.json`,
@@ -59,7 +66,13 @@ async function loadPlugin(
   return {
     hooks,
     async cleanup() {
-      process.env = previous;
+      for (const [key, value] of previousValues) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
       await rm(projectDir, { recursive: true, force: true });
     },
     dispose() {
