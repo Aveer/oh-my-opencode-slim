@@ -297,6 +297,22 @@ describe('buildViewCommand', () => {
     }
   });
 
+  test('falls back to bare opencode when no binary resolves (#514)', async () => {
+    const { buildViewCommand } = await importShared();
+    const original = process.env.OPENCODE_BIN;
+    delete process.env.OPENCODE_BIN;
+    try {
+      // bun's execPath/argv0 never match the opencode basename gate, so with
+      // OPENCODE_BIN unset the resolver yields null and the bare name wins.
+      expect(buildViewCommand('sess', 'http://x', '/repo')).toStartWith(
+        'opencode attach',
+      );
+    } finally {
+      if (original === undefined) delete process.env.OPENCODE_BIN;
+      else process.env.OPENCODE_BIN = original;
+    }
+  });
+
   test('v1 flavor is byte-identical to the legacy attach command', async () => {
     const { buildOpencodeAttachCommand, buildViewCommand } =
       await importShared();

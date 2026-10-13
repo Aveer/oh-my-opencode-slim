@@ -66,9 +66,9 @@ export type ViewerCommandOptions = Pick<
  *
  * - `v1`: `<resolved-binary> attach <url> --session <id> --dir <dir>`
  *   (was bare `opencode`; now resolveOpencodeExecutable())
- * - `v2-shared`: `opencode --session <id> <dir>` — the viewer discovers the
- *   same shared background service by itself; no URL is passed.
- * - `v2-remote`: `opencode --server <url> --session <id> <dir>` — the
+ * - `v2-shared`: `<resolved-binary> --session <id> <dir>` — the viewer
+ *   discovers the same shared background service by itself; no URL is passed.
+ * - `v2-remote`: `<resolved-binary> --server <url> --session <id> <dir>` — the
  *   `OPENCODE_PASSWORD` secret is never part of the command text; adapters
  *   inject it at pane creation through their native spawn-time environment
  *   mechanism, or through `withParentEnvPassword` where none exists.
@@ -215,8 +215,7 @@ export function resolveOpencodeExecutable(): string {
  * Build the `[shell, ...shellArgs, command]` array for launching a command in
  * the user's interactive shell. OpenCode respects the user's shell when running
  * commands; multiplexer panes must do the same, otherwise a hardcoded `sh -c`
- * breaks under non-POSIX shells (fish, nu, powershell, ...) or misses login
- * startup files (where `opencode` may be on PATH).
+ * breaks under non-POSIX shells (fish, nu, powershell, ...).
  *
  * Mirrors OpenCode's own `Shell.args()` resolution:
  * - nu / fish: `<shell> -c <command>` (no login mode)
