@@ -411,6 +411,32 @@ describe('createV2Setup e2e', () => {
     expect(calls.disposed.length).toBeGreaterThan(0);
   }, 20_000);
 
+  test('returns cleanly without registering when disabled by env', async () => {
+    process.env.OH_MY_OPENCODE_SLIM_DISABLE = '1';
+    const { ctx, calls } = makeMockV2Context(projectDir);
+
+    const cleanup = await createV2Setup()(ctx);
+
+    expect(typeof cleanup).toBe('function');
+    expect(calls.agentUpdates).toHaveLength(0);
+    expect(calls.agentDefault).toBeUndefined();
+    expect(calls.agentTransformCount).toBe(0);
+    expect(calls.toolAdds).toHaveLength(0);
+    expect(calls.commandAdds).toHaveLength(0);
+    expect(calls.skillAdds).toHaveLength(0);
+    expect(calls.mcpSets).toHaveLength(0);
+    expect(calls.hooks).toHaveLength(0);
+    expect(calls.contextHookCb).toBeUndefined();
+    expect(calls.promptHookCb).toBeUndefined();
+    expect(calls.toolBeforeCb).toBeUndefined();
+    expect(calls.toolAfterCb).toBeUndefined();
+    await cleanup();
+    await settlePump();
+    expect(readPluginLog()).toContain(
+      'setup skipped: disabled by OH_MY_OPENCODE_SLIM_DISABLE',
+    );
+  });
+
   test('skips built-in MCP injection when the host owns the key', async () => {
     // User/host-configured namespaces own their key (issue #1290): a
     // built-in must never be injected over an existing draft entry.
@@ -882,6 +908,21 @@ describe('createV2Setup e2e', () => {
   test('reduced ctx (no agent.transform) skips gracefully', async () => {
     const cleanup = await createV2Setup()({} as never);
     await cleanup(); // passes when neither call throws
+  }, 20_000);
+
+  test('skips gracefully when OH_MY_OPENCODE_SLIM_DISABLE is set', async () => {
+    process.env.OH_MY_OPENCODE_SLIM_DISABLE = '1';
+    try {
+      const { ctx, calls } = makeMockV2Context(projectDir);
+      const cleanup = await createV2Setup()(ctx);
+      await cleanup();
+      expect(calls.agentTransformCount).toBe(0);
+      expect(calls.toolAdds.length).toBe(0);
+      expect(calls.commandAdds.length).toBe(0);
+      expect(calls.skillAdds.length).toBe(0);
+    } finally {
+      delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
+    }
   }, 20_000);
 
   test('retired generations reject late agent transform callbacks', async () => {
