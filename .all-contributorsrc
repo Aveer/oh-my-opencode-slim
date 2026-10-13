@@ -1226,6 +1226,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "caiozizh",
+      "name": "caiozizh",
+      "avatar_url": "https://avatars.githubusercontent.com/u/244536034?v=4",
+      "profile": "https://github.com/caiozizh",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "commitConvention": "angular"

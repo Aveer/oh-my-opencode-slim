@@ -424,7 +424,7 @@ describe('task_reply', () => {
     // documented form.reply route.
     expect(Object.keys(task_reply.args)).toContain('answers');
     expect(task_reply.description).toBe(
-      'Reply to a tracked child request by task ID/alias and request ID.',
+      'Answer a background child ask (question/permission requests) by task ID/alias and request ID.',
     );
 
     // Both identifier forms resolve the task and its open ask on v2, and

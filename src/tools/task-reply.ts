@@ -198,7 +198,7 @@ export function createTaskReplyTool(options: {
     description:
       hostFlavor === 'v2' && !hasV2FormReply
         ? TASK_REPLY_PERMISSION_ONLY_DESCRIPTION
-        : 'Reply to a tracked child request by task ID/alias and request ID.',
+        : 'Answer a background child ask (question/permission requests) by task ID/alias and request ID.',
     args: replyArgs,
     async execute(args, toolContext) {
       const parentSessionID = toolContext?.sessionID;

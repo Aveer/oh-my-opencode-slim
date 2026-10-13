@@ -311,21 +311,23 @@ When user's approach seems problematic:
  * Build the v2 (slim) orchestrator prompt.
  *
  * Same builder seam as buildOrchestratorPrompt, with the v2-native
- * vocabulary baked in and the branch set reduced to the two that change
- * bytes: `waitForUserEnabled` (question-blocking fallback), and
- * `disabledAgents` / `excludeDescriptions` (routing-line filters). The
- * board-injection branch is gone — `task_status` is the pull channel
- * regardless of board injection. `wakeSchedulerEnabled` stays conditional:
- * unlike the v2-derived periodic gate (which only disables periodic
- * evaluation), the user-facing `backgroundJobs.orchestratorWake.enabled`
- * master switch disables ALL scheduler wakes (recovery, publication,
- * child-input), so the resume promise must drop the scheduler when it is
- * off — native completion notices still arrive without it. Routing
- * criteria come from the shared routing data (one line per agent, no
- * parallel name list); the agents' `description` fields stay
- * non-duplicating for the native dynamic subagent list. The template is
- * a construction-time constant per host (cache-safe). v1 hosts keep
- * byte-identical wording through buildOrchestratorPrompt.
+ * vocabulary baked in and the branch set reduced to `disabledAgents` /
+ * `excludeDescriptions` (routing-line filters). The board-injection branch
+ * is gone — `task_status` is the pull channel regardless of board
+ * injection. `wakeSchedulerEnabled` stays conditional: unlike the
+ * v2-derived periodic gate (which only disables periodic evaluation), the
+ * user-facing `backgroundJobs.orchestratorWake.enabled` master switch
+ * disables ALL scheduler wakes (recovery, publication, child-input), so
+ * the resume promise must drop the scheduler when it is off — native
+ * completion notices still arrive without it. `waitForUserEnabled` stays
+ * accepted (positional) but no longer changes bytes: the tool is
+ * unregistered on v2 hosts, and the question
+ * tool is the single blocking boundary either way. Routing criteria come
+ * from the shared routing data (one line per agent, no parallel name
+ * list); the agents' `description` fields stay non-duplicating for the
+ * native dynamic subagent list. The template is a construction-time
+ * constant per host (cache-safe). v1 hosts keep byte-identical wording
+ * through buildOrchestratorPrompt.
  */
 export function buildOrchestratorPromptV2(
   disabledAgents?: ReadonlySet<string>,
@@ -344,9 +346,12 @@ export function buildOrchestratorPromptV2(
     .filter((line): line is string => line !== undefined)
     .join('\n\n');
 
-  const externalManualWaitInstruction = waitForUserEnabled
-    ? '- If work must pause for an external manual step by the user: give concrete steps, call `wait_for_user` as the final action, and end the turn. Never use it for background tasks.'
-    : '- If work must pause for an external manual step by the user: give concrete steps, use the `question` tool as the blocking boundary and ask them to respond when finished, then end the turn. `wait_for_user` is disabled — never reference or call it. Background tasks are never external manual work.';
+  // waitForUserEnabled is intentionally unused: v2 never registers
+  // `wait_for_user` by default, so there is no enabled branch to render —
+  // the question tool is the blocking boundary in both states (see the
+  // <Communication> block below). The parameter stays so the positional
+  // builder seam matches buildOrchestratorPrompt.
+  void waitForUserEnabled;
   // Master switch semantics: `backgroundJobs.orchestratorWake.enabled`
   // disables ALL scheduler wakes (recovery, publication, child-input) —
   // unlike the v2-derived periodic gate. Native completion notices still
@@ -391,8 +396,7 @@ ${agentsSection}<Workflow>
 </Workflow>
 
 <Communication>
-- Ask the \`question\` tool when the user's answer unblocks work; otherwise answer directly.
-${externalManualWaitInstruction}
+- Ask the \`question\` tool when the user's answer unblocks work; for an external manual step, give concrete steps, then use the \`question\` tool as the blocking boundary and end the turn.
 - Minimal replies: no preamble, no flattery, no restating the request, no narrating routine work.
 - Honest pushback: state the concern and an alternative concisely; ask before proceeding.
 </Communication>
