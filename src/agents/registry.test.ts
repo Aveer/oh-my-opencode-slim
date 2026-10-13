@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { CouncilConfigSchema } from '../config';
 import { RuntimeConfig } from '../config/runtime';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
+import { compilePermissionPolicy } from '../v2/permissions';
 import { MarketplacePackageManifestSchema } from '../marketplace/schemas';
 import {
   adaptPermissions,
@@ -2369,15 +2370,14 @@ describe('marketplace agent customization', () => {
       expect(policy.decide('skill', 'unlisted-skill')).toBe('allow');
       expect(policy.decide('extra-mcp_search', '*')).toBe('allow');
       expect(policy.decide('write', '*')).toBe('deny');
-      expect(
-        registry.compileChildPermissions(name, [
-          { action: '*', resource: '*', effect: 'allow' },
-        ]),
-      ).toContainEqual({
-        action: 'write',
-        resource: '*',
-        effect: 'deny',
+      const childRules = registry.compileChildPermissions(name, [
+        { action: '*', resource: '*', effect: 'allow' },
+      ]);
+      const childPolicy = compilePermissionPolicy({
+        baselineRules: [],
+        hostRules: childRules,
       });
+      expect(childPolicy.decide('write', '*')).toBe('deny');
     }
   });
 
@@ -2415,7 +2415,7 @@ describe('marketplace agent customization', () => {
         hostFlavor: 'v2',
       });
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Project base\\n\\nProject appendix',
+        prompt: 'Project base\n\nProject appendix',
       });
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
@@ -2450,10 +2450,98 @@ describe('marketplace agent customization', () => {
         hostFlavor: 'v2',
       });
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Inline base\\n\\nAdded instructions',
+        prompt: 'Inline base\n\nAdded instructions',
       });
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
     }
   });
+
+  test('skills_include_local extends package defaults from project skills', () => {
+    const project = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'omos-marketplace-local-skill-'),
+    );
+    try {
+      const dir = path.join(project, '.agents', 'skills', 'local');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'SKILL.md'),
+        '---\\nname: local-skill\\ndescription: A local skill\\n---\\n',
+      );
+      const runtime = RuntimeConfig.init(project, {
+        agents: { 'market-agent': { skills_include_local: true } },
+      }, 'v2');
+      const registry = build(runtime, {
+        mcp: { 'host-mcp': { type: 'local' } },
+      }, { ...installed(), projectDirectory: project, hostFlavor: 'v2' });
+      const policy = registry.nativePolicies['market-agent'];
+      expect(policy.decide('skill', 'skill-a')).toBe('allow');
+      expect(policy.decide('skill', 'local-skill')).toBe('allow');
+    } finally {
+      RuntimeConfig.reset(project);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  test('resolves preset-specific append files without replacing package base', () => {
+    const project = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'omos-marketplace-preset-prompt-'),
+    );
+    try {
+      const prompts = path.join(
+        project, '.opencode', 'oh-my-opencode-slim', 'team',
+      );
+      fs.mkdirSync(prompts, { recursive: true });
+      fs.writeFileSync(
+        path.join(prompts, 'market-agent_append.md'),
+        'Team-specific instructions',
+      );
+      const runtime = runtimeFor({
+        preset: 'team',
+        presets: {
+          team: { agents: { 'market-agent': { temperature: 0.3 } } },
+        },
+      });
+      const registry = build(runtime, {
+        mcp: { 'host-mcp': { type: 'local' } },
+      }, { ...installed(), projectDirectory: project, hostFlavor: 'v2' });
+      expect(registry.finalAgentConfig['market-agent']).toMatchObject({
+        prompt: 'Package prompt\\n\\nTeam-specific instructions',
+      });
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps local append instructions when a package prompt changes', () => {
+    const project = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'omos-marketplace-prompt-update-'),
+    );
+    try {
+      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
+      fs.mkdirSync(prompts, { recursive: true });
+      fs.writeFileSync(
+        path.join(prompts, 'market-agent_append.md'),
+        'Local appendix',
+      );
+      const runtime = runtimeFor({});
+      const options = { projectDirectory: project, hostFlavor: 'v2' };
+      const host = { mcp: { 'host-mcp': { type: 'local' } } };
+      const original = build(
+        runtime, host, { ...installed({ prompt: 'First base' }), ...options },
+      );
+      const updated = build(
+        runtime, host, { ...installed({ prompt: 'Updated base' }), ...options },
+      );
+      expect(original.finalAgentConfig['market-agent']).toMatchObject({
+        prompt: 'First base\\n\\nLocal appendix',
+      });
+      expect(updated.finalAgentConfig['market-agent']).toMatchObject({
+        prompt: 'Updated base\\n\\nLocal appendix',
+      });
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
 });

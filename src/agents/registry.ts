@@ -1,7 +1,7 @@
 import type { AgentConfig as SDKAgentConfig } from '@opencode-ai/sdk/v2';
+import { getSkillPermissionsForAgent } from '../cli/skills';
 import { AGENT_ALIASES, loadAgentPrompt } from '../config';
 import { parseList } from '../config/agent-mcps';
-import { getSkillPermissionsForAgent } from '../cli/skills';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
