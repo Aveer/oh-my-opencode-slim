@@ -12,6 +12,9 @@
  *      with the new model - promptAsync returns immediately so we never
  *      block the event handler waiting for a full LLM response.
  *
+ * Spent-allowance errors (issue #966) surface to the user instead of
+ * failing over — switching models cannot recover exhausted quota.
+ *
  * This mirrors the same fallback loop used for delegated sessions, but operates
  * reactively through the event system instead of wrapping prompt() in a
  * try/catch, which is not possible for interactive (foreground) sessions.
@@ -116,20 +119,20 @@ const RETRYABLE_ERROR_PATTERNS = [
   /\b(?:weekly|monthly) limit exhausted\b/i,
 ];
 
-// Spent allowance surfaces (issue #966): waiting or switching models
-// cannot recover — fail over only with same-carrier short-horizon phrasing.
+// Spent allowance surfaces (issue #966): waiting or switching models cannot
+// recover, so surface to the user — fail over only when the same carrier
+// carries short-horizon retry phrasing.
 const SURFACE_QUOTA_PATTERNS = [
   /quota.?exceeded/i,
   /usage.?exceeded/i,
   /usage.?limit has been reached/i,
   /usage.?limit reached/i,
-  /(?:monthly|weekly|5-hour)\s+usage\s+limit\s+reached/i,
 ];
 
 // Short-horizon retry phrasing: the quota may reset soon, so fail over.
 // Excludes bare "Resets in X days/min" (issue #966 stays surfaced).
 const SHORT_HORIZON_RETRY_PATTERN =
-  /retry (after|in)|reset (after|at)|will reset at|try again|per minute|per day|tpm\b|rpm\b/i;
+  /retry (after|in)|reset (after|at)|will reset at|try again|per minute|per day|\btpm\b|\brpm\b/i;
 
 const OUTAGE_STATUS_CODES = new Set([500, 502, 503, 504]);
 // v2 host classification ({type, message, status?}); status is omitted when
@@ -291,11 +294,11 @@ export function isFailoverError(error: unknown): boolean {
   // failover host type (issue #966); same-carrier short-horizon retry
   // phrasing still fails over.
   const carriers = failoverCarriers(err as Record<string, unknown>);
-  let shortHorizonSurface = false;
+  let shortHorizonEscape = false;
   for (const carrier of carriers) {
     if (SURFACE_QUOTA_PATTERNS.some((pattern) => pattern.test(carrier))) {
       if (!SHORT_HORIZON_RETRY_PATTERN.test(carrier)) return false;
-      shortHorizonSurface = true;
+      shortHorizonEscape = true;
     }
   }
   if (
@@ -325,7 +328,7 @@ export function isFailoverError(error: unknown): boolean {
     return true;
 
   const hasFailoverReason =
-    shortHorizonSurface ||
+    shortHorizonEscape ||
     carriers.some(
       (carrier) =>
         RETRYABLE_ERROR_PATTERNS.some((p) => p.test(carrier)) ||
@@ -350,7 +353,11 @@ const PERMANENT_QUOTA_BILLING_PATTERNS = [
   ...SURFACE_QUOTA_PATTERNS,
 ];
 
-/** Permanent exhaustion skips the delay and fails over immediately. */
+/**
+ * Permanent exhaustion skips the initial delay and fails over immediately.
+ * Pure-surface errors never reach here (trigger paths gate on
+ * isFailoverError first); only the short-horizon escape does.
+ */
 export function isPermanentQuotaBillingError(error: unknown): boolean {
   if (extractStatusCode(error) === 402) return true;
   const text =
