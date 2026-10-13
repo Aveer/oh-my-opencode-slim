@@ -2466,7 +2466,7 @@ describe('marketplace agent customization', () => {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(
         path.join(dir, 'SKILL.md'),
-        '---\\nname: local-skill\\ndescription: A local skill\\n---\\n',
+        '---\nname: local-skill\ndescription: A local skill\n---\n',
       );
       const runtime = RuntimeConfig.init(project, {
         agents: { 'market-agent': { skills_include_local: true } },
@@ -2506,7 +2506,7 @@ describe('marketplace agent customization', () => {
         mcp: { 'host-mcp': { type: 'local' } },
       }, { ...installed(), projectDirectory: project, hostFlavor: 'v2' });
       expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Package prompt\\n\\nTeam-specific instructions',
+        prompt: 'Package prompt\n\nTeam-specific instructions',
       });
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
@@ -2534,10 +2534,10 @@ describe('marketplace agent customization', () => {
         runtime, host, { ...installed({ prompt: 'Updated base' }), ...options },
       );
       expect(original.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'First base\\n\\nLocal appendix',
+        prompt: 'First base\n\nLocal appendix',
       });
       expect(updated.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Updated base\\n\\nLocal appendix',
+        prompt: 'Updated base\n\nLocal appendix',
       });
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
