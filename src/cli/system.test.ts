@@ -81,10 +81,6 @@ describe('system', () => {
 
   test('getOpenCodeVersion returns string or null', async () => {
     const version = await getOpenCodeVersion();
-    if (version !== null) {
-      expect(typeof version).toBe('string');
-    } else {
-      expect(version).toBeNull();
-    }
+    expect(version === null || typeof version === 'string').toBe(true);
   });
 });

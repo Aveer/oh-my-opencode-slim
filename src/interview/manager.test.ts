@@ -980,19 +980,18 @@ describe('interview manager - edge cases', () => {
         output,
       );
 
-      // Send idle status event
-      await manager.handleEvent({
-        event: {
-          type: 'session.status',
-          properties: {
-            sessionID: 'session-idle',
-            status: { type: 'idle' },
+      // Send idle status event and verify it resolves cleanly without throwing
+      await expect(
+        manager.handleEvent({
+          event: {
+            type: 'session.status',
+            properties: {
+              sessionID: 'session-idle',
+              status: { type: 'idle' },
+            },
           },
-        },
-      });
-
-      // Should not throw
-      expect(true).toBe(true);
+        }),
+      ).resolves.toBeUndefined();
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -1007,17 +1006,16 @@ describe('interview manager - edge cases', () => {
 
     try {
       // Send idle status event without sessionID
-      await manager.handleEvent({
-        event: {
-          type: 'session.status',
-          properties: {
-            status: { type: 'idle' },
+      await expect(
+        manager.handleEvent({
+          event: {
+            type: 'session.status',
+            properties: {
+              status: { type: 'idle' },
+            },
           },
-        },
-      });
-
-      // Should not throw
-      expect(true).toBe(true);
+        }),
+      ).resolves.toBeUndefined();
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -1032,15 +1030,14 @@ describe('interview manager - edge cases', () => {
 
     try {
       // Send unknown event type
-      await manager.handleEvent({
-        event: {
-          type: 'unknown.event',
-          properties: { sessionID: 'session-unknown' },
-        },
-      });
-
-      // Should not throw
-      expect(true).toBe(true);
+      await expect(
+        manager.handleEvent({
+          event: {
+            type: 'unknown.event',
+            properties: { sessionID: 'session-unknown' },
+          },
+        }),
+      ).resolves.toBeUndefined();
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

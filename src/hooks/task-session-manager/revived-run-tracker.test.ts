@@ -133,6 +133,19 @@ async function flushNotify(): Promise<void> {
   for (let i = 0; i < 50; i += 1) await Promise.resolve();
 }
 
+/** Poll predicate until true or timeout elapses. */
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('waitFor timed out');
+    await flushNotify();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 /** Toggle-able transcript: baseline only until `probe` flips true, then a
  * completed assistant turn after the baseline. */
 function completedTranscript(
@@ -627,9 +640,9 @@ describe('revived run tracker', () => {
       description: 'inspect the change',
     });
     await harness.tracker.probe(harness.run.taskID, harness.run.generation);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushNotify();
     harness.board.markReconciled(harness.run.taskID);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitFor(() => prompt.mock.calls.length >= 2);
 
     expect(harness.board.get('ses_child')?.state).toBe('reconciled');
     expect(prompt).toHaveBeenCalledTimes(2);
@@ -685,7 +698,7 @@ describe('revived run tracker', () => {
     });
     await harness.tracker.probe(harness.run.taskID, harness.run.generation);
     await flushNotify();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitFor(() => harness.prompt.mock.calls.length >= 2);
     await flushNotify();
 
     expect(harness.prompt).toHaveBeenCalledTimes(2);
@@ -790,7 +803,9 @@ describe('revived run tracker', () => {
       relaunchLease: lease,
     });
     harness.board.releaseLease(lease);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitFor(
+      () => !harness.tracker.isTracked(harness.run.taskID, newer.generation),
+    );
 
     expect(prompt).toHaveBeenCalledTimes(1);
     expect(
@@ -1804,8 +1819,13 @@ describe('revived run tracker', () => {
         { maxNotificationRetries: 1 },
       );
       publish(harness);
-      await flushNotify();
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await waitFor(
+        () =>
+          !harness.tracker.willNotifyParent(
+            harness.run.taskID,
+            harness.run.generation,
+          ),
+      );
 
       // Attempt 1 of 1 failed; no retry is scheduled, so the tracker
       // will never deliver — the publication wake is the legitimate

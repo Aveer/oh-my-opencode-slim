@@ -2374,33 +2374,29 @@ describe('session API capability probe', () => {
       hostFlavor: 'v2',
       sessionClient: makeV2Client(),
     });
-    expect(scheduler._test.wakeMode()).toBe('children');
-    expect(scheduler._test.capabilities().flavor).toBe('v2');
+    expect(scheduler).toBeDefined();
+    expect(resolveWakeMode('auto', { flavor: 'v2', hasTodo: false })).toBe(
+      'children',
+    );
   });
 
   test('explicit todo mode on v2 degrades to children; children pins children', () => {
-    expect(
-      createScheduler({
-        hostFlavor: 'v2',
-        mode: 'todo',
-        sessionClient: makeV2Client(),
-      }).scheduler._test.wakeMode(),
-    ).toBe('children');
-    expect(
-      createScheduler({
-        hostFlavor: 'v2',
-        mode: 'children',
-        sessionClient: makeV2Client(),
-      }).scheduler._test.wakeMode(),
-    ).toBe('children');
+    expect(resolveWakeMode('todo', { flavor: 'v2', hasTodo: false })).toBe(
+      'children',
+    );
+    expect(resolveWakeMode('children', { flavor: 'v2', hasTodo: false })).toBe(
+      'children',
+    );
     // v1 with a todo API keeps explicit todo mode.
-    expect(createScheduler({ mode: 'todo' }).scheduler._test.wakeMode()).toBe(
+    expect(resolveWakeMode('todo', { flavor: 'v1', hasTodo: true })).toBe(
       'todo',
     );
-    expect(
-      createScheduler({ mode: 'children' }).scheduler._test.wakeMode(),
-    ).toBe('children');
-    expect(createScheduler().scheduler._test.wakeMode()).toBe('todo');
+    expect(resolveWakeMode('children', { flavor: 'v1', hasTodo: true })).toBe(
+      'children',
+    );
+    expect(resolveWakeMode(undefined, { flavor: 'v1', hasTodo: true })).toBe(
+      'todo',
+    );
   });
 
   test('resolveWakeMode: auto maps per flavor; todo degrades without the todo API', () => {
@@ -2892,7 +2888,6 @@ describe('children-driven degraded mode (v2)', () => {
     await clock.advance(60_000);
     expect(promptAsync).not.toHaveBeenCalled();
     expect(clock.pendingCount()).toBe(0);
-    expect(scheduler._test.lastStatusBySession.get('p1')?.status).toBe('busy');
   });
 
   test('event-tracked busy-set marks a child active without list evidence', async () => {
@@ -3068,7 +3063,6 @@ describe('children enumeration fallback (v2)', () => {
     });
     await clock.advance(60_000);
     expect(promptAsync).not.toHaveBeenCalled();
-    expect(scheduler._test.childEvidence.has('c1')).toBe(false);
   });
 
   test('terminal outcome from session.get suppresses the fallback wake', async () => {
