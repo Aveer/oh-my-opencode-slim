@@ -91,10 +91,17 @@ function toFormAnswer(
   const answer: Record<string, string | number | boolean | string[]> = {};
   answers.forEach((selections, index) => {
     const question = questions?.[index];
+    // The key is used verbatim: the host matches it exactly.
     const key =
-      (question?.key || question?.header || question?.question || '').trim() ||
+      question?.key ||
+      question?.header.trim() ||
+      question?.question.trim() ||
       `question_${index}`;
-    answer[key] = selections.length === 1 ? selections[0] : [...selections];
+    // Multiselect fields require a string[] even for a single selection.
+    answer[key] =
+      question?.multiple || selections.length !== 1
+        ? [...selections]
+        : selections[0];
   });
   return answer;
 }

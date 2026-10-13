@@ -1346,6 +1346,76 @@ describe('task_reply v2 event transport integration', () => {
     }
   });
 
+  test('detected v2 sends multiselect answers as arrays under verbatim field keys', async () => {
+    resetUserWaitGateForTests();
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    const hook = createInputWaitHook(board);
+    try {
+      const formReply = mock(async () => undefined);
+      const input = buildPluginInput(makeV2Ctx());
+      (
+        input as { client: { session: Record<string, unknown> } }
+      ).client.session = {
+        ...(input as { client: { session: Record<string, unknown> } }).client
+          .session,
+        form: { reply: formReply },
+      } as never;
+      const { task_reply } = createTaskReplyTool({
+        input: input as never,
+        backgroundJobBoard: board,
+      });
+
+      // Native v2 `question` tool shape: key `q<index>`, multiselect for
+      // `multiple: true`. A key with characters the prompt-safe sanitizer
+      // would escape must still reach the host byte-for-byte.
+      await routeMappedV2Event(hook, {
+        type: 'form.created',
+        data: {
+          form: {
+            id: 'form_2',
+            sessionID: 'ses_child1',
+            fields: [
+              {
+                key: 'q0',
+                title: 'Targets',
+                type: 'multiselect',
+                options: [{ value: 'api', label: 'api' }],
+              },
+              {
+                key: 'a&b  <c>',
+                title: 'Mode',
+                type: 'string',
+                options: [{ value: 'fast', label: 'fast' }],
+              },
+            ],
+          },
+        },
+      });
+
+      await task_reply.execute(
+        {
+          task_id: 'ses_child1',
+          request_id: 'form_2',
+          answers: ['api', 'fast'],
+        },
+        { sessionID: 'parent-1' } as never,
+      );
+
+      expect(formReply).toHaveBeenCalledTimes(1);
+      expect(formReply.mock.calls[0]?.[0]).toEqual({
+        sessionID: 'ses_child1',
+        formID: 'form_2',
+        answer: { q0: ['api'], 'a&b  <c>': 'fast' },
+      });
+    } finally {
+      await hook.event({
+        event: { type: 'server.instance.disposed' },
+      } as never);
+    }
+  });
+
   test('detected v2 redirects a reject (answers omitted) to the host UI instead of the dead v1 route', async () => {
     resetUserWaitGateForTests();
     resetChildInputWaitForTests();
