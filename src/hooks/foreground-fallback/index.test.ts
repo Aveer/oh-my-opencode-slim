@@ -7769,3 +7769,49 @@ describe('ForegroundFallbackManager same-model retry classification', () => {
     expect(isFailoverError('request queue is full (429)')).toBe(true);
   });
 });
+
+describe('ForegroundFallbackManager same-model retry request scope', () => {
+  const seed = (
+    mgr: ForegroundFallbackManager,
+    sessionID: string,
+    agent = 'councillor',
+  ) =>
+    mgr.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          sessionID,
+          agent,
+          providerID: 'openai',
+          modelID: 'gpt-5.4',
+        },
+      },
+    });
+
+  test('explicit policy rejections never replay on the same model', async () => {
+    const { client, mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      client,
+      directory: '/test',
+    } as any);
+    await seed(mgr, 'policy-nc');
+
+    for (const [index, message] of [
+      'cyber_policy: request flagged',
+      'content_policy_violation',
+    ].entries()) {
+      await mgr.handleEvent({
+        type: 'session.error',
+        properties: {
+          sessionID: 'policy-nc',
+          info: { id: `p${index}` },
+          error: { message },
+        },
+      });
+    }
+
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect((mgr as any).sessionRetries.get('policy-nc')).toBeUndefined();
+    expect(mgr.willAttemptFallback('policy-nc')).toBe(false);
+  });
+});

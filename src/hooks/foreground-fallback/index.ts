@@ -2250,9 +2250,12 @@ export class ForegroundFallbackManager {
     // Deterministic failures never recover on the same model: no retry and
     // no budget charge, but block the promise until a retryable-transient
     // error lifts it. No dedup stamp.
+    // Request-scoped rejections (policy/content filter, retired or unknown
+    // model) reproduce on the same model, so they are terminal here too.
     if (
       isInlineFailoverError(opts.error) ||
-      isPermanentQuotaBillingError(opts.error)
+      isPermanentQuotaBillingError(opts.error) ||
+      failoverScope(opts.error) === 'request'
     ) {
       this.deterministicTerminal.add(sessionID);
       return;
