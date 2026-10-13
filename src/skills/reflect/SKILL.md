@@ -80,7 +80,8 @@ repeated patterns, friction, and improvement opportunities.
    - `user` → `data.text`
    - `assistant` → join `data.content[]` entries where `entry.type === 'text'` (use `.text`)
    - `summary` → `data.summary` (compaction summaries; useful for reconstructing goals)
-   - tool / reasoning types → skip
+   - tool types → keep the tool name for `tools_used` (plus any error/failure
+     signal), skip the output payload; reasoning types → skip entirely
 
    v1 rows have no `type` column — `data` is JSON with `role`, `agent`,
    `model`, `summary`, etc.
