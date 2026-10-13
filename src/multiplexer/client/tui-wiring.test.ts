@@ -1361,6 +1361,12 @@ describe('serverUrl reflection and probe (D3)', () => {
           state,
           env: { TMUX_PANE: '%1', OPENCODE_SERVER_PASSWORD: 'pw' },
         });
+        // The startup reachability probe must authenticate too, or a
+        // protected server never gets past `host-unreachable`.
+        expect(state.statusHeaders.length).toBeGreaterThan(0);
+        expect(
+          state.statusHeaders.every((h) => h?.authorization === BASIC),
+        ).toBe(true);
         state.statusHeaders.length = 0;
         state.listHeaders.length = 0;
 
@@ -1393,6 +1399,10 @@ describe('serverUrl reflection and probe (D3)', () => {
           },
         },
       });
+      expect(state.statusHeaders.length).toBeGreaterThan(0);
+      expect(state.statusHeaders.every((h) => h?.authorization === FLAG)).toBe(
+        true,
+      );
       state.statusHeaders.length = 0;
       state.listHeaders.length = 0;
 

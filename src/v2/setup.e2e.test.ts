@@ -884,6 +884,21 @@ describe('createV2Setup e2e', () => {
     await cleanup(); // passes when neither call throws
   }, 20_000);
 
+  test('skips gracefully when OH_MY_OPENCODE_SLIM_DISABLE is set', async () => {
+    process.env.OH_MY_OPENCODE_SLIM_DISABLE = '1';
+    try {
+      const { ctx, calls } = makeMockV2Context(projectDir);
+      const cleanup = await createV2Setup()(ctx);
+      await cleanup();
+      expect(calls.agentTransformCount).toBe(0);
+      expect(calls.toolAdds.length).toBe(0);
+      expect(calls.commandAdds.length).toBe(0);
+      expect(calls.skillAdds.length).toBe(0);
+    } finally {
+      delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
+    }
+  }, 20_000);
+
   test('retired generations reject late agent transform callbacks', async () => {
     const { ctx } = makeMockV2Context(projectDir);
     let deferred: ((draft: unknown) => void) | undefined;

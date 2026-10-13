@@ -46,6 +46,7 @@ import {
   configureBackgroundJobPersistence,
   loadInitialBackgroundJobPersistence,
 } from '../utils/background-job-persistence';
+import { isPluginDisabledByEnv } from '../utils/env';
 import { createEventDirectoryScope } from '../utils/event-directory-scope';
 import { isRecord } from '../utils/guards';
 import { INTERNAL_INITIATOR_METADATA_KEY } from '../utils/internal-initiator';
@@ -1927,6 +1928,10 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
     // First logged line: identify the build that produced every following
     // log entry (logging-only — build info never enters prompt payloads).
     log('[v2] build info', getBuildInfo());
+    if (isPluginDisabledByEnv()) {
+      log('[v2] setup skipped: disabled by OH_MY_OPENCODE_SLIM_DISABLE');
+      return async () => {};
+    }
     // Capability guard: some hosts load this same `setup` with a reduced or
     // TUI-side context where agent/tool/session/event domains are missing.
     // Skip registration instead of crashing the host (and retry-storming).
