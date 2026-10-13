@@ -290,7 +290,8 @@ Control which skills each agent can use in `~/.config/opencode/oh-my-opencode-sl
 | `["!*"]` | Deny all skills |
 
 **Rules:**
-- `*` expands to all available installed skills
+- `*` grants any skill registered by OpenCode (subject to global disables
+  and native permissions), rather than relying on a fixed marketplace list
 - `!item` excludes a specific skill
 - Conflicts (e.g. `["a", "!a"]`) → deny wins (principle of least privilege)
 
@@ -340,6 +341,6 @@ Control which skills each agent can use in `~/.config/opencode/oh-my-opencode-sl
 **Rules:**
 - Duplicates are removed (first occurrence wins) before removals are applied
 - If the result contains `"*"`, each removed name is appended as `"!<name>"` so the exclusion beats the wildcard grant
-- On an agent without a `skills` list, directives resolve against that agent's default grants (orchestrator: all skills), so `skills_add` keeps the defaults and appends, and `skills_remove` prunes from them
+- On an agent without a `skills` list, directives resolve against that agent's default grants (orchestrator: all skills; marketplace agents: assembled package skill defaults), so `skills_add` keeps the defaults and appends, and `skills_remove` prunes from them
 - `skills_add` never overrides an inherited exclusion: adding a name that the effective list already excludes (as `"!<name>"`) is a no-op. To re-allow it, lift the exclusion with a `skills_remove` entry of the form `"!<name>"`
 - A removal entry of the form `"!<name>"` removes the exclusion token itself (it lifts an existing exclusion); the `"*"` token is never expanded

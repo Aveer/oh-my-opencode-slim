@@ -62,7 +62,7 @@ Control which MCPs each agent can use via the `mcps` array in your preset config
 | `["!*"]` | Deny all MCPs |
 
 **Rules:**
-- `*` expands to all available MCPs
+- `*` expands to all available enabled MCPs (also for marketplace agents)
 - `!item` excludes a specific MCP
 - Conflicts (e.g. `["a", "!a"]`) → deny wins
 
@@ -102,3 +102,10 @@ To disable specific MCPs for all agents regardless of preset, add them to `disab
 ```
 
 This is useful when you want to cut external network calls entirely (e.g. air-gapped environments or cost control).
+
+Marketplace agents use their package's MCP list by default. An explicit
+`agents.<name>.mcps` list replaces that default, so a locally configured
+MCP such as `serena` can be granted without changing the published package.
+This does not grant additional native core tools, and existing host
+permissions still apply. Marketplace admission also rejects ambiguous
+MCP action namespaces.
