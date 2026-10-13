@@ -6538,6 +6538,203 @@ describe('ForegroundFallbackManager no-chain sessions', () => {
     expect(mocks.abort).toHaveBeenCalledTimes(1);
     expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
   });
+
+  test('F1: deterministic error before model known does not block later recovery', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+
+    // Agent known (no chain) but model not yet observed: returns before
+    // stamping any terminal state.
+    mgr.registerSessionAgent('f1-nc', 'councillor');
+    await mgr.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: 'f1-nc', error: { message: 'Gone' } },
+    });
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect((mgr as any).deterministicTerminal.has('f1-nc')).toBe(false);
+
+    // The model arrives later: recovery is still possible.
+    await seedNoChain(mgr, 'f1-nc');
+    expect(mgr.willAttemptFallback('f1-nc')).toBe(true);
+    await mgr.handleEvent(noChainError('f1-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test('F2: later retryable-transient lifts the deterministic terminal', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'f2-nc');
+
+    await mgr.handleEvent(
+      noChainError('f2-nc', 'g1', { statusCode: 401, message: 'auth failed' }),
+    );
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect((mgr as any).sessionRetries.get('f2-nc')).toBeUndefined();
+    expect((mgr as any).chainExhaustion.get('f2-nc')).toBeUndefined();
+    expect(mgr.willAttemptFallback('f2-nc')).toBe(false);
+
+    // A later distinct transient error in the same turn proceeds normally.
+    await mgr.handleEvent(noChainError('f2-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect((mgr as any).sessionRetries.get('f2-nc')).toBe(1);
+    expect(mgr.willAttemptFallback('f2-nc')).toBe(true);
+  });
+
+  test('F3: post-terminal status events do not charge the shared budget', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'f3-nc');
+
+    await mgr.handleEvent(
+      noChainError('f3-nc', 'g1', { message: 'AI_APICallError: Gone' }),
+    );
+    expect((mgr as any).sessionRetries.get('f3-nc')).toBeUndefined();
+
+    await mgr.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: 'f3-nc',
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'AI_APICallError: Gone',
+        },
+      },
+    });
+    expect((mgr as any).sessionRetries.get('f3-nc')).toBeUndefined();
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
+  test('F6: status-first-then-error charges once per turn+model episode', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'f6-nc');
+
+    await mgr.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: 'f6-nc',
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'streaming response failed: 502',
+        },
+      },
+    });
+    expect((mgr as any).sessionRetries.get('f6-nc')).toBe(1);
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+
+    await mgr.handleEvent(noChainError('f6-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect((mgr as any).sessionRetries.get('f6-nc')).toBe(1);
+  });
+
+  test('R1: second distinct error in same episode charges again', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'r1-nc');
+
+    await mgr.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: 'r1-nc',
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'streaming response failed: 502',
+        },
+      },
+    });
+    expect((mgr as any).sessionRetries.get('r1-nc')).toBe(1);
+
+    // Same failure's error replays without a second charge.
+    await mgr.handleEvent(noChainError('r1-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect((mgr as any).sessionRetries.get('r1-nc')).toBe(1);
+
+    // A later distinct error charges normally so the budget still bounds
+    // replays.
+    await mgr.handleEvent(noChainError('r1-nc', 'e2'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+    expect((mgr as any).sessionRetries.get('r1-nc')).toBe(2);
+    expect(mgr.willAttemptFallback('r1-nc')).toBe(true);
+  });
+
+  test('R2: deduped duplicate does not lift the deterministic terminal', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'r2-nc');
+
+    await mgr.handleEvent(noChainError('r2-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    await mgr.handleEvent(
+      noChainError('r2-nc', 'g1', { statusCode: 401, message: 'auth failed' }),
+    );
+    expect(mgr.willAttemptFallback('r2-nc')).toBe(false);
+
+    // Re-observation of the already-handled transient is dropped before it
+    // can lift the terminal: nothing new is pending.
+    await mgr.handleEvent(noChainError('r2-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect((mgr as any).sessionRetries.get('r2-nc')).toBe(1);
+    expect(mgr.willAttemptFallback('r2-nc')).toBe(false);
+  });
+
+  test('(b): failed admission restores the deterministic terminal', async () => {
+    const { mocks } = createMockClient({ messagesData: [] });
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'pb-nc');
+
+    await mgr.handleEvent(
+      noChainError('pb-nc', 'g1', { statusCode: 401, message: 'auth failed' }),
+    );
+    expect(mgr.willAttemptFallback('pb-nc')).toBe(false);
+
+    // The transient lifts the terminal, but its replay finds no user
+    // message: the charge is refunded and the terminal is restored, so the
+    // promise stays false with nothing pending.
+    await mgr.handleEvent(noChainError('pb-nc', 'e1'));
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect((mgr as any).sessionRetries.get('pb-nc')).toBe(0);
+    expect(mgr.willAttemptFallback('pb-nc')).toBe(false);
+  });
+
+  test('(d): two distinct anonymous failures both replay', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      directory: '/test',
+    } as any);
+    await seedNoChain(mgr, 'anon-nc');
+    const epoch = (mgr as any).turnEpoch.get('anon-nc') ?? 0;
+
+    // ID-less arrivals synthesize a unique namespaced incident each, so the
+    // second is not deduped as a duplicate of the first.
+    await (mgr as any).trySameModelRetry('anon-nc', {
+      error: { message: 'streaming response failed: 502' },
+      epoch,
+    });
+    await (mgr as any).trySameModelRetry('anon-nc', {
+      error: { message: 'streaming response failed: 503' },
+      epoch,
+    });
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+    expect((mgr as any).sessionRetries.get('anon-nc')).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
