@@ -218,28 +218,32 @@ const UPSTREAM_TRANSIENT_MARKERS = [
   /\b429\b/,
 ];
 
-/** True when the text reports an "upstream error" with transient context. */
-function isTransientUpstreamError(text: string): boolean {
-  return (
-    UPSTREAM_ERROR_PATTERN.test(text) &&
-    UPSTREAM_TRANSIENT_MARKERS.some((pattern) => pattern.test(text))
-  );
-}
-
-/** True for gateway backpressure wording without a deterministic 4xx. */
-function isTransientBackpressureError(
+/** True when the failure carries a 4xx other than 408/429, in its status
+ *  or its text: every replay of that request would reproduce it. */
+function hasDeterministic4xx(
   text: string,
   statusCode: number | undefined,
 ): boolean {
-  const deterministic4xx =
+  return (
     (statusCode !== undefined &&
       statusCode >= 400 &&
       statusCode < 500 &&
       statusCode !== 408 &&
       statusCode !== 429) ||
-    DETERMINISTIC_4XX_PATTERN.test(text);
+    DETERMINISTIC_4XX_PATTERN.test(text)
+  );
+}
+
+/** True for "upstream error" with transient context, or gateway
+ *  backpressure wording, when no deterministic 4xx is present. */
+function isTransientGatewayError(
+  text: string,
+  statusCode: number | undefined,
+): boolean {
+  if (hasDeterministic4xx(text, statusCode)) return false;
   return (
-    !deterministic4xx &&
+    (UPSTREAM_ERROR_PATTERN.test(text) &&
+      UPSTREAM_TRANSIENT_MARKERS.some((pattern) => pattern.test(text))) ||
     GATEWAY_BACKPRESSURE_PATTERNS.some((pattern) => pattern.test(text))
   );
 }
@@ -338,12 +342,7 @@ function failoverScope(error: unknown): 'provider' | 'request' | undefined {
   // (a 400-bodied validation failure, a policy rejection) in the same
   // wording. Only treat it as failover with transient context in the
   // same message.
-  if (
-    isTransientUpstreamError(text) ||
-    isTransientBackpressureError(text, statusCode)
-  ) {
-    return 'provider';
-  }
+  if (isTransientGatewayError(text, statusCode)) return 'provider';
   if (!isRecord(error)) return undefined;
   if (
     (statusCode !== undefined && PROVIDER_STATUS_CODES.has(statusCode)) ||
@@ -1455,6 +1454,17 @@ export class ForegroundFallbackManager {
           if (this.inProgress.has(sessionID)) break;
           this.rearmIfFreshDescent(sessionID);
           if (this.retryAlreadyObserved(sessionID, attempt)) break;
+          // A no-chain status paired with a same-turn error incident is the
+          // host retrying that already-handled failure (or its replay):
+          // consume it without charging or sending another prompt.
+          if (
+            !this.hasFallbackChain(sessionID) &&
+            this.hasSameTurnErrorIncident(sessionID)
+          ) {
+            this.recordRetryAttempt(sessionID, attempt);
+            this.cancelInitialDelay(sessionID);
+            break;
+          }
           const incidentID = `retry:${curModel ?? 'unknown'}:${attempt}`;
           const retryError = props.error ?? {
             message: props.status?.message ?? '',
@@ -1777,6 +1787,7 @@ export class ForegroundFallbackManager {
     this.sessionRetries.delete(sessionID);
     this.retryAttempt.delete(sessionID);
     this.chainExhaustion.delete(sessionID);
+    this.deterministicTerminal.delete(sessionID);
     this.lastFallbackTime.delete(sessionID);
     this.initialDelayUsed.delete(sessionID);
     this.v2RetryNotices.delete(sessionID);
@@ -1860,6 +1871,21 @@ export class ForegroundFallbackManager {
   // execFallback)
   // ---------------------------------------------------------------------------
 
+  /** A transcript read failed or timed out before anything was sent:
+   *  log, refund the charge, and report the replay as not delivered. */
+  private abandonReplayRead(
+    sessionID: string,
+    opts: { epoch: number; charged: boolean },
+    error: unknown,
+  ): false {
+    log('[foreground-fallback] same-model replay transcript read failed', {
+      sessionID,
+      error: stringifyError(error),
+    });
+    if (opts.charged) this.refundSessionRetry(sessionID, opts.epoch);
+    return false;
+  }
+
   private async replayWithModel(
     sessionID: string,
     model: { providerID: string; modelID: string },
@@ -1877,10 +1903,21 @@ export class ForegroundFallbackManager {
     // baseline), never the full history. A tail without a user message is
     // one long turn: read only the user message its last entry answers
     // (v1 `parentID`); shapes without that id read it all.
-    const tailResult = await session.messages({
-      path: { id: sessionID },
-      query: { limit: FALLBACK_REPLAY_TAIL_MESSAGES },
-    });
+    // Both reads are bounded like execFallback's: a hung host call must
+    // not pin inProgress forever. A failed read sent nothing, so refund.
+    let tailResult: { data?: unknown; error?: unknown };
+    try {
+      tailResult = await withTimeout<{ data?: unknown; error?: unknown }>(
+        session.messages({
+          path: { id: sessionID },
+          query: { limit: FALLBACK_REPLAY_TAIL_MESSAGES },
+        }),
+        HOST_CALL_TIMEOUT_MS,
+        'same-model replay transcript read timed out',
+      );
+    } catch (err) {
+      return this.abandonReplayRead(sessionID, opts, err);
+    }
     if (!this.isCurrentTurn(sessionID, opts.epoch)) return false;
     const messages = (tailResult.data ?? []) as unknown[];
     let requestError: unknown = tailResult.error ?? undefined;
@@ -1888,9 +1925,18 @@ export class ForegroundFallbackManager {
     if (!lastUser) {
       const parentID = (messages.at(-1) as { info?: { parentID?: unknown } })
         ?.info?.parentID;
-      const deepResult = await (typeof parentID === 'string'
-        ? session.message({ path: { id: sessionID, messageID: parentID } })
-        : session.messages({ path: { id: sessionID } }));
+      let deepResult: { data?: unknown; error?: unknown };
+      try {
+        deepResult = await withTimeout<{ data?: unknown; error?: unknown }>(
+          typeof parentID === 'string'
+            ? session.message({ path: { id: sessionID, messageID: parentID } })
+            : session.messages({ path: { id: sessionID } }),
+          HOST_CALL_TIMEOUT_MS,
+          'same-model replay transcript read timed out',
+        );
+      } catch (err) {
+        return this.abandonReplayRead(sessionID, opts, err);
+      }
       if (!this.isCurrentTurn(sessionID, opts.epoch)) return false;
       lastUser = [deepResult.data ?? []]
         .flat()
@@ -1921,7 +1967,7 @@ export class ForegroundFallbackManager {
     // Bound: the SDK's promptAsync reads `this._client`, so calling the
     // extracted function unbound throws on the real client.
     const promptAsync = session.promptAsync.bind(session) as (
-      args: Record<string, unknown> & { modelSwitch?: 'required' },
+      args: Record<string, unknown>,
     ) => Promise<unknown>;
 
     const replayParts = partsFromReplayMessage(lastUser) as Array<{
@@ -1929,10 +1975,10 @@ export class ForegroundFallbackManager {
       text: string;
     }>;
 
-    // v2-only flag (consumed by the client shim): the replay's model is
-    // the retry TARGET, so a v2 host without session.switchModel must
-    // reject the replay (typed error) instead of silently replaying on
-    // the model that just failed. v1 call bytes stay untouched.
+    // No `modelSwitch: 'required'`: the replay targets the session's
+    // CURRENT model, so the v2 shim may skip the switch (preserving the
+    // host-side variant) and hosts without session.switchModel can still
+    // deliver it. v1 call bytes stay untouched.
     const isV2Host =
       (this.input as PluginInput & { hostFlavor?: string }).hostFlavor === 'v2';
     const promptBody = {
@@ -1944,7 +1990,6 @@ export class ForegroundFallbackManager {
         ...(opts.variant ? { variant: opts.variant } : {}),
         ...(opts.agentName ? { agent: opts.agentName } : {}),
       },
-      ...(isV2Host ? { modelSwitch: 'required' as const } : {}),
       ...(isV2Host && opts.variant ? { modelVariant: opts.variant } : {}),
     };
     const sendReplayPrompt = (): Promise<unknown> => {
@@ -1974,11 +2019,12 @@ export class ForegroundFallbackManager {
         if (promptErr instanceof OperationTimeoutError) {
           // A send timeout cannot prove busyness: never abort or duplicate
           // the replay (matches the chain replay path).
+          // Delivery is unknown (the host may still admit it), so the
+          // charge stands; only a confirmed rejection refunds.
           log('[foreground-fallback] same-model replay send timed out', {
             sessionID,
             error: stringifyError(promptErr),
           });
-          if (opts.charged) this.refundSessionRetry(sessionID, opts.epoch);
           return false;
         }
         if (lastChance || isV2Host || !isBusyRefusalError(promptErr)) {

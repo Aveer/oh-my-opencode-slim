@@ -7957,3 +7957,146 @@ describe('ForegroundFallbackManager same-model retry request scope', () => {
     expect(mgr.willAttemptFallback('policy-nc')).toBe(false);
   });
 });
+
+describe('ForegroundFallbackManager same-model retry hardening', () => {
+  const seed = (mgr: ForegroundFallbackManager, sessionID: string) =>
+    mgr.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          sessionID,
+          agent: 'councillor',
+          providerID: 'openai',
+          modelID: 'gpt-5.4',
+        },
+      },
+    });
+  const streamError = (sessionID: string, id: string, error?: unknown) => ({
+    type: 'session.error',
+    properties: {
+      sessionID,
+      info: { id },
+      error: error ?? { message: 'streaming response failed: 502' },
+    },
+  });
+  const flush = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
+
+  test('"upstream error" with a deterministic 4xx status stays a hard error', () => {
+    expect(
+      isFailoverError({
+        statusCode: 400,
+        message: 'upstream error: timeout must be positive',
+      }),
+    ).toBe(false);
+    expect(
+      isFailoverError({ statusCode: 429, message: 'upstream error: 429' }),
+    ).toBe(true);
+  });
+
+  test('v2 same-model replay does not require a model switch', async () => {
+    const { client, mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      client,
+      directory: '/test',
+      hostFlavor: 'v2',
+    } as any);
+    await seed(mgr, 'v2-nc');
+    await mgr.handleEvent(streamError('v2-nc', 'e1'));
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect(mocks.promptAsync.mock.calls[0]?.[0]).not.toHaveProperty(
+      'modelSwitch',
+    );
+  });
+
+  test('a host retry status paired with a replayed error sends no second prompt', async () => {
+    const { client, mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      client,
+      directory: '/test',
+    } as any);
+    await seed(mgr, 'pair-nc');
+    await mgr.handleEvent(streamError('pair-nc', 'e1'));
+    await mgr.handleEvent({
+      type: 'session.status',
+      properties: {
+        sessionID: 'pair-nc',
+        status: {
+          type: 'retry',
+          attempt: 1,
+          message: 'streaming response failed: 502',
+        },
+      },
+    });
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    expect((mgr as any).sessionRetries.get('pair-nc')).toBe(1);
+  });
+
+  test('a success clears the deterministic same-model block', async () => {
+    const { client } = createMockClient();
+    const mgr = new ForegroundFallbackManager(makeChains(), true, {
+      client,
+      directory: '/test',
+    } as any);
+    await seed(mgr, 'det-nc');
+    await mgr.handleEvent(
+      streamError('det-nc', 'e1', { statusCode: 401, message: 'auth failed' }),
+    );
+    expect(mgr.willAttemptFallback('det-nc')).toBe(false);
+    await mgr.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          sessionID: 'det-nc',
+          role: 'assistant',
+          agent: 'councillor',
+          providerID: 'openai',
+          modelID: 'gpt-5.4',
+          time: { completed: 1 },
+        },
+      },
+    });
+    expect(mgr.willAttemptFallback('det-nc')).toBe(true);
+  });
+
+  describe('with fake timers', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test('a replay send timeout keeps its charge', async () => {
+      const { client } = createMockClient({
+        promptAsyncImpl: () => new Promise(() => {}),
+      });
+      const mgr = new ForegroundFallbackManager(makeChains(), true, {
+        client,
+        directory: '/test',
+      } as any);
+      await seed(mgr, 'slow-nc');
+      const pending = mgr.handleEvent(streamError('slow-nc', 'e1'));
+      await flush();
+      jest.advanceTimersByTime(10_000);
+      await pending;
+      expect((mgr as any).sessionRetries.get('slow-nc')).toBe(1);
+      expect(mgr.isFallbackInProgress('slow-nc')).toBe(false);
+    });
+
+    test('a hung transcript read is bounded and refunds the charge', async () => {
+      const { client, mocks } = createMockClient({
+        messagesImpl: () => new Promise(() => {}),
+      });
+      const mgr = new ForegroundFallbackManager(makeChains(), true, {
+        client,
+        directory: '/test',
+      } as any);
+      await seed(mgr, 'hung-nc');
+      const pending = mgr.handleEvent(streamError('hung-nc', 'e1'));
+      await flush();
+      jest.advanceTimersByTime(2_000);
+      await pending;
+      expect(mocks.promptAsync).not.toHaveBeenCalled();
+      expect(mgr.isFallbackInProgress('hung-nc')).toBe(false);
+      expect((mgr as any).sessionRetries.get('hung-nc') ?? 0).toBe(0);
+    });
+  });
+});
