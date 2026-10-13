@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,15 @@ import { createTaskResultTool } from './task-result';
 
 const PARENT = 'ses_parent';
 const CHILD = 'ses_child';
+
+const pendingCleanups: Array<() => Promise<void>> = [];
+
+afterEach(async () => {
+  while (pendingCleanups.length > 0) {
+    const fn = pendingCleanups.pop();
+    if (fn) await fn().catch(() => {});
+  }
+});
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -63,18 +72,23 @@ async function loadPlugin(
     { sessionID: PARENT, agent: options.agent ?? 'orchestrator' } as never,
     {} as never,
   );
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    for (const [key, value] of previousValues) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    await rm(projectDir, { recursive: true, force: true });
+  };
+  pendingCleanups.push(cleanup);
   return {
     hooks,
-    async cleanup() {
-      for (const [key, value] of previousValues) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-      await rm(projectDir, { recursive: true, force: true });
-    },
+    cleanup,
     dispose() {
       return hooks.event?.({
         event: {
