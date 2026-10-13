@@ -206,6 +206,45 @@ describe('plugin tool registration', () => {
     ).resolves.toContain('state: waiting_for_user');
   });
 
+  test('v2 host leaves wait_for_user unregistered', async () => {
+    const projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-wfu-gate-');
+    const noop = async () => ({});
+    const session = new Proxy({}, { get: () => noop }) as Record<
+      string,
+      unknown
+    >;
+    const client = new Proxy(
+      { app: { log: noop }, session },
+      {
+        get(target, property) {
+          if (property in target) {
+            return target[property as keyof typeof target];
+          }
+          return new Proxy({}, { get: () => noop });
+        },
+      },
+    );
+    const baseInput = {
+      client,
+      directory: projectDir,
+      worktree: projectDir,
+      serverUrl: new URL('http://127.0.0.1:4096'),
+      hostFlavor: 'v2',
+    } as never;
+
+    try {
+      // v2 never registers wait_for_user: the native `question` tool
+      // covers the blocking boundary there. The rest of the surface is
+      // intact.
+      const hooks = await plugin(baseInput);
+      expect(hooks.tool?.task_status).toBeDefined();
+      expect(hooks.tool?.wait_for_user).toBeUndefined();
+      await hooks.dispose?.();
+    } finally {
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
   test('does not retain loop-guard state when search-path validation rejects', async () => {
     const projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-search-hook-');
     const client = createPluginClient(async () => ({}));

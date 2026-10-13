@@ -9,6 +9,15 @@ import { type DelegationVocabulary, delegationVocabulary } from './adapters';
 export const DELEGATION_TOOL_V2 = 'subagent';
 export const DELEGATION_TOOL_V1 = 'task';
 
+/**
+ * task_reply's honest v2 surface: until a host exposes form.reply through
+ * the plugin session domain, v2 can only serve permission requests. One
+ * shared constant so every branch that narrows the description uses
+ * byte-identical wording (#1540 undetected branch = #1541 v2 branch).
+ */
+export const TASK_REPLY_PERMISSION_ONLY_DESCRIPTION =
+  'Reply to a tracked child permission request by task ID/alias and request ID.';
+
 /** v2 `subagent` tool name → the `task` name the v1 pipeline expects;
  * every other name is returned unchanged. */
 export function toolNameToV1(tool: string): string {

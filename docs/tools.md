@@ -68,7 +68,7 @@ conservatively passes the path through. Disable with
 | `task_message` | Send a non-interrupting message and return `queued` (v2: steering acceptance with `delivery: "steer"`) |
 | `task_cancel` | Stop a generation while retaining its session |
 | `task_revive` | Resume a retained session with a new instruction |
-| `wait_for_user` | Pause automatic orchestrator wake prompts until the next distinct external user message |
+| `wait_for_user` | Pause automatic orchestrator wake prompts until the next distinct external user message (v1 only; not registered on v2 — use the native `question` tool there) |
 
 The task controls use the task ID or Background Job Board alias for the task being
 managed. `task_message` does not interrupt the current generation. `task_cancel`
@@ -259,7 +259,8 @@ the latest live activity. Uncertainty alone never becomes terminal on retry
 exhaustion; existing events/probes and independent valid evidence can resolve it,
 but there is no guaranteed recovery deadline.
 
-`wait_for_user` is also orchestrator-only. The orchestrator uses it as the final
+`wait_for_user` is also orchestrator-only (and v1-only; it is not registered on
+v2). The orchestrator uses it as the final
 tool action after providing concrete instructions for external manual work. Its
 `reason` is diagnostic text only; the plugin does not parse assistant prose to
 decide whether a turn is HITL. A new real user text/file/image message clears the
