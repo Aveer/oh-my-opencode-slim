@@ -2151,6 +2151,7 @@ describe('isFailoverError', () => {
     'Quota exceeded for quota metric, try again in 30s',
     'quota exceeded, retry in 20s',
     'quota exceeded, will reset at midnight',
+    'quota exceeded; resets at 15:00 UTC',
   ])(
     'returns true for short-horizon "%s" despite spent wording (issue #966)',
     (signal) => {

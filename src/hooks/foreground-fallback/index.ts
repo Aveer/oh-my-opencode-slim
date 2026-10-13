@@ -122,7 +122,7 @@ const SURFACE_QUOTA_PATTERNS = [
 // Short-horizon retry phrasing: the quota may reset soon, so fail over.
 // Excludes bare "Resets in X days/min" (issue #966 stays surfaced).
 const SHORT_HORIZON_RETRY_PATTERN =
-  /retry (after|in)|reset (after|at)|will reset at|try again|per minute|per day|\btpm\b|\brpm\b/i;
+  /retry (after|in)|resets? (after|at)|will reset at|try again|per minute|per day|\btpm\b|\brpm\b/i;
 
 const PROVIDER_STATUS_CODES = new Set([401, 402, 403, 429, 500, 502, 503, 504]);
 // v2 host classification ({type, message, status?}); status is omitted when
