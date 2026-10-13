@@ -352,19 +352,19 @@ describe('createV2Setup e2e', () => {
       // factory init stays hermetic (no user config, no side processes).
       JSON.stringify({ companion: { enabled: false } }),
     );
-    process.env = {
-      ...originalEnv,
-      OPENCODE_CONFIG_DIR: configDir,
-      XDG_CONFIG_HOME: path.join(fixtureRoot, 'xdg-config'),
-      XDG_DATA_HOME: path.join(fixtureRoot, 'xdg-data'),
-      XDG_CACHE_HOME: path.join(fixtureRoot, 'xdg-cache'),
-      OPENCODE_LOG_DIR: logDir,
-    };
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    process.env.XDG_CONFIG_HOME = path.join(fixtureRoot, 'xdg-config');
+    process.env.XDG_DATA_HOME = path.join(fixtureRoot, 'xdg-data');
+    process.env.XDG_CACHE_HOME = path.join(fixtureRoot, 'xdg-cache');
+    process.env.OPENCODE_LOG_DIR = logDir;
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
   });
 
   afterEach(async () => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     await rm(fixtureRoot, { recursive: true, force: true });
   });
 

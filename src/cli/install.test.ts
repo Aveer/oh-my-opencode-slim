@@ -125,7 +125,10 @@ function baseConfig(): InstallConfig {
 
 describe('shouldInstallCompanion', () => {
   afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
+    for (const key of Object.keys(process.env)) {
+      if (!(key in ORIGINAL_ENV)) delete process.env[key];
+    }
+    Object.assign(process.env, ORIGINAL_ENV);
     Object.defineProperty(process.stdin, 'isTTY', {
       configurable: true,
       value: ORIGINAL_STDIN_IS_TTY,

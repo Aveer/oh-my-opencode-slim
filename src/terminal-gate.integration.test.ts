@@ -1,6 +1,7 @@
 import { afterEach, expect, jest, mock, spyOn, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import * as hookFactories from './hooks';
 import { isVolatileTaggedMessage } from './hooks/cache-safe-injection';
@@ -79,7 +80,9 @@ async function assembly(
   } = {},
 ) {
   const env = { ...process.env };
-  const directory = await mkdtemp('/tmp/slim-terminal-assembly-');
+  const directory = await mkdtemp(
+    path.join(tmpdir(), 'slim-terminal-assembly-'),
+  );
   process.env.OPENCODE_CONFIG_DIR = directory;
   process.env.XDG_CONFIG_HOME = directory;
   process.env.XDG_DATA_HOME = directory;
@@ -207,7 +210,10 @@ async function assembly(
     hookSpy.mockRestore();
     gateSpy.mockRestore();
     runtimeSpy.mockRestore();
-    process.env = env;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in env)) delete process.env[key];
+    }
+    Object.assign(process.env, env);
     await rm(directory, { recursive: true, force: true });
   });
   const hooks = await plugin({

@@ -30,6 +30,15 @@ let currentMockSession: Record<string, unknown> | null = null;
 // Same idea for the raw transport used by foreground-waiter promotion.
 let currentMockPost: ((args: unknown) => Promise<unknown>) | null = null;
 
+afterEach(() => {
+  currentMockSession = null;
+  currentMockPost = null;
+  const globalSet = (globalThis as Record<symbol, Set<string>>)[
+    Symbol.for('oh-my-opencode-slim.foreground-fallback.in-progress')
+  ];
+  globalSet?.clear();
+});
+
 // Override manager.test.ts's global mock.module for getClient. Called
 // at module load AND from createMockClient so it takes effect regardless of
 // test file load order.
