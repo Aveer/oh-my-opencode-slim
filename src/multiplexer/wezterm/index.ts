@@ -61,7 +61,6 @@ import {
   isPosixShell,
   normalizePathForShell,
   quoteShellArg,
-  resolveOpencodeExecutable,
   withParentEnvPassword,
 } from '../shared';
 import type { Multiplexer, PaneResult, PaneSpawnOptions } from '../types';
@@ -211,10 +210,12 @@ export class WeztermMultiplexer implements Multiplexer {
 
     try {
       const attachDir = normalizePathForShell(directory);
-      const viewerCommand = buildViewCommand(sessionId, serverUrl, directory, {
-        ...options,
-        executable: resolveOpencodeExecutable(),
-      });
+      const viewerCommand = buildViewCommand(
+        sessionId,
+        serverUrl,
+        directory,
+        options,
+      );
       const command = passwordVar
         ? withParentEnvPassword(
             withViewerUsername(viewerCommand, passwordVar),
