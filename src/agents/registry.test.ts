@@ -2654,8 +2654,7 @@ describe('marketplace agent customization', () => {
           hostFlavor: 'v2',
         },
       );
-      const prompt = registry.finalAgentConfig['market-agent']
-        .prompt as string;
+      const prompt = registry.finalAgentConfig['market-agent'].prompt as string;
       expect(prompt).toContain('Package prompt');
       expect(prompt.endsWith('\n\nLocal extension')).toBe(true);
       expect(prompt.split('Local extension').length - 1).toBe(1);
