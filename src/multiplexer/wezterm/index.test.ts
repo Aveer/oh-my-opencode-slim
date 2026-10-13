@@ -613,6 +613,62 @@ describe('WeztermMultiplexer', () => {
     ]);
   });
 
+  test('closePane treats an already-missing pane as closed', async () => {
+    const { WeztermMultiplexer } = await importFreshWezterm();
+    const wezterm = new WeztermMultiplexer('main-vertical', 60);
+    await spawnWith(wezterm, 'ses_a');
+    installMock((command) =>
+      command.includes('kill-pane')
+        ? createSpawnResult(1, '', 'Error: no such pane 100')
+        : undefined,
+    );
+
+    expect(await wezterm.closePane('100')).toBe(true);
+
+    // Closed, so the agent pane is forgotten and the anchor is split again.
+    installMock();
+    await spawnWith(wezterm, 'ses_b');
+    expect(splitFlags(splits().at(-1) ?? []).slice(0, 3)).toEqual([
+      '--pane-id',
+      ANCHOR_PANE_ID,
+      '--right',
+    ]);
+  });
+
+  test('closePane only accepts a missing-pane error for its own pane id', async () => {
+    const { WeztermMultiplexer } = await importFreshWezterm();
+    const wezterm = new WeztermMultiplexer();
+    installMock((command) =>
+      command.includes('kill-pane')
+        ? createSpawnResult(1, '', 'Error: no such pane 1000')
+        : undefined,
+    );
+    expect(await wezterm.closePane('100')).toBe(false);
+  });
+
+  test('closePane keeps a pane tracked when kill-pane fails for another reason', async () => {
+    const { WeztermMultiplexer } = await importFreshWezterm();
+    const wezterm = new WeztermMultiplexer('main-vertical', 60);
+    await spawnWith(wezterm, 'ses_a');
+    // A mismatched or broken CLI can exit 1 while the pane still exists.
+    installMock((command) =>
+      command.includes('kill-pane')
+        ? createSpawnResult(1, '', 'Error while decoding response pdu')
+        : undefined,
+    );
+
+    expect(await wezterm.closePane('100')).toBe(false);
+
+    // Still tracked: the next child stacks into the same agent pane.
+    installMock();
+    await spawnWith(wezterm, 'ses_b');
+    expect(splitFlags(splits().at(-1) ?? []).slice(0, 3)).toEqual([
+      '--pane-id',
+      '100',
+      '--bottom',
+    ]);
+  });
+
   test('closePane refuses outside WezTerm', async () => {
     const { WeztermMultiplexer } = await importFreshWezterm();
     const wezterm = new WeztermMultiplexer();
