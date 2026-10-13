@@ -621,11 +621,11 @@ export class ForegroundFallbackManager {
   private readonly lastTriggerModel = new Map<string, string>();
   /** Turn identity associated with the last failure dedup marker. */
   private readonly lastTriggerTurn = new Map<string, number>();
-  /** The last trigger that switched (or set out to switch) models: the
-   *  model it failed on and its error signature. Kept only until the
-   *  replacement emits a message; until then an uncorrelated spent-quota
-   *  error (session.error, status retry, v2 retry hook) repeating this
-   *  signature is that trigger's echo (issue #966). */
+  /** The last replay trigger: the model it failed on and its error
+   *  signature. Kept only until the replacement emits a message; until then
+   *  an uncorrelated spent-quota session.error or status retry repeating
+   *  this signature is that trigger's echo (issue #966). The v2 retry hook
+   *  names its failing model and never consults this. */
   private readonly lastSwitchTrigger = new Map<
     string,
     { model: string; signature: string; turn: number; time: number }
@@ -1771,7 +1771,10 @@ export class ForegroundFallbackManager {
       if (event.agent) this.registerSessionAgent(sessionID, event.agent);
       this.sessionModel.set(sessionID, from);
       // Spent allowance on every chain provider: leave the host decision.
-      if (this.surfacesSpentQuota(sessionID, event.error)) return;
+      // The host names the model whose attempt failed, so attribution is
+      // direct: no echo heuristic on this path (an old model's late retry
+      // was already dropped by the tried-model check above).
+      if (this.surfacesSpentQuota(sessionID, event.error, from)) return;
       if (event.decision?.retry === true) {
         this.rearmIfFreshDescent(sessionID);
         // Permanent quota/billing exhaustion and spent allowance never
@@ -1800,7 +1803,6 @@ export class ForegroundFallbackManager {
       );
       if (this.disposed) return;
       event.decision = { retry: true, delay: this.retryDelayMs };
-      this.noteSwitchTrigger(sessionID, from, event.error);
       this.commitSwitch(sessionID, from, nextModel, event.error);
       this.showFallbackToast(agentName, nextModel, event.error);
       log('[foreground-fallback] retry hook switched model in place', {
@@ -1981,7 +1983,7 @@ export class ForegroundFallbackManager {
    *  error tied to a message is that message's incident: surfacesSpentQuota
    *  attributes a handled one to its recorded model, anything else is the
    *  current model's. Any other error (uncorrelated session.error, status
-   *  retry, v2 retry hook) is the last switch trigger's echo only when it
+   *  retry) is the last switch trigger's echo only when it
    *  repeats that trigger's signature in the same turn and dedup window,
    *  the trigger's provider is exhausted, and the replacement has emitted
    *  nothing since; otherwise it is the current model's, so a genuine

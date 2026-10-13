@@ -2855,41 +2855,34 @@ describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
     expect(prompted(mocks)).toEqual(['p2/b', 'p3/c']);
   });
 
-  test('a v2 retry hook echoing the switch trigger leaves the replacement healthy', async () => {
-    const { manager } = makeManager({ chain: ['p1/a', 'p2/b', 'p3/c'] });
-    const sid = 'spent-v2-echo';
+  test('v2 retry hook attributes spent quota to the model it names', async () => {
+    const { manager } = makeManager({
+      chain: ['p1/a', 'p2/b', 'p3/c'],
+      hostFlavor: 'v2',
+    });
+    const sid = 'spent-v2-cascade';
     const exhausted = () =>
       (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
     const switchModel = mock(async () => {});
+    // Host retry-hook input as the v2 bridge delivers it (src/v2/setup.ts):
+    // the failing attempt's model, the host error and its retry decision.
     const retry = (providerID: string, id: string) => ({
       sessionID: sid,
       agent: 'orchestrator',
       model: { providerID, id },
-      error: SPENT,
-      decision: { retry: false } as { retry: boolean; delay?: number },
+      error: { message: SPENT.message, statusCode: 429, isRetryable: true },
+      decision: { retry: true } as { retry: boolean; delay?: number },
     });
     await manager.handleV2Retry(retry('p1', 'a'), switchModel);
     expect(switchModel).toHaveBeenCalledTimes(1);
-    // The host retries on p2 with p1's error before p2 has run.
-    const echo = retry('p2', 'b');
+    // True echo: the host's late retry for p1 after the switch.
+    const echo = retry('p1', 'a');
     await manager.handleV2Retry(echo, switchModel);
     expect(switchModel).toHaveBeenCalledTimes(1);
-    expect(echo.decision).toEqual({ retry: false });
+    expect(echo.decision).toEqual({ retry: true });
     expect(exhausted()).toEqual(new Set(['p1']));
-    // p2 emits a message, then fails with its own spent quota.
-    await manager.handleEvent({
-      type: 'message.updated',
-      properties: {
-        info: {
-          id: 'v2-p2',
-          sessionID: sid,
-          role: 'assistant',
-          agent: 'orchestrator',
-          providerID: 'p2',
-          modelID: 'b',
-        },
-      },
-    });
+    // p2 rejects at once with the same text and no message in between:
+    // the hook names p2, so p2 is exhausted and p3 takes over.
     await manager.handleV2Retry(retry('p2', 'b'), switchModel);
     expect(switchModel).toHaveBeenCalledTimes(2);
     expect((switchModel.mock.calls[1] as unknown[])[1]).toMatchObject({
@@ -2897,6 +2890,11 @@ describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
       id: 'c',
     });
     expect(exhausted()).toEqual(new Set(['p1', 'p2']));
+    // p3 spent too: every provider is exhausted, the decision stands.
+    const last = retry('p3', 'c');
+    await manager.handleV2Retry(last, switchModel);
+    expect(switchModel).toHaveBeenCalledTimes(2);
+    expect(last.decision).toEqual({ retry: true });
   });
 
   test('a same-provider-only chain surfaces the error', async () => {
