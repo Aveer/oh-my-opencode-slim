@@ -371,6 +371,14 @@ export function buildPluginInput(
   // Null-safe: reduced hosts may load the factory without a session domain;
   // every method then degrades honestly instead of crashing construction.
   const s = (ctx.session ?? {}) as V2Context['session'];
+  // Hosts may expose a form domain on the plugin session (pinned v2.0.26
+  // does not). Forwarded capability-probed so task_reply's form-reply
+  // detection reads THIS client truthfully. The V2Context mirror type is
+  // intentionally not widened (mirror-conformance): cast, don't retype.
+  const sessionForm = (
+    s as { form?: { reply?: (a: Record<string, unknown>) => Promise<unknown> } }
+  ).form;
+  const sessionFormReply = sessionForm?.reply;
   const client = {
     session: {
       // `get` is exposed only when the host provides session.get — callers
@@ -792,6 +800,22 @@ export function buildPluginInput(
               );
             }
           },
+      // `form` is forwarded only when the host session domain carries it
+      // (pinned v2.0.26 does not — see the one-time notice block near the
+      // top of this file). task_reply's form-reply capability probe reads
+      // THIS client, so forwarding here is what makes that probe truthful:
+      // absent host domain → absent here → probe stays false (honest
+      // failure); a host that exposes session.form.reply lights the probe
+      // up through this forward. Same data-envelope convention as `get`.
+      ...(sessionFormReply
+        ? {
+            form: {
+              reply: async (args: Record<string, unknown>) => ({
+                data: await sessionFormReply(args),
+              }),
+            },
+          }
+        : {}),
     },
     ...(typeof ctx.permission?.reply === 'function'
       ? {

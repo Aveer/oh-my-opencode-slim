@@ -459,11 +459,14 @@ export class ForegroundFallbackManager {
     string,
     ReadonlyArray<ForegroundFallbackModel>
   >;
-  private readonly chains: Record<string, string[]> = {};
-  private readonly chainEntries: Record<
+  /** sessionID → chain generation pinned when the session registered (the
+   *  same generation as its v2 runtime profile). Shallow copies of the
+   *  published table: entry arrays are shared, so publishers replace arrays
+   *  and never mutate them in place — pinned generations stay stable. */
+  private readonly sessionChains = new Map<
     string,
-    Array<{ id: string; variant?: string }>
-  > = {};
+    Record<string, ReadonlyArray<ForegroundFallbackModel>>
+  >();
   /** sessionID → last observed model string ("providerID/modelID") */
   private readonly sessionModel = new Map<string, string>();
   /** sessionID → confirmed fallback and providers abandoned by its failures.
@@ -642,8 +645,33 @@ export class ForegroundFallbackManager {
     // so resolveChain's "known agent without a chain" path applies and the
     // normalized chains retain the agent entry.
     this.chainSource[agentName] = [];
-    this.chains[agentName] = [];
-    this.chainEntries[agentName] = [];
+  }
+
+  private pinnedChains(
+    sessionID: string,
+  ): Record<string, ReadonlyArray<ForegroundFallbackModel>> {
+    let pinned = this.sessionChains.get(sessionID);
+    if (!pinned) {
+      pinned = { ...this.chainSource };
+      this.sessionChains.set(sessionID, pinned);
+    }
+    return pinned;
+  }
+
+  /** Pin the chain generation in effect when a session registers, so an
+   *  in-flight fallback sequence finishes against its own generation even if
+   *  a hot refresh publishes a new chain table mid-descent. First call wins;
+   *  chain resolution pins lazily as a safety net. */
+  pinSessionChains(sessionID: string): void {
+    this.pinnedChains(sessionID);
+  }
+
+  /** Release a session's pinned generation so a retry after a failed
+   *  admission recaptures against the generation current at that retry.
+   *  Only safe when no request has run — the capture failed before
+   *  admission, so no descent can be mid-flight. */
+  releaseSessionChains(sessionID: string): void {
+    this.sessionChains.delete(sessionID);
   }
 
   registerSessionAgent(sessionID: string, agentName: string): void {
@@ -656,6 +684,7 @@ export class ForegroundFallbackManager {
       return;
     }
     this.sessionAgent.set(sessionID, normalizedAgentName);
+    this.pinSessionChains(sessionID);
   }
 
   /** Plugin dispose: cancel scheduled initial-delay timers and fence off
@@ -944,13 +973,6 @@ export class ForegroundFallbackManager {
     private readonly v2RetryEnabled: boolean = enabled,
   ) {
     this.chainSource = chains;
-    for (const [agentName, entries] of Object.entries(chains)) {
-      const normalized = entries.map((entry) =>
-        typeof entry === 'string' ? { id: entry } : entry,
-      );
-      this.chainEntries[agentName] = normalized;
-      this.chains[agentName] = normalized.map((entry) => entry.id);
-    }
     this.onSessionModelChanged = onSessionModelChanged;
     this.backgroundFallbackHandoff = backgroundFallbackHandoff;
     this.readBackgroundGeneration = readBackgroundGeneration;
@@ -960,6 +982,7 @@ export class ForegroundFallbackManager {
         this.activeFallback.delete(id);
         this.sessionAgent.delete(id);
         this.sessionTried.delete(id);
+        this.sessionChains.delete(id);
         this.unknownFinishStreak.delete(id);
         this.v2RetryNotices.delete(id);
         // NOTE: inProgress is intentionally NOT cleared here —
@@ -1963,11 +1986,17 @@ export class ForegroundFallbackManager {
     const tried = this.sessionTried.get(sessionID);
     if (!tried || tried.size <= 1) return;
     const agentName = this.sessionAgent.get(sessionID);
-    const configuredChain =
-      agentName === undefined ? undefined : this.chains[agentName];
+    const configuredHead =
+      agentName === undefined
+        ? undefined
+        : this.pinnedChains(sessionID)[agentName]?.[0];
     const rearmHead =
-      configuredChain?.[0] ??
-      this.resolveChain(agentName, observedModel).chain[0];
+      (configuredHead === undefined
+        ? undefined
+        : typeof configuredHead === 'string'
+          ? configuredHead
+          : configuredHead.id) ??
+      this.resolveChain(agentName, observedModel, sessionID).chain[0];
     if (observedModel !== rearmHead) return;
     // A head whose allowance is spent (issue #966) is not a recovery: the
     // descent continues, so replays landing on it cannot reopen the chain.
@@ -1990,7 +2019,11 @@ export class ForegroundFallbackManager {
     const observedModel = this.sessionModel.get(sessionID);
     let currentModel = observedModel;
     const agentName = this.sessionAgent.get(sessionID);
-    const { chain, source } = this.resolveChain(agentName, currentModel);
+    const { chain, entries } = this.resolveChain(
+      agentName,
+      currentModel,
+      sessionID,
+    );
     // Callers pre-check via hasFallbackChain; keep as defensive guard only.
     if (!chain.length) return;
     // When the agent is known but no model was captured (common for
@@ -2110,10 +2143,7 @@ export class ForegroundFallbackManager {
       });
       return;
     }
-    const variant = source
-      ? this.chainEntries[source]?.find((entry) => entry.id === nextModel)
-          ?.variant
-      : undefined;
+    const variant = entries.find((entry) => entry.id === nextModel)?.variant;
     return { agentName, currentModel, nextModel, ref, variant };
   }
 
@@ -2511,6 +2541,7 @@ export class ForegroundFallbackManager {
       this.resolveChain(
         this.sessionAgent.get(sessionID),
         this.sessionModel.get(sessionID),
+        sessionID,
       ).chain.length > 0
     );
   }
@@ -2534,19 +2565,30 @@ export class ForegroundFallbackManager {
   private resolveChain(
     agentName: string | undefined,
     currentModel: string | undefined,
-  ): { chain: string[]; source?: string } {
-    // The finalized registry can replace an agent's chain after manager
-    // construction (for example, with marketplace-provided candidates).
-    // Keep the source object live rather than freezing its startup snapshot.
-    for (const [name, entries] of Object.entries(this.chainSource)) {
+    sessionID: string,
+  ): {
+    chain: string[];
+    entries: Array<{ id: string; variant?: string }>;
+    source?: string;
+  } {
+    // Resolve against the session's pinned generation (lazily pinned on
+    // first use), so an in-flight descent never observes a chain swap
+    // mid-sequence while its tried-set and exhaustion stage stay valid.
+    const generation = this.pinnedChains(sessionID);
+    const chains: Record<string, string[]> = {};
+    const chainEntries: Record<
+      string,
+      Array<{ id: string; variant?: string }>
+    > = {};
+    for (const [name, entries] of Object.entries(generation)) {
       const normalized = entries.map((entry) =>
         typeof entry === 'string' ? { id: entry } : entry,
       );
-      this.chainEntries[name] = normalized;
-      this.chains[name] = normalized.map((entry) => entry.id);
+      chainEntries[name] = normalized;
+      chains[name] = normalized.map((entry) => entry.id);
     }
     if (agentName) {
-      const chain = this.chains[agentName];
+      const chain = chains[agentName];
       if (chain) {
         // Dynamic head: when the session runs a model outside the
         // configured chain (session-inherited or /model-picked), that model
@@ -2556,21 +2598,27 @@ export class ForegroundFallbackManager {
         // Empty chains (disableChain) must stay empty: prepending onto []
         // would resurrect fallback for an agent whose chain was disabled.
         if (currentModel && chain.length > 0 && !chain.includes(currentModel)) {
-          return { chain: [currentModel, ...chain], source: agentName };
+          return {
+            chain: [currentModel, ...chain],
+            entries: chainEntries[agentName],
+            source: agentName,
+          };
         }
-        return { chain, source: agentName };
+        return { chain, entries: chainEntries[agentName], source: agentName };
       }
       // Any known agent without a configured chain: no fallback.
       // Don't bleed into other agents' chains via model-matching —
       // that switches the session to the wrong agent (e.g. Build
       // inherits Orchestrator's chain and becomes Orchestrator).
-      return { chain: [] };
+      return { chain: [], entries: [] };
     }
 
     // Agent unknown: try to infer from the current model.
     if (currentModel) {
-      for (const [name, chain] of Object.entries(this.chains)) {
-        if (chain.includes(currentModel)) return { chain, source: name };
+      for (const [name, chain] of Object.entries(chains)) {
+        if (chain.includes(currentModel)) {
+          return { chain, entries: chainEntries[name], source: name };
+        }
       }
     }
 
@@ -2578,7 +2626,7 @@ export class ForegroundFallbackManager {
     // Only reached when both agent name and current model are unavailable.
     const all: string[] = [];
     const seen = new Set<string>();
-    for (const chain of Object.values(this.chains)) {
+    for (const chain of Object.values(chains)) {
       for (const m of chain) {
         if (!seen.has(m)) {
           seen.add(m);
@@ -2586,6 +2634,6 @@ export class ForegroundFallbackManager {
         }
       }
     }
-    return { chain: all };
+    return { chain: all, entries: [] };
   }
 }
