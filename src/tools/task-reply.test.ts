@@ -485,8 +485,11 @@ describe('task_reply', () => {
     // honest-surface) and the execute gate below refuses questions with
     // the host-UI/cancel redirect.
     expect(Object.keys(task_reply.args)).not.toContain('answers');
+    // The description matches the honest surface: on undetected v2 the
+    // tool can only serve permission requests, so it must not advertise
+    // question replies (greptile P2: overpromised question replies).
     expect(task_reply.description).toBe(
-      'Reply to a tracked child request by task ID/alias and request ID.',
+      'Reply to a tracked child permission request by task ID/alias and request ID.',
     );
 
     // C4: both identifier forms still resolve the task and its open ask on
@@ -1330,9 +1333,70 @@ describe('task_reply v2 event transport integration', () => {
       expect(formReply.mock.calls[0]?.[0]).toMatchObject({
         sessionID: 'ses_child1',
         formID: 'form_1',
+        // Answers key by the form field key (the host requires exact
+        // field keys), not by the display header.
+        answer: { environment: 'staging' },
       });
       expect(output).toContain('Answered pending question form_1');
       expect(getChildInputWait('ses_child1', 'form_1')).toBeUndefined();
+    } finally {
+      await hook.event({
+        event: { type: 'server.instance.disposed' },
+      } as never);
+    }
+  });
+
+  test('detected v2 redirects a reject (answers omitted) to the host UI instead of the dead v1 route', async () => {
+    resetUserWaitGateForTests();
+    resetChildInputWaitForTests();
+    const board = new BackgroundJobBoard();
+    registerBackgroundChild(board);
+    const hook = createInputWaitHook(board);
+    try {
+      const formReply = mock(async () => undefined);
+      const input = buildPluginInput(makeV2Ctx());
+      (
+        input as { client: { session: Record<string, unknown> } }
+      ).client.session = {
+        ...(input as { client: { session: Record<string, unknown> } }).client
+          .session,
+        form: { reply: formReply },
+      } as never;
+      const { task_reply } = createTaskReplyTool({
+        input: input as never,
+        backgroundJobBoard: board,
+      });
+
+      await routeMappedV2Event(hook, {
+        type: 'form.created',
+        data: {
+          form: {
+            id: 'form_1',
+            sessionID: 'ses_child1',
+            fields: [
+              {
+                key: 'environment',
+                title: 'Pick environment',
+                type: 'select',
+                options: [{ label: 'staging', description: 'Use staging' }],
+              },
+            ],
+          },
+        },
+      });
+
+      // Omitted answers on detected v2: no dead-end transport attempt, no
+      // fake dismissal — the ask stays open where the host UI can resolve
+      // it.
+      await expect(
+        task_reply.execute({ task_id: 'ses_child1', request_id: 'form_1' }, {
+          sessionID: 'parent-1',
+        } as never),
+      ).rejects.toThrow(/host UI/);
+      expect(formReply).not.toHaveBeenCalled();
+      expect(getChildInputWait('ses_child1', 'form_1')).toMatchObject({
+        requestID: 'form_1',
+      });
     } finally {
       await hook.event({
         event: { type: 'server.instance.disposed' },

@@ -22,6 +22,12 @@ export type ChildInputWaitKind = 'question' | 'permission';
 export interface ChildInputWaitQuestion {
   question: string;
   header: string;
+  /**
+   * The v2 form field key: the host requires form replies keyed by this
+   * exact value (`answer[field.key]`). `header` is display text (truncated
+   * to 30 chars) and is never a valid key. Absent on v1-native asks.
+   */
+  key?: string;
   options: Array<{ label: string; description: string }>;
 }
 
@@ -101,6 +107,9 @@ function sanitizeQuestions(value: unknown): ChildInputWaitQuestion[] {
     return {
       question: sanitizeText(record.question, 500),
       header: sanitizeText(record.header, 30),
+      ...(typeof record.key === 'string' && record.key
+        ? { key: sanitizeText(record.key, 200) }
+        : {}),
       options,
     };
   });
