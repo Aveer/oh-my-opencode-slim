@@ -11,26 +11,10 @@ function emittedDecision(
   action: string,
   resource: string,
 ): V2PermissionRule['effect'] {
-  const match = rules.findLast(
-    (rule) => matches(action, rule.action) && matches(resource, rule.resource),
-  );
-  return match?.effect ?? 'ask';
-}
-
-function matches(value: string, pattern: string): boolean {
-  const normalizedPattern = pattern.replaceAll('\\', '/');
-  const normalizedValue = value.replaceAll('\\', '/');
-  const variants =
-    normalizedPattern.endsWith(' *') && !normalizedPattern.endsWith(' **')
-      ? [normalizedPattern.slice(0, -2), normalizedPattern]
-      : [normalizedPattern];
-  return variants.some((variant) => {
-    const expression = variant
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.');
-    return new RegExp(`^${expression}$`, 's').test(normalizedValue);
-  });
+  return compilePermissionPolicy({
+    baselineRules: rules,
+    hostRules: [],
+  }).decide(action, resource);
 }
 
 describe('compilePermissionPolicy', () => {

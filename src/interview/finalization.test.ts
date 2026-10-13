@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { InterviewSessionRuntime } from './runtime';
@@ -6,8 +6,25 @@ import { createInterviewService } from './service';
 import type { InterviewMessage } from './types';
 
 describe('interview finalization', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  });
+
+  async function createTempDir(prefix: string): Promise<string> {
+    const dir = await fs.mkdtemp(prefix);
+    tempDirs.push(dir);
+    return dir;
+  }
+
   test('persists clean completion markdown without using stale interview state', async () => {
-    const directory = await fs.mkdtemp('/tmp/interview-finalization-');
+    const directory = await createTempDir('/tmp/interview-finalization-');
     const messages: InterviewMessage[] = [];
     const continued: string[] = [];
     const runtime: InterviewSessionRuntime = {
@@ -88,7 +105,7 @@ describe('interview finalization', () => {
   });
 
   test('isolates concurrent interviews with the same slug through finalization', async () => {
-    const directory = await fs.mkdtemp('/tmp/interview-collision-');
+    const directory = await createTempDir('/tmp/interview-collision-');
     const scenarios = await Promise.all(
       ['alpha', 'beta'].map(async (label) => {
         const messages: InterviewMessage[] = [];
@@ -207,7 +224,7 @@ describe('interview finalization', () => {
   });
 
   test('concurrent confirm-complete clicks publish one completion notice', async () => {
-    const directory = await fs.mkdtemp('/tmp/interview-finalization-race-');
+    const directory = await createTempDir('/tmp/interview-finalization-race-');
     const messages: InterviewMessage[] = [
       { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Draft' }] },
     ];
@@ -244,7 +261,7 @@ describe('interview finalization', () => {
   });
 
   test('prevents a second session from resuming the owned document', async () => {
-    const directory = await fs.mkdtemp('/tmp/interview-resume-lock-');
+    const directory = await createTempDir('/tmp/interview-resume-lock-');
     const documentPath = path.join(directory, 'interview', 'shared.md');
     await fs.mkdir(path.dirname(documentPath), { recursive: true });
     await fs.writeFile(
@@ -327,7 +344,7 @@ describe('interview finalization', () => {
   });
 
   test('allows the owning session to resume through another service instance', async () => {
-    const directory = await fs.mkdtemp('/tmp/interview-owner-resume-');
+    const directory = await createTempDir('/tmp/interview-owner-resume-');
     const documentPath = path.join(directory, 'interview', 'owned.md');
     await fs.mkdir(path.dirname(documentPath), { recursive: true });
     await fs.writeFile(documentPath, '# Owned\n\nDraft.', 'utf8');

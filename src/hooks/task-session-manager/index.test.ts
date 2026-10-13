@@ -2806,16 +2806,18 @@ describe('task-session-manager hook', () => {
 
     // Different suffix after the shared 48-char prefix: the full objective
     // differs, so the guard must not treat it as a duplicate.
-    await hook['tool.execute.before'](
-      { tool: 'task', sessionID: 'parent-1', callID: 'long-objective' },
-      {
-        args: {
-          subagent_type: 'oracle',
-          background: true,
-          description: `${sharedPrefix} distinct suffix B`,
+    await expect(
+      hook['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-1', callID: 'long-objective' },
+        {
+          args: {
+            subagent_type: 'oracle',
+            background: true,
+            description: `${sharedPrefix} distinct suffix B`,
+          },
         },
-      },
-    );
+      ),
+    ).resolves.toBeUndefined();
   });
 
   test('blocks an exact duplicate whose objective exceeds the 48-char label', async () => {

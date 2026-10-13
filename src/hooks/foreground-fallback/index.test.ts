@@ -7438,7 +7438,11 @@ describe('ForegroundFallbackManager willAttemptFallback', () => {
       directory: '/test',
     } as any);
     (mgr as any).inProgress.add('sess-1');
-    expect(mgr.willAttemptFallback('sess-1')).toBe(true);
+    try {
+      expect(mgr.willAttemptFallback('sess-1')).toBe(true);
+    } finally {
+      (mgr as any).inProgress.delete('sess-1');
+    }
   });
 });
 

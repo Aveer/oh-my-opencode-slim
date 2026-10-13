@@ -1,6 +1,6 @@
 /// <reference types="bun-types" />
 
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -79,8 +79,49 @@ describe('system', () => {
     }
   });
 
-  test('getOpenCodeVersion returns string or null', async () => {
-    const version = await getOpenCodeVersion();
-    expect(version === null || typeof version === 'string').toBe(true);
+  test('getOpenCodeVersion parses stdout on success', async () => {
+    const childProcess = await import('node:child_process');
+    const originalSpawnSync = childProcess.spawnSync;
+    const spawnSpy = spyOn(childProcess, 'spawnSync').mockImplementation(
+      (cmd: any, args: any) => {
+        if (Array.isArray(args) && args.includes('--version')) {
+          return {
+            status: 0,
+            stdout: '1.2.3\n',
+            stderr: '',
+            pid: 1234,
+            output: [],
+            signal: null,
+          } as any;
+        }
+        return originalSpawnSync(cmd, args);
+      },
+    );
+
+    try {
+      const version = await getOpenCodeVersion();
+      expect(version).toBe('1.2.3');
+    } finally {
+      spawnSpy.mockRestore();
+    }
+  });
+
+  test('getOpenCodeVersion returns null on failure', async () => {
+    const childProcess = await import('node:child_process');
+    const spawnSpy = spyOn(childProcess, 'spawnSync').mockReturnValue({
+      status: 1,
+      stdout: '',
+      stderr: 'command not found',
+      pid: 1234,
+      output: [],
+      signal: null,
+    } as any);
+
+    try {
+      const version = await getOpenCodeVersion();
+      expect(version).toBeNull();
+    } finally {
+      spawnSpy.mockRestore();
+    }
   });
 });
