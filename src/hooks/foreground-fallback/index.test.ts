@@ -4233,6 +4233,37 @@ describe('ForegroundFallbackManager session.error', () => {
     expect(call[0].modelSwitch).toBe('required');
   });
 
+  test('v2 same-model replay sends no modelSwitch flag', async () => {
+    const { mocks } = createMockClient();
+    const mgr = new ForegroundFallbackManager({}, true, {
+      directory: '/test',
+      hostFlavor: 'v2',
+    } as any);
+    mgr.registerSessionAgent('sess-no-chain', 'orchestrator');
+    await mgr.handleEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          sessionID: 'sess-no-chain',
+          agent: 'orchestrator',
+          providerID: 'anthropic',
+          modelID: 'claude-opus-4-5',
+          role: 'assistant',
+        },
+      },
+    });
+    await mgr.handleEvent({
+      type: 'session.error',
+      properties: {
+        sessionID: 'sess-no-chain',
+        error: { message: 'Rate limit exceeded' },
+      },
+    });
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+    const call = mocks.promptAsync.mock.calls[0] as [Record<string, unknown>];
+    expect('modelSwitch' in call[0]).toBe(false);
+  });
+
   test('switched:false result (v2 switch failure) skips the switch claim', async () => {
     // The v2 shim degrades a failed switchModel into a prompt delivered on
     // the CURRENT model; the manager must not record a model switch that
