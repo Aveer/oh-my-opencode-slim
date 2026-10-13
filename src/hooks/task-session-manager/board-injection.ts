@@ -1383,12 +1383,28 @@ function parseNativeDelivery(
 
 function messageCreatedAt(message: MessageWithParts): number | undefined {
   const info = message.info as { time?: unknown };
-  if (!isRecord(info.time)) return undefined;
+  // The v2 host decodes `Session.Message.time` into Effect `DateTime.Utc`
+  // instances — structs carrying `epochMilliseconds`, NOT plain numbers —
+  // so `info.time.created` fails a naive `typeof value === 'number'` check
+  // and a numeric wire form (JSON round-trips, fixtures) fails
+  // `isRecord`. Accept every shape this clock actually arrives in.
+  const asMillis = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'object' || value === null) return undefined;
+    const millis = (value as { epochMilliseconds?: unknown }).epochMilliseconds;
+    if (typeof millis === 'number' && Number.isFinite(millis)) return millis;
+    return undefined;
+  };
+  if (!isRecord(info.time)) {
+    const direct = asMillis(info.time);
+    if (direct !== undefined) return direct;
+    return undefined;
+  }
   // An assistant turn carries only `completed`; a user turn carries
   // `created`. Both are the message's own clock, in the same unit.
   for (const key of ['created', 'completed'] as const) {
-    const value = info.time[key];
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const value = asMillis(info.time[key]);
+    if (value !== undefined) return value;
   }
   return undefined;
 }

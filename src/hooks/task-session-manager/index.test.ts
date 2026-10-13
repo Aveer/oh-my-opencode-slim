@@ -2142,6 +2142,100 @@ describe('task-session-manager hook', () => {
     });
   });
 
+  test('board-off fallback retires on v2 wire-form numeric timestamps', async () => {
+    const board = new BackgroundJobBoard();
+    board.registerLaunch({
+      taskID: 'child-1',
+      parentSessionID: 'parent-1',
+      agent: 'explorer',
+      description: 'map hooks',
+    });
+    board.updateStatus({
+      taskID: 'child-1',
+      state: 'completed',
+      resultSummary: 'done',
+      now: 1000,
+    });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      boardInjection: false,
+      idleReconcileDelayMs: 0,
+    });
+
+    // JSON round-trips of a v2 message carry `time` as a finite
+    // epoch-millis number. The fallback must read it too.
+    const advancedRequest = {
+      messages: [
+        {
+          info: { id: 'm-1', role: 'user', sessionID: 'parent-1' },
+          parts: [{ type: 'text', text: 'first turn' }],
+        },
+        {
+          info: {
+            id: 'm-2',
+            role: 'assistant',
+            sessionID: 'parent-1',
+            time: 2000,
+          },
+          parts: [{ type: 'text', text: 'consumed the native result' }],
+        },
+      ],
+    };
+    await transformMessages(hook, advancedRequest as never);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'reconciled',
+      terminalUnreconciled: false,
+    });
+  });
+
+  test('board-off fallback retires on v2 decoded DateTime.Utc timestamps', async () => {
+    const board = new BackgroundJobBoard();
+    board.registerLaunch({
+      taskID: 'child-1',
+      parentSessionID: 'parent-1',
+      agent: 'explorer',
+      description: 'map hooks',
+    });
+    board.updateStatus({
+      taskID: 'child-1',
+      state: 'completed',
+      resultSummary: 'done',
+      now: 1000,
+    });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      boardInjection: false,
+      idleReconcileDelayMs: 0,
+    });
+
+    // The host decodes Session.Message.time into Effect DateTime.Utc
+    // instances: `created` is a struct with `epochMilliseconds`, not a
+    // number. The stale fallback must read it (greptile P1: the fallback
+    // never fired on real v2 messages).
+    const advancedRequest = {
+      messages: [
+        {
+          info: { id: 'm-1', role: 'user', sessionID: 'parent-1' },
+          parts: [{ type: 'text', text: 'first turn' }],
+        },
+        {
+          info: {
+            id: 'm-2',
+            role: 'assistant',
+            sessionID: 'parent-1',
+            time: { created: { _tag: 'Utc', epochMilliseconds: 2000 } },
+          },
+          parts: [{ type: 'text', text: 'consumed the native result' }],
+        },
+      ],
+    };
+    await transformMessages(hook, advancedRequest as never);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'reconciled',
+      terminalUnreconciled: false,
+    });
+  });
+
   test('board-off fallback fails closed without comparable timestamps', async () => {
     const board = new BackgroundJobBoard();
     board.registerLaunch({
