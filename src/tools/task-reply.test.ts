@@ -424,8 +424,12 @@ describe('task_reply', () => {
     // carries no caveat to offset it — the execute gate below refuses
     // forms with the host-UI/cancel redirect.
     expect(Object.keys(task_reply.args)).not.toContain('answers');
+    // The description matches the honest surface: on v2 the tool can only
+    // serve permission requests (no form.reply in the pinned plugin
+    // context), so it must not advertise question replies (greptile P2:
+    // overpromised question replies). v1/unknown keep the neutral wording.
     expect(task_reply.description).toBe(
-      'Reply to a tracked child request by task ID/alias and request ID.',
+      'Reply to a tracked child permission request by task ID/alias and request ID.',
     );
 
     // C4: both identifier forms still resolve the task and its open ask on

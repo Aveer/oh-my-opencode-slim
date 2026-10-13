@@ -41,7 +41,7 @@ The task API and background-control tools are:
 | `task_message` | Send a non-interrupting message and return `queued` (v2: steering acceptance with `delivery: "steer"`) |
 | `task_cancel` | Stop a generation while retaining its session |
 | `task_revive` | Resume a retained session with a new instruction |
-| `wait_for_user` | Plugin-provided orchestrator tool that pauses automatic orchestrator wakes while the user performs external manual work |
+| `wait_for_user` | Plugin-provided orchestrator tool (v1 only) that pauses automatic orchestrator wakes while the user performs external manual work; not registered on v2, where the native `question` tool is the blocking boundary |
 
 The delegation tool named `task()` here is `subagent()` on v2, with
 `task_id`/`sessionID` as the matching resume id; bare `task()` mentions on this
@@ -622,7 +622,9 @@ messages (including foreground-fallback replays), fallback teardown, session
 errors, and idle/busy events do not clear it. Immediate choices, clarifications,
 and pasted command output continue to use the `question` tool. If
 `wait_for_user` is intentionally listed in `disabled_tools`, the orchestrator
-uses the `question` tool as the blocking boundary instead.
+uses the `question` tool as the blocking boundary instead. On v2 hosts
+`wait_for_user` is never registered; the orchestrator always uses the native
+`question` tool, whose open form also suppresses automatic wakes.
 
 ### Background Job Board Injection
 
