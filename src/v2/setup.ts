@@ -2629,12 +2629,28 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       // asynchronous event pump), while `observeEvent` remains a
       // prewarm/cleanup consumer of `session.created`/`session.deleted`.
       let promptBridge: V2SessionPromptBridge | undefined;
+      // Chain-generation parity: pin the fallback chains when the child's
+      // profile freezes, so one registration = one generation for both.
+      // A failed admission releases the pin so the retry pairs a fresh
+      // capture with the generation current at that retry.
+      // `v2.pinSessionChains` / `v2.releaseSessionChains` are factory
+      // extension hooks, not in Hooks.
+      const pinSessionChainsHook = v1Hooks as {
+        'v2.pinSessionChains'?: (sessionID: string) => void;
+        'v2.releaseSessionChains'?: (sessionID: string) => void;
+      };
       const sessionProfileBridge = createSessionProfileBridge({
         profiles: () => currentProfiles,
         registeredProfiles,
         pluginAgents,
         session: ctx.session,
         knownAgent: (sessionID) => promptBridge?.agentForSession(sessionID),
+        onSessionCaptured: (sessionID) => {
+          pinSessionChainsHook['v2.pinSessionChains']?.(sessionID);
+        },
+        onSessionCaptureFailed: (sessionID) => {
+          pinSessionChainsHook['v2.releaseSessionChains']?.(sessionID);
+        },
       });
 
       // Skip session hook registration if ctx.session is unavailable (v1 host
