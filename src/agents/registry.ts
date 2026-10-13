@@ -1,5 +1,5 @@
 import type { AgentConfig as SDKAgentConfig } from '@opencode-ai/sdk/v2';
-import { AGENT_ALIASES } from '../config';
+import { AGENT_ALIASES, loadAgentPrompt } from '../config';
 import { parseList } from '../config/agent-mcps';
 import { getSkillPermissionsForAgent } from '../cli/skills';
 import { resolvePreset } from '../config/presets';
@@ -33,7 +33,7 @@ import {
   createAgents,
   getAgentConfigsFromDefinitions,
 } from './index';
-import type { AgentDefinition } from './orchestrator';
+import { resolvePrompt, type AgentDefinition } from './orchestrator';
 import { mergeTaskStance } from './permissions';
 
 export interface ResolvedAgentRegistry {
@@ -584,6 +584,18 @@ export function buildResolvedAgentRegistry(
           ? owner.displayName
           : undefined);
       applyMarketplaceOwnerOverride(agent, owner);
+      const prompts = loadAgentPrompt(agent.name, {
+        preset: runtime.preset,
+        projectDirectory: options.projectDirectory,
+        hostFlavor: options.hostFlavor,
+      });
+      agent.config.prompt = resolvePrompt(
+        agent.name,
+        owner?.prompt,
+        prompts.prompt,
+        sourceAgent.config.prompt ?? '',
+        prompts.appendPrompt,
+      );
       if (displayName) agent.displayName = displayName;
       return agent;
     });
