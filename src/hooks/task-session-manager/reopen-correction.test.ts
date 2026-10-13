@@ -416,4 +416,63 @@ describe('structural flavor split (v2 boardless)', () => {
     expect(correctionText).toContain('`task_status`');
     expect((request.messages as unknown[]).at(-1)).toBe(corrections[0]);
   });
+
+  test('v1 boardless: the reopen correction uses the board-free wording too', async () => {
+    // Regression (council B1, fac9a90): the wording gate must key on the
+    // honoured boardInjection switch, not host flavor alone — a v1 parent
+    // with boardInjection: false never sees a board, so a correction that
+    // says "consult the Background Job Board" points at a panel the model
+    // cannot see.
+    const board = new BackgroundJobBoard();
+    const state = createInjectionState(board);
+    state.boardInjection = false;
+
+    board.registerLaunch({
+      taskID: 'child-1',
+      parentSessionID: SESSION,
+      agent: 'explorer',
+      description: 'map hooks',
+    });
+    board.updateStatus({
+      taskID: 'child-1',
+      state: 'completed',
+      resultSummary: 'mapped hooks',
+    });
+    rememberInjectedTerminalJobs(
+      state,
+      SESSION,
+      [
+        {
+          taskID: 'child-1',
+          generation: 1,
+          terminalRevision: 1,
+        },
+      ],
+      'shape-1',
+    );
+    reconcileInjectedTerminalJobs(state, SESSION);
+    expect(board.getState('child-1')).toBe('reconciled');
+    board.markRunningFromLiveSession('child-1', Date.now() + 60_000);
+    expect(board.getState('child-1')).toBe('running');
+
+    const request = {
+      messages: [structuredClone(userMsg('msg_u1', 'continue', BASE_TIME))],
+    };
+    await injectBackgroundJobBoard(state, {}, request as never);
+
+    const corrections = (request.messages as unknown[]).filter(
+      (message) => solePartMetadata(message)?.reopenCorrection === true,
+    );
+    expect(corrections).toHaveLength(1);
+    expect(
+      (request.messages as unknown[]).some((message) =>
+        JSON.stringify(message).includes('Background Job Board'),
+      ),
+    ).toBe(false);
+    const correctionText = (
+      corrections[0] as { parts: Array<{ text: string }> }
+    ).parts[0].text;
+    expect(correctionText).toContain('`task_status`');
+    expect((request.messages as unknown[]).at(-1)).toBe(corrections[0]);
+  });
 });

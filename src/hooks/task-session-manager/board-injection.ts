@@ -217,7 +217,7 @@ function deliverReopenCorrections(
       },
       {
         text:
-          state.hostFlavor === 'v2'
+          state.hostFlavor === 'v2' || state.boardInjection === false
             ? formatReopenCorrectionTextNoBoard(correction)
             : formatReopenCorrectionText(correction),
         metadataKey: state.metadataKey,

@@ -140,12 +140,11 @@ export function isGenuineOperatorMessage(
 }
 
 /** Self-contained terminal delta appended to the stopped-job recovery wake.
- * The board snapshot path cannot serve this wake: under the
- * `checkpoint-compatible` injection strategy, internal-initiator messages
- * (which this wake is) are excluded from creating a board snapshot, so the
- * first snapshot the parent sees after the wake reflects a board state from
- * BEFORE the job stopped. A wake that says "check the board" with no board
- * entry behind it leaves the parent guessing. The delta carries the facts
+ * The board cannot serve this wake: internal-initiator turns (which this
+ * wake is) are excluded from board placement, so the first board the
+ * parent sees after the wake reflects a board state from BEFORE the job
+ * stopped. A wake that says "check the board" with no board entry behind
+ * it leaves the parent guessing. The delta carries the facts
  * of the triggering stop inline: alias, task id, state, and why it stopped.
  * Deduplicated per execution by the caller. */
 export function formatStoppedJobDelta(record: {
@@ -283,7 +282,7 @@ export const ORCHESTRATOR_WAKE_UNCHANGED_CAP = 2;
  * (`orchestratorWake.publicationWakeMinIntervalMs`). Bounds how often a
  * publication burst (several children finishing together) may wake one
  * idle parent; the first eligible publication wins and later ones inside
- * the window are dropped (their results ride the next board snapshot).
+ * the window are dropped (their results surface on the next board render).
  */
 export const DEFAULT_PUBLICATION_WAKE_MIN_INTERVAL_MS = 30_000;
 

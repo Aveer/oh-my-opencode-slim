@@ -761,7 +761,7 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     } else if (verdicts.includes('plateau')) {
       console.log(
-        'RESULT: ⚠️ cache-read plateau detected — the reusable prefix stopped growing (issue #874). Compare board strategies with --board-strategy latest vs checkpoint-compatible.',
+        'RESULT: ⚠️ cache-read plateau detected — the reusable prefix stopped growing (issue #874). See docs/cache-verification.md.',
       );
       process.exitCode = 1;
     } else if (verdicts.every((verdict) => verdict === 'inconclusive')) {

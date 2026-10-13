@@ -1337,10 +1337,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       }
       orchestratorWakeScheduler?.triggerStoppedJobRecovery(
         record.parentSessionID,
-        // Self-contained stop facts: the recovery wake is an
-        // internal-initiator message, so under `checkpoint-compatible` it
-        // cannot create a board snapshot and any retained snapshot predates
-        // this stop (issue #1051).
+        // Self-contained stop facts (issue #1051): the recovery wake is an
+        // internal-initiator turn, and internal-initiator turns place no
+        // board, so the wake must carry the stop facts itself.
         formatStoppedJobDelta({
           alias: record.alias,
           taskID: record.taskID,
@@ -3111,8 +3110,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
                   true,
                   true,
                   hostFlavor,
-                  // Structural flavor split: the board renders on v1 only.
-                  hostFlavor !== 'v2',
+                  // Honoured switch — consistent with createAgents
+                  // (RuntimeConfig forces false on v2).
+                  runtime.backgroundJobs.boardInjection,
                 );
         // Dedup by the EFFECTIVE prompt, not by default-prompt markers:
         // a custom replacement without `<Role>` previously slipped past

@@ -563,16 +563,15 @@ run's first terminal publication, and `task_status` covers on-demand
 discovery. An explicitly configured `backgroundJobs.boardInjection: true` is
 ignored with a warning on v2.
 
-**v2 derived defaults.** On OpenCode v2 hosts,
-`orchestratorWake.periodicWakeEnabled` defaults to `false` when neither config
-layer sets the key: the v2 native background notifier delivers each run's first
-terminal publication (with its full result) to the parent — idle parents get a
-new turn, busy parents get a steer — so the periodic idle evaluation duplicates
-that channel. Event-driven wakes (stopped-job recovery, later terminal
-publications, child-input asks) are unaffected. Set the key explicitly
-(`"periodicWakeEnabled": true`) to restore the v1-style behavior on v2; v1
-hosts are unchanged. `boardInjection` is no longer derived — it is v1-only,
-forced off on v2 (see above).
+**v2 structural wake.** On OpenCode v2 hosts the periodic idle evaluation is
+structurally off regardless of configuration: the v2 native background
+notifier delivers each run's first terminal publication (with its full result)
+to the parent — idle parents get a new turn, busy parents get a steer — so the
+periodic evaluation duplicates that channel. Setting
+`orchestratorWake.periodicWakeEnabled` has no effect on v2 (the key stays
+honored on v1). Event-driven wakes (stopped-job recovery, later terminal
+publications, child-input asks) keep working on both flavors. `boardInjection`
+is likewise v1-only, forced off on v2 (see above).
 
 `routingBlock` deliberately gets **no** v2-derived default. Unlike the board
 injection, the `<Agents>` block is not duplicated by a native channel: the
