@@ -907,7 +907,8 @@ describe('createV2Setup e2e', () => {
 
   test('reduced ctx (no agent.transform) skips gracefully', async () => {
     const cleanup = await createV2Setup()({} as never);
-    await cleanup(); // passes when neither call throws
+    expect(typeof cleanup).toBe('function');
+    await expect(cleanup()).resolves.toBeUndefined();
   }, 20_000);
 
   test('skips gracefully when OH_MY_OPENCODE_SLIM_DISABLE is set', async () => {
@@ -1309,7 +1310,7 @@ describe('createV2Setup e2e', () => {
 
   test('native agents without a permissions field register normally', async () => {
     const { ctx } = makeMockV2Context(projectDir);
-    let deferred: ((draft: unknown) => void) | undefined;
+    let updateCalled = false;
     const agent = ctx.agent as unknown as {
       transform: (callback: (draft: unknown) => void) => Promise<{
         dispose: () => void;
@@ -1317,21 +1318,23 @@ describe('createV2Setup e2e', () => {
       list: () => Promise<unknown[]>;
     };
     agent.transform = async (callback) => {
-      deferred = callback;
-      return { dispose: () => {} };
-    };
-    agent.list = async () => {
-      deferred?.({
+      callback({
         list: () => [{ id: 'build' }],
         get: () => ({ id: 'build', mode: 'primary' }),
-        update: (_name: string, mutate: (agent: unknown) => void) => mutate({}),
+        update: (_name: string, mutate: (agent: unknown) => void) => {
+          updateCalled = true;
+          mutate({});
+        },
         default: () => {},
         remove: () => {},
       });
-      return [];
+      return { dispose: () => {} };
     };
+    agent.list = async () => [];
 
     const cleanup = await createV2Setup()(ctx);
+    expect(typeof cleanup).toBe('function');
+    expect(updateCalled).toBe(true);
     await cleanup();
   }, 20_000);
 

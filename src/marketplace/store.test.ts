@@ -1340,7 +1340,7 @@ describe('MarketplaceStore', () => {
     const readyPath = join(root, 'worker-ready');
     const store = createStore({
       rootDir: root,
-      lock: { staleMs: 500, timeoutMs: 30, retryMs: 1 },
+      lock: { staleMs: 100, timeoutMs: 30, retryMs: 1 },
     });
     const worker = Bun.spawn(
       [
@@ -1349,7 +1349,7 @@ describe('MarketplaceStore', () => {
         `import { writeFileSync } from 'node:fs';
 import { acquireMarketplaceLease } from './src/marketplace/lease.ts';
 const { paths, readyPath } = JSON.parse(process.argv[1]);
-acquireMarketplaceLease(paths, { staleMs: 500, timeoutMs: 5000 });
+acquireMarketplaceLease(paths, { staleMs: 100, timeoutMs: 5000 });
 writeFileSync(readyPath, 'ready');
 await new Promise(() => {});`,
         JSON.stringify({ paths: store.paths, readyPath }),
@@ -1369,7 +1369,7 @@ await new Promise(() => {});`,
       expect(() => store.install(bundle())).toThrow(MarketplaceBusyError);
       worker.kill();
       await worker.exited;
-      await Bun.sleep(700);
+      await Bun.sleep(150);
       expect(store.list()).toEqual([]);
       expect(store.install(bundle()).manifest.id).toBe('community/example');
     } finally {
