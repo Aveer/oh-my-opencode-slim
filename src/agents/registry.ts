@@ -991,7 +991,8 @@ export function buildResolvedAgentRegistry(
         (tool) => requestedTools?.[tool] !== false,
       );
       packageSkills = [
-        ...(configuredAgents[name]?.skills ?? packageMetadata.capabilities.skills),
+        ...(configuredAgents[name]?.skills ??
+          packageMetadata.capabilities.skills),
         ...runtime.disabledSkills.map((skill) => `!${skill}`),
       ];
       packageMcps = parseList(
@@ -1012,7 +1013,8 @@ export function buildResolvedAgentRegistry(
       );
       if (ambiguous.length > 0) {
         throw new Error(
-          `Marketplace agent '${name}' has ambiguous MCP namespaces: ${ambiguous.join(', ')}`,
+          `Marketplace agent '${name}' has ambiguous MCP namespaces: ` +
+            ambiguous.join(', '),
         );
       }
       marketplaceMetadata.set(name, {

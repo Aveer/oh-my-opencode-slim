@@ -2286,7 +2286,7 @@ describe('marketplace agent customization', () => {
     expect(policy.decide('host-mcp_search', '*')).toBe('deny');
   });
 
-  test('honors skill and MCP wildcards, exclusions, and global disables', () => {
+  test('honors wildcard and exclusion grants with global disables', () => {
     const runtime = runtimeFor({
       agents: {
         'market-agent': {
@@ -2422,7 +2422,7 @@ describe('marketplace agent customization', () => {
     }
   });
 
-  test('inline prompts outrank replacement files but retain append files', () => {
+  test('inline prompts beat replacement files and keep appended text', () => {
     const project = fs.mkdtempSync(
       path.join(os.tmpdir(), 'omos-marketplace-inline-'),
     );
@@ -2457,7 +2457,7 @@ describe('marketplace agent customization', () => {
     }
   });
 
-  test('skills_include_local extends package defaults from project skills', () => {
+  test('includes project-local skills alongside package defaults', () => {
     const project = fs.mkdtempSync(
       path.join(os.tmpdir(), 'omos-marketplace-local-skill-'),
     );
@@ -2483,7 +2483,7 @@ describe('marketplace agent customization', () => {
     }
   });
 
-  test('resolves preset-specific append files without replacing package base', () => {
+  test('resolves preset append files without replacing package base', () => {
     const project = fs.mkdtempSync(
       path.join(os.tmpdir(), 'omos-marketplace-preset-prompt-'),
     );
@@ -2539,6 +2539,68 @@ describe('marketplace agent customization', () => {
       expect(updated.finalAgentConfig['market-agent']).toMatchObject({
         prompt: 'Updated base\n\nLocal appendix',
       });
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  test('missing optional selections do not block admission', () => {
+    const runtime = runtimeFor({
+      agents: {
+        'market-agent': {
+          skills: ['not-installed'],
+          mcps: ['not-installed'],
+        },
+      },
+    });
+    const registry = build(
+      runtime,
+      { mcp: { 'host-mcp': { type: 'local' } } },
+      installed(),
+    );
+    expect(registry.marketplaceAgentNames).toContain('market-agent');
+    expect(registry.finalAgentConfig['market-agent']).toMatchObject({
+      mcps: [],
+    });
+    expect(
+      registry.nativePolicies['market-agent'].decide(
+        'not-installed_search',
+        '*',
+      ),
+    ).toBe('deny');
+  });
+
+  test('extended package prompts preserve their inherited role baseline', () => {
+    const project = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'omos-marketplace-extended-prompt-'),
+    );
+    try {
+      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
+      fs.mkdirSync(prompts, { recursive: true });
+      fs.writeFileSync(
+        path.join(prompts, 'market-agent_append.md'),
+        'Local extension',
+      );
+      const runtime = runtimeFor({});
+      const registry = build(
+        runtime,
+        { mcp: { 'host-mcp': { type: 'local' } } },
+        {
+          ...installed({
+            extends: { builtin: 'explorer', promptMode: 'append' },
+            model: { source: 'builtin' },
+            skills: [],
+            mcps: [],
+          }),
+          projectDirectory: project,
+          hostFlavor: 'v2',
+        },
+      );
+      const prompt = registry.finalAgentConfig['market-agent']
+        .prompt as string;
+      expect(prompt).toContain('Package prompt');
+      expect(prompt.endsWith('\n\nLocal extension')).toBe(true);
+      expect(prompt.split('Local extension').length - 1).toBe(1);
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
     }
