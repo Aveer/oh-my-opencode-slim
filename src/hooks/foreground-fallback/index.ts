@@ -508,7 +508,7 @@ export class ForegroundFallbackManager {
   /** Recent event identities deduplicate only repeated observations of one incident. */
   private readonly triggerIncidents = new Map<
     string,
-    Map<string, { turn: number; time: number }>
+    Map<string, { turn: number; time: number; model?: string }>
   >();
   /** One-shot bridge between uncorrelated session.error and its matching
    *  errored message.updated event. */
@@ -1234,17 +1234,25 @@ export class ForegroundFallbackManager {
           : info.finish === 'content-filter' && !isFailoverError(info.error)
             ? CONTENT_FILTER_ERROR
             : info.error;
+        const incidentID =
+          this.enabled && messageError && isFailoverError(messageError)
+            ? this.incidentForMessageError(sessionID, messageID, messageError)
+            : undefined;
         if (
-          this.enabled &&
+          incidentID !== undefined &&
           messageError &&
-          isFailoverError(messageError) &&
-          !this.surfacesSpentQuota(sessionID, messageError)
-        ) {
-          const incidentID = this.incidentForMessageError(
+          // The error belongs to this message's own model, which may differ
+          // from sessionModel once a re-emitted update follows a switch.
+          !this.surfacesSpentQuota(
             sessionID,
-            messageID,
             messageError,
-          );
+            typeof info.providerID === 'string' &&
+              typeof info.modelID === 'string'
+              ? `${info.providerID}/${info.modelID}`
+              : undefined,
+            incidentID,
+          )
+        ) {
           if (
             this.bypassInitialFallbackDelay(sessionID, messageError) ||
             !this.delayInitialFallback(
@@ -1306,8 +1314,7 @@ export class ForegroundFallbackManager {
           !this.enabled ||
           !sessionID ||
           !props.error ||
-          !isFailoverError(props.error) ||
-          this.surfacesSpentQuota(sessionID, props.error)
+          !isFailoverError(props.error)
         ) {
           break;
         }
@@ -1316,6 +1323,16 @@ export class ForegroundFallbackManager {
           typeof props.info?.id === 'string' ? props.info.id : undefined,
           props.error,
         );
+        if (
+          this.surfacesSpentQuota(
+            sessionID,
+            props.error,
+            this.triggeringModel(sessionID),
+            incidentID,
+          )
+        ) {
+          break;
+        }
         if (this.bypassInitialFallbackDelay(sessionID, props.error)) {
           await this.tryFallback(sessionID, props.error, incidentID);
         } else if (
@@ -1686,6 +1703,39 @@ export class ForegroundFallbackManager {
     return this.quotaExhaustedProviders.get(sessionID);
   }
 
+  /** The model a fallback already handled this incident for (this turn),
+   *  or undefined when no fallback ran for it yet. */
+  private handledIncidentModel(
+    sessionID: string,
+    incidentID: string,
+  ): string | undefined {
+    const previous = this.triggerIncidents.get(sessionID)?.get(incidentID);
+    if (previous?.turn !== (this.turnEpoch.get(sessionID) ?? 0)) return;
+    return previous.model;
+  }
+
+  /** The model a session-level spent-quota error belongs to. Within the
+   *  dedup window of a trigger in this turn whose provider is already
+   *  exhausted, it is that trigger's echo (sessionModel already names the
+   *  replacement); any other error belongs to the current model, so an
+   *  ordinary cascade on the replacement still advances. */
+  private triggeringModel(sessionID: string): string | undefined {
+    const current = this.sessionModel.get(sessionID);
+    const triggered = this.lastTriggerModel.get(sessionID);
+    const provider = triggered
+      ? parseModelReference(triggered)?.providerID
+      : undefined;
+    if (
+      provider !== undefined &&
+      this.quotaExhaustedProviders.get(sessionID)?.has(provider) &&
+      this.lastTriggerTurn.get(sessionID) ===
+        (this.turnEpoch.get(sessionID) ?? 0) &&
+      Date.now() - (this.lastTrigger.get(sessionID) ?? 0) < DEDUP_WINDOW_MS
+    )
+      return triggered;
+    return current;
+  }
+
   /** Spent allowance (issue #966): mark the failing provider and report
    *  whether the error must surface because no chain entry remains on a
    *  provider with allowance left. Surfacing performs no failover and no
@@ -1693,15 +1743,32 @@ export class ForegroundFallbackManager {
   private surfacesSpentQuota(
     sessionID: string,
     error: unknown,
-    model = this.sessionModel.get(sessionID),
+    failingModel?: string,
+    incidentID?: string,
   ): boolean {
     if (!isSpentQuotaError(error)) return false;
+    const model = this.sessionModel.get(sessionID);
+    // Another observation of an incident a fallback already handled belongs
+    // to the model that fallback switched away from, whatever sessionModel
+    // names now. It carries no new evidence: record it there, never act.
+    const handledModel =
+      incidentID === undefined
+        ? undefined
+        : this.handledIncidentModel(sessionID, incidentID);
+    if (handledModel !== undefined) {
+      this.markQuotaExhausted(sessionID, handledModel, error);
+      return true;
+    }
     const { chain } = this.resolveChain(
       this.sessionAgent.get(sessionID),
       model,
+      sessionID,
     );
-    const failing = model ?? chain[0];
+    const failing = failingModel ?? model ?? chain[0];
     const exhausted = this.markQuotaExhausted(sessionID, failing, error);
+    // A late error from a model we already switched away from records its
+    // provider but must not drive another switch off the replacement.
+    if (model !== undefined && failing !== model) return true;
     const viable = chain.some(
       (entry) => !exhausted?.has(parseModelReference(entry)?.providerID ?? ''),
     );
@@ -1966,7 +2033,7 @@ export class ForegroundFallbackManager {
         }
       }
       if (incidents.has(incidentID)) return true;
-      incidents.set(incidentID, { turn, time: now });
+      incidents.set(incidentID, { turn, time: now, model: curModel });
     }
     this.lastTrigger.set(sessionID, now);
     this.lastTriggerTurn.set(sessionID, turn);

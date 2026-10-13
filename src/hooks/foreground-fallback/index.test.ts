@@ -2561,6 +2561,41 @@ describe('ForegroundFallbackManager spent allowance (issue #966)', () => {
     );
   });
 
+  test('a paired error and repeated updates mark only the failing provider', async () => {
+    const { manager, mocks } = makeManager({
+      chain: ['openai/luna', 'ollama/glm', 'anthropic/opus'],
+    });
+    const sid = 'spent-attribution';
+    const exhausted = () =>
+      (manager as any).quotaExhaustedProviders.get(sid) as Set<string>;
+    await manager.handleEvent(failed(sid, 'openai/luna', SPENT, 'luna-msg'));
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(exhausted()).toEqual(new Set(['openai']));
+    // The paired session.error arrives after the switch: it belongs to
+    // luna, not to the replacement now held in sessionModel.
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, error: SPENT },
+    });
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, info: { id: 'luna-msg' }, error: SPENT },
+    });
+    // A late observation of the handled incident, past the dedup window.
+    jest.advanceTimersByTime(6_000);
+    await manager.handleEvent({
+      type: 'session.error',
+      properties: { sessionID: sid, info: { id: 'luna-msg' }, error: SPENT },
+    });
+    // Re-emitted updates of the same assistant message keep its own model.
+    for (let i = 0; i < 3; i++) {
+      await manager.handleEvent(failed(sid, 'openai/luna', SPENT, 'luna-msg'));
+    }
+    expect(exhausted()).toEqual(new Set(['openai']));
+    expect(prompted(mocks)).toEqual(['ollama/glm']);
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
   test('a same-provider-only chain surfaces the error', async () => {
     const { manager, mocks } = makeManager({
       chain: ['openai/luna', 'openai/sol'],
