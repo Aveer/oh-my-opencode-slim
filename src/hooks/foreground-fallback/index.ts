@@ -348,15 +348,14 @@ const PERMANENT_QUOTA_BILLING_PATTERNS = [
   /\bcoding plan package has expired\b/i,
   /\b(?:weekly|monthly) limit exhausted\b/i,
   /\b(?:1113|1308|1309|1310)\b/,
-  // Shared spent-allowance family: trigger paths gate on isFailoverError
-  // first, so surface errors never reach bypassInitialFallbackDelay here.
-  ...SURFACE_QUOTA_PATTERNS,
+  // Spent-allowance wording stays out: pure-surface errors never fail over,
+  // and short-horizon quota errors keep the configured initial delay.
 ];
 
 /**
  * Permanent exhaustion skips the initial delay and fails over immediately.
- * Pure-surface errors never reach here (trigger paths gate on
- * isFailoverError first); only the short-horizon escape does.
+ * Spent-allowance wording is excluded: pure-surface errors never fail over,
+ * and short-horizon quota errors keep the configured initial delay.
  */
 export function isPermanentQuotaBillingError(error: unknown): boolean {
   if (extractStatusCode(error) === 402) return true;

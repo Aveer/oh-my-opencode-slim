@@ -693,6 +693,24 @@ describe('foreground fallback redo harness', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  test('short-horizon quota keeps the configured initial delay (greptile P1 on #1551)', async () => {
+    const { manager, mocks } = makeManager({ initialRetryDelayMs: 1_000 });
+    const sessionID = 'short-horizon-keeps-delay';
+    await manager.handleEvent(redoEvents.assistant(sessionID));
+
+    await manager.handleEvent(
+      redoEvents.assistant(sessionID, 'a', {
+        message: 'quota exceeded, retry after 20s',
+      }),
+    );
+
+    expect(mocks.promptAsync).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(1);
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
   test('initial retry delay is used once per descent before normal retry backoff', async () => {
     const { manager, mocks } = makeManager({
       initialRetryDelayMs: 1_000,
@@ -1737,7 +1755,8 @@ describe('isFailoverError', () => {
     'Usage exceeded for this billing period',
   ])('surfaces spent allowance "%s" (issue #966)', (signal) => {
     expect(isFailoverError({ message: signal })).toBe(false);
-    expect(isPermanentQuotaBillingError({ message: signal })).toBe(true);
+    // Surface wording is not permanent: it never bypasses the initial delay.
+    expect(isPermanentQuotaBillingError({ message: signal })).toBe(false);
   });
 
   test('does not surface "Monthly usage limit exceeded" without reached wording (issue #966)', () => {
@@ -1784,7 +1803,7 @@ describe('isFailoverError', () => {
       isPermanentQuotaBillingError({
         cause: { message: 'quota exceeded' },
       }),
-    ).toBe(true);
+    ).toBe(false);
     // Per-carrier transport: an anchored signal split across carriers
     // must neither match nor synthesize.
     expect(
