@@ -2623,9 +2623,13 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       let promptBridge: V2SessionPromptBridge | undefined;
       // Chain-generation parity: pin the fallback chains when the child's
       // profile freezes, so one registration = one generation for both.
-      // `v2.pinSessionChains` is a factory extension hook, not in Hooks.
+      // A failed admission releases the pin so the retry pairs a fresh
+      // capture with the generation current at that retry.
+      // `v2.pinSessionChains` / `v2.releaseSessionChains` are factory
+      // extension hooks, not in Hooks.
       const pinSessionChainsHook = v1Hooks as {
         'v2.pinSessionChains'?: (sessionID: string) => void;
+        'v2.releaseSessionChains'?: (sessionID: string) => void;
       };
       const sessionProfileBridge = createSessionProfileBridge({
         profiles: () => currentProfiles,
@@ -2635,6 +2639,9 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         knownAgent: (sessionID) => promptBridge?.agentForSession(sessionID),
         onSessionCaptured: (sessionID) => {
           pinSessionChainsHook['v2.pinSessionChains']?.(sessionID);
+        },
+        onSessionCaptureFailed: (sessionID) => {
+          pinSessionChainsHook['v2.releaseSessionChains']?.(sessionID);
         },
       });
 

@@ -32,6 +32,7 @@ interface BridgeOptions {
   /** Bound for the request-path switch. */
   switchTimeoutMs?: number;
   onSessionCaptured?: (sessionID: string) => void;
+  onSessionCaptureFailed?: (sessionID: string) => void;
 }
 
 function makeBridge(options?: BridgeOptions) {
@@ -62,6 +63,9 @@ function makeBridge(options?: BridgeOptions) {
       : {}),
     ...(options?.onSessionCaptured
       ? { onSessionCaptured: options.onSessionCaptured }
+      : {}),
+    ...(options?.onSessionCaptureFailed
+      ? { onSessionCaptureFailed: options.onSessionCaptureFailed }
       : {}),
     log: () => {},
   });
@@ -121,6 +125,31 @@ describe('createSessionProfileBridge', () => {
     gate.resolve();
     await pending;
     expect(switchDone).toBe(true);
+  });
+
+  test('releases the pin when the model switch fails (retry-race guard)', async () => {
+    const captured: string[] = [];
+    const failed: string[] = [];
+    const { bridge } = makeBridge({
+      onSessionCaptured: (sessionID) => captured.push(sessionID),
+      onSessionCaptureFailed: (sessionID) => failed.push(sessionID),
+      switchModel: async () => {
+        throw new Error('switch failed');
+      },
+    });
+
+    // Fail-closed: the rejection still aborts the admission (the awaited
+    // prompt path propagates; only the event pump swallows).
+    await expect(
+      bridge.ensureSessionProfile('child-1', {
+        parentID: 'p',
+        agent: 'explorer',
+      }),
+    ).rejects.toThrow('switch failed');
+    // The capture-time pin fired, then its release: the retry pins the
+    // generation current at that retry instead of keeping this pin.
+    expect(captured).toEqual(['child-1']);
+    expect(failed).toEqual(['child-1']);
   });
 
   test('accepts the flat early-registration shape', async () => {

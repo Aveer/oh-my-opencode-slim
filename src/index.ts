@@ -2110,6 +2110,11 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     'v2.pinSessionChains': (sessionID: string) => {
       foregroundFallback.pinSessionChains(sessionID);
     },
+    // v2-only extension hook: release the pin when the admission that
+    // captured it fails, so the retry pins the generation current then.
+    'v2.releaseSessionChains': (sessionID: string) => {
+      foregroundFallback.releaseSessionChains(sessionID);
+    },
     // v2 owns its own interview bridge/service; point the submit tool and
     // text-complete fallback at it so `/interview` state lands in the same
     // service that captured the session transcript.
@@ -3285,6 +3290,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     'v2.resolveDelegatedModel': typeof resolveV2DelegatedModel;
     'v2.backgroundDefaultFlip': BackgroundDefaultFlipState;
     'v2.pinSessionChains': (sessionID: string) => void;
+    'v2.releaseSessionChains': (sessionID: string) => void;
   };
 
   return hooks;

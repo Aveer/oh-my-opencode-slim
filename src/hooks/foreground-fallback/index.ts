@@ -588,6 +588,14 @@ export class ForegroundFallbackManager {
     this.pinnedChains(sessionID);
   }
 
+  /** Release a session's pinned generation so a retry after a failed
+   *  admission recaptures against the generation current at that retry.
+   *  Only safe when no request has run — the capture failed before
+   *  admission, so no descent can be mid-flight. */
+  releaseSessionChains(sessionID: string): void {
+    this.sessionChains.delete(sessionID);
+  }
+
   registerSessionAgent(sessionID: string, agentName: string): void {
     const normalizedAgentName = agentName.trim();
     if (

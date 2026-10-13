@@ -6897,6 +6897,42 @@ describe('ForegroundFallbackManager chain generation pins', () => {
       id: 'y',
     });
   });
+
+  test('releaseSessionChains lets a retry pin the current generation', async () => {
+    createMockClient();
+    const chains: Record<
+      string,
+      ReadonlyArray<string | { id: string; variant?: string }>
+    > = { orchestrator: ['test/a', 'test/b'] };
+    const manager = makeGenerationManager(chains);
+    const switchModel = mock(async () => {});
+    const fail = (sessionID: string, id: string) =>
+      manager.handleV2Retry(
+        {
+          sessionID,
+          agent: 'orchestrator',
+          model: { providerID: 'test', id },
+          error: { message: 'Rate limit exceeded' },
+          decision: { retry: true },
+        },
+        switchModel,
+      );
+
+    // Failed admission: the capture-time pin existed (same call the bridge
+    // makes), then was released before the retry.
+    manager.pinSessionChains('release-child');
+    manager.releaseSessionChains('release-child');
+    // Refresh publishes gen B before the retry.
+    chains.orchestrator = ['test/x', 'test/y'];
+
+    // The retry lazily pins the current generation: descent follows x -> y.
+    // A stale gen-A pin would descend a -> b instead.
+    await fail('release-child', 'x');
+    expect(switchModel).toHaveBeenLastCalledWith('release-child', {
+      providerID: 'test',
+      id: 'y',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

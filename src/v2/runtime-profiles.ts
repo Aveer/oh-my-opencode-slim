@@ -112,6 +112,9 @@ export interface SessionProfileBridgeOptions {
    *  profile — a refresh between registration and the first failure cannot
    *  mix generations for one child. */
   onSessionCaptured?: (sessionID: string) => void;
+  /** A capture attempt failed (switch rejected or timed out) and the
+   *  admission aborted — release anything pinned by the failed attempt. */
+  onSessionCaptureFailed?: (sessionID: string) => void;
   /** Test seam: override the request-path model-switch bound. */
   switchTimeoutMs?: number;
 }
@@ -342,14 +345,22 @@ export function createSessionProfileBridge(
       // and aborts the admission BEFORE any request can run on the wrong
       // model. The host call cannot be cancelled, but a late switch can only
       // affect a later retry, which re-awaits the same idempotent call.
-      await withProfileTimeout(
-        switchModel.call(options.session, {
-          sessionID,
-          model: profile.model,
-        }),
-        'session profile model switch timed out',
-        options.switchTimeoutMs ?? PROFILE_SWITCH_TIMEOUT_MS,
-      );
+      try {
+        await withProfileTimeout(
+          switchModel.call(options.session, {
+            sessionID,
+            model: profile.model,
+          }),
+          'session profile model switch timed out',
+          options.switchTimeoutMs ?? PROFILE_SWITCH_TIMEOUT_MS,
+        );
+      } catch (err) {
+        // Aborted admission: no request ran, so releasing the capture-time
+        // pin lets the retry pair a fresh capture with the generation
+        // current at that retry instead of keeping this attempt's pin.
+        options.onSessionCaptureFailed?.(sessionID);
+        throw err;
+      }
       captured.set(sessionID, profile);
       prune();
       emitLog('[v2][profile] applied model to child session', {
