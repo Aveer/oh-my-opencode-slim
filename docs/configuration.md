@@ -57,8 +57,10 @@ Set `OPENCODE_CONFIG_DIR` to use a custom user config directory instead of
 `~/.config/opencode`; install and runtime config discovery both honor it.
 
 Set `OH_MY_OPENCODE_SLIM_DISABLE` to `1`, `true`, `yes`, or `on` to make
-oh-my-opencode-slim return during startup without registering agents, tools,
-MCPs, hooks, Companion, or the TUI sidebar. This is a temporary escape hatch:
+oh-my-opencode-slim exit setup without registering agents, tools, MCPs, hooks,
+Companion, or the TUI sidebar. OpenCode still loads the package and calls its
+setup entrypoint, but the plugin returns cleanly without activating its
+features. This is a temporary escape hatch:
 
 ```bash
 OH_MY_OPENCODE_SLIM_DISABLE=1 opencode
