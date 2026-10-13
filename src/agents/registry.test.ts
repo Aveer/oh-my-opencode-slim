@@ -2231,15 +2231,59 @@ describe('marketplace agent customization', () => {
       }),
     );
 
-  test('preserves the manifest defaults without owner overrides', () => {
-    const runtime = runtimeFor({});
-    const registry = build(
-      runtime,
+  const mcpHost = (...names: string[]) => ({
+    mcp: Object.fromEntries(names.map((name) => [name, { type: 'local' }])),
+  });
+
+  const configured = (
+    config: Parameters<typeof RuntimeConfig.init>[1],
+    options: {
+      packageOverrides?: Record<string, unknown>;
+      mcps?: string[];
+      hostAgent?: Record<string, unknown>;
+      projectDirectory?: string;
+      hostFlavor?: 'v2';
+    } = {},
+  ) => {
+    const {
+      packageOverrides,
+      mcps = ['host-mcp'],
+      hostAgent,
+      ...registryOptions
+    } = options;
+    return build(
+      runtimeFor(config),
       {
-        mcp: { 'host-mcp': { type: 'local' } },
+        ...mcpHost(...mcps),
+        ...(hostAgent ? { agent: hostAgent } : {}),
       },
-      installed(),
+      { ...installed(packageOverrides), ...registryOptions },
     );
+  };
+
+  const promptDir = '.opencode/oh-my-opencode-slim';
+  const withProject = (
+    files: Record<string, string>,
+    use: (project: string) => void,
+  ) => {
+    const project = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'omos-marketplace-custom-'),
+    );
+    try {
+      for (const [relativePath, content] of Object.entries(files)) {
+        const file = path.join(project, relativePath);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, content);
+      }
+      use(project);
+    } finally {
+      RuntimeConfig.reset(project);
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  };
+
+  test('preserves the manifest defaults without owner overrides', () => {
+    const registry = configured({});
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
     expect(policy.decide('skill', 'review-a')).toBe('deny');
@@ -2252,23 +2296,13 @@ describe('marketplace agent customization', () => {
   });
 
   test('grants explicitly selected outside-manifest skills and MCPs', () => {
-    const runtime = runtimeFor({
-      agents: {
-        'market-agent': {
-          skills: ['review-a'],
-          mcps: ['extra-mcp'],
-        },
-      },
-    });
-    const registry = build(
-      runtime,
+    const registry = configured(
       {
-        mcp: {
-          'host-mcp': { type: 'local' },
-          'extra-mcp': { type: 'local' },
+        agents: {
+          'market-agent': { skills: ['review-a'], mcps: ['extra-mcp'] },
         },
       },
-      installed(),
+      { mcps: ['host-mcp', 'extra-mcp'] },
     );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'review-a')).toBe('allow');
@@ -2282,42 +2316,27 @@ describe('marketplace agent customization', () => {
   });
 
   test('treats explicit empty capability arrays as deny-all', () => {
-    const runtime = runtimeFor({
+    const registry = configured({
       agents: { 'market-agent': { skills: [], mcps: [] } },
     });
-    const registry = build(
-      runtime,
-      {
-        mcp: { 'host-mcp': { type: 'local' } },
-      },
-      installed(),
-    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('deny');
     expect(policy.decide('host-mcp_search', '*')).toBe('deny');
   });
 
   test('honors wildcard and exclusion grants with global disables', () => {
-    const runtime = runtimeFor({
-      agents: {
-        'market-agent': {
-          skills: ['*', '!review-a'],
-          mcps: ['*', '!host-mcp'],
-        },
-      },
-      disabled_skills: ['disabled-skill'],
-      disabled_mcps: ['disabled-mcp'],
-    });
-    const registry = build(
-      runtime,
+    const registry = configured(
       {
-        mcp: {
-          'host-mcp': { type: 'local' },
-          'extra-mcp': { type: 'local' },
-          'disabled-mcp': { type: 'local' },
+        agents: {
+          'market-agent': {
+            skills: ['*', '!review-a'],
+            mcps: ['*', '!host-mcp'],
+          },
         },
+        disabled_skills: ['disabled-skill'],
+        disabled_mcps: ['disabled-mcp'],
       },
-      installed(),
+      { mcps: ['host-mcp', 'extra-mcp', 'disabled-mcp'] },
     );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
@@ -2330,7 +2349,7 @@ describe('marketplace agent customization', () => {
   });
 
   test('extends manifest skills with skills_add and removes defaults', () => {
-    const runtime = runtimeFor({
+    const registry = configured({
       agents: {
         'market-agent': {
           skills_add: ['review-a'],
@@ -2338,58 +2357,39 @@ describe('marketplace agent customization', () => {
         },
       },
     });
-    const registry = build(
-      runtime,
-      {
-        mcp: { 'host-mcp': { type: 'local' } },
-      },
-      installed(),
-    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'review-a')).toBe('allow');
     expect(policy.decide('skill', 'skill-a')).toBe('deny');
   });
 
   test('does not discard manifest defaults for skills_add alone', () => {
-    const runtime = runtimeFor({
+    const registry = configured({
       agents: { 'market-agent': { skills_add: ['review-a'] } },
     });
-    const registry = build(
-      runtime,
-      {
-        mcp: { 'host-mcp': { type: 'local' } },
-      },
-      installed(),
-    );
     const policy = registry.nativePolicies['market-agent'];
     expect(policy.decide('skill', 'skill-a')).toBe('allow');
     expect(policy.decide('skill', 'review-a')).toBe('allow');
   });
 
   test('retains host skill denies and alias policy boundaries', () => {
-    const runtime = runtimeFor({
-      agents: {
-        'market-agent': {
-          displayName: 'MarketVisible',
-          skills: ['*'],
-          mcps: ['*'],
+    const registry = configured(
+      {
+        agents: {
+          'market-agent': {
+            displayName: 'MarketVisible',
+            skills: ['*'],
+            mcps: ['*'],
+          },
         },
       },
-    });
-    const registry = build(
-      runtime,
       {
-        agent: {
+        mcps: ['host-mcp', 'extra-mcp'],
+        hostAgent: {
           'market-agent': {
             permission: { skill: { 'review-a': 'deny' } },
           },
         },
-        mcp: {
-          'host-mcp': { type: 'local' },
-          'extra-mcp': { type: 'local' },
-        },
       },
-      installed(),
     );
     for (const name of ['market-agent', 'MarketVisible']) {
       const policy = registry.nativePolicies[name];
@@ -2409,201 +2409,133 @@ describe('marketplace agent customization', () => {
   });
 
   test('rejects ambiguous MCP action namespaces in owner additions', () => {
-    const runtime = runtimeFor({
-      agents: { 'market-agent': { mcps: ['agent'] } },
-    });
     expect(() =>
-      build(
-        runtime,
-        {
-          mcp: {
-            'host-mcp': { type: 'local' },
-            agent: { type: 'local' },
-            agent_tools: { type: 'local' },
-          },
-        },
-        installed(),
+      configured(
+        { agents: { 'market-agent': { mcps: ['agent'] } } },
+        { mcps: ['host-mcp', 'agent', 'agent_tools'] },
       ),
     ).toThrow('ambiguous MCP namespaces');
   });
 
   test('replaces and appends marketplace prompts using project files', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-prompt-'),
+    withProject(
+      {
+        [promptDir + '/market-agent.md']: 'Project base',
+        [promptDir + '/market-agent_append.md']: 'Project appendix',
+      },
+      (project) => {
+        const registry = configured(
+          {},
+          { projectDirectory: project, hostFlavor: 'v2' },
+        );
+        expect(registry.finalAgentConfig['market-agent']).toMatchObject({
+          prompt: 'Project base\n\nProject appendix',
+        });
+      },
     );
-    try {
-      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
-      fs.mkdirSync(prompts, { recursive: true });
-      fs.writeFileSync(path.join(prompts, 'market-agent.md'), 'Project base');
-      fs.writeFileSync(
-        path.join(prompts, 'market-agent_append.md'),
-        'Project appendix',
-      );
-      const runtime = runtimeFor({});
-      const registry = build(
-        runtime,
-        {
-          mcp: { 'host-mcp': { type: 'local' } },
-        },
-        {
-          ...installed(),
-          projectDirectory: project,
-          hostFlavor: 'v2',
-        },
-      );
-      expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Project base\n\nProject appendix',
-      });
-    } finally {
-      fs.rmSync(project, { recursive: true, force: true });
-    }
   });
 
   test('inline prompts beat replacement files and keep appended text', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-inline-'),
-    );
-    try {
-      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
-      fs.mkdirSync(prompts, { recursive: true });
-      fs.writeFileSync(path.join(prompts, 'market-agent.md'), 'Ignored base');
-      fs.writeFileSync(
-        path.join(prompts, 'market-agent_append.md'),
-        'Added instructions',
-      );
-      const runtime = runtimeFor({
-        agents: {
-          'market-agent': {
-            prompt: 'Inline base',
-            model: 'provider/owner',
+    withProject(
+      {
+        [promptDir + '/market-agent.md']: 'Ignored base',
+        [promptDir + '/market-agent_append.md']: 'Added instructions',
+      },
+      (project) => {
+        const registry = configured(
+          {
+            agents: {
+              'market-agent': {
+                prompt: 'Inline base',
+                model: 'provider/owner',
+              },
+            },
           },
-        },
-      });
-      const registry = build(
-        runtime,
-        {
-          mcp: { 'host-mcp': { type: 'local' } },
-        },
-        {
-          ...installed(),
-          projectDirectory: project,
-          hostFlavor: 'v2',
-        },
-      );
-      expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Inline base\n\nAdded instructions',
-      });
-    } finally {
-      fs.rmSync(project, { recursive: true, force: true });
-    }
+          { projectDirectory: project, hostFlavor: 'v2' },
+        );
+        expect(registry.finalAgentConfig['market-agent']).toMatchObject({
+          prompt: 'Inline base\n\nAdded instructions',
+        });
+      },
+    );
   });
 
   test('includes project-local skills alongside package defaults', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-local-skill-'),
+    withProject(
+      {
+        '.agents/skills/local/SKILL.md':
+          '---\nname: local-skill\ndescription: A local skill\n---\n',
+      },
+      (project) => {
+        const runtime = RuntimeConfig.init(
+          project,
+          {
+            agents: { 'market-agent': { skills_include_local: true } },
+          },
+          'v2',
+        );
+        const registry = build(runtime, mcpHost('host-mcp'), {
+          ...installed(),
+          projectDirectory: project,
+          hostFlavor: 'v2',
+        });
+        const policy = registry.nativePolicies['market-agent'];
+        expect(policy.decide('skill', 'skill-a')).toBe('allow');
+        expect(policy.decide('skill', 'local-skill')).toBe('allow');
+      },
     );
-    try {
-      const dir = path.join(project, '.agents', 'skills', 'local');
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(
-        path.join(dir, 'SKILL.md'),
-        '---\nname: local-skill\ndescription: A local skill\n---\n',
-      );
-      const runtime = RuntimeConfig.init(
-        project,
-        {
-          agents: { 'market-agent': { skills_include_local: true } },
-        },
-        'v2',
-      );
-      const registry = build(
-        runtime,
-        {
-          mcp: { 'host-mcp': { type: 'local' } },
-        },
-        { ...installed(), projectDirectory: project, hostFlavor: 'v2' },
-      );
-      const policy = registry.nativePolicies['market-agent'];
-      expect(policy.decide('skill', 'skill-a')).toBe('allow');
-      expect(policy.decide('skill', 'local-skill')).toBe('allow');
-    } finally {
-      RuntimeConfig.reset(project);
-      fs.rmSync(project, { recursive: true, force: true });
-    }
   });
 
   test('resolves preset append files without replacing package base', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-preset-prompt-'),
+    withProject(
+      {
+        [promptDir + '/team/market-agent_append.md']:
+          'Team-specific instructions',
+      },
+      (project) => {
+        const registry = configured(
+          {
+            preset: 'team',
+            presets: {
+              team: { agents: { 'market-agent': { temperature: 0.3 } } },
+            },
+          },
+          { projectDirectory: project, hostFlavor: 'v2' },
+        );
+        expect(registry.finalAgentConfig['market-agent']).toMatchObject({
+          prompt: 'Package prompt\n\nTeam-specific instructions',
+        });
+      },
     );
-    try {
-      const prompts = path.join(
-        project,
-        '.opencode',
-        'oh-my-opencode-slim',
-        'team',
-      );
-      fs.mkdirSync(prompts, { recursive: true });
-      fs.writeFileSync(
-        path.join(prompts, 'market-agent_append.md'),
-        'Team-specific instructions',
-      );
-      const runtime = runtimeFor({
-        preset: 'team',
-        presets: {
-          team: { agents: { 'market-agent': { temperature: 0.3 } } },
-        },
-      });
-      const registry = build(
-        runtime,
-        {
-          mcp: { 'host-mcp': { type: 'local' } },
-        },
-        { ...installed(), projectDirectory: project, hostFlavor: 'v2' },
-      );
-      expect(registry.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Package prompt\n\nTeam-specific instructions',
-      });
-    } finally {
-      fs.rmSync(project, { recursive: true, force: true });
-    }
   });
 
   test('keeps local append instructions when a package prompt changes', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-prompt-update-'),
+    withProject(
+      { [promptDir + '/market-agent_append.md']: 'Local appendix' },
+      (project) => {
+        const options = { projectDirectory: project, hostFlavor: 'v2' };
+        const host = mcpHost('host-mcp');
+        const runtime = runtimeFor({});
+        const original = build(runtime, host, {
+          ...installed({ prompt: 'First base' }),
+          ...options,
+        });
+        const updated = build(runtime, host, {
+          ...installed({ prompt: 'Updated base' }),
+          ...options,
+        });
+        expect(original.finalAgentConfig['market-agent']).toMatchObject({
+          prompt: 'First base\n\nLocal appendix',
+        });
+        expect(updated.finalAgentConfig['market-agent']).toMatchObject({
+          prompt: 'Updated base\n\nLocal appendix',
+        });
+      },
     );
-    try {
-      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
-      fs.mkdirSync(prompts, { recursive: true });
-      fs.writeFileSync(
-        path.join(prompts, 'market-agent_append.md'),
-        'Local appendix',
-      );
-      const runtime = runtimeFor({});
-      const options = { projectDirectory: project, hostFlavor: 'v2' };
-      const host = { mcp: { 'host-mcp': { type: 'local' } } };
-      const original = build(runtime, host, {
-        ...installed({ prompt: 'First base' }),
-        ...options,
-      });
-      const updated = build(runtime, host, {
-        ...installed({ prompt: 'Updated base' }),
-        ...options,
-      });
-      expect(original.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'First base\n\nLocal appendix',
-      });
-      expect(updated.finalAgentConfig['market-agent']).toMatchObject({
-        prompt: 'Updated base\n\nLocal appendix',
-      });
-    } finally {
-      fs.rmSync(project, { recursive: true, force: true });
-    }
   });
 
   test('missing optional selections do not block admission', () => {
-    const runtime = runtimeFor({
+    const registry = configured({
       agents: {
         'market-agent': {
           skills: ['not-installed'],
@@ -2611,11 +2543,6 @@ describe('marketplace agent customization', () => {
         },
       },
     });
-    const registry = build(
-      runtime,
-      { mcp: { 'host-mcp': { type: 'local' } } },
-      installed(),
-    );
     expect(registry.marketplaceAgentNames).toContain('market-agent');
     expect(registry.finalAgentConfig['market-agent']).toMatchObject({
       mcps: [],
@@ -2629,37 +2556,71 @@ describe('marketplace agent customization', () => {
   });
 
   test('extended package prompts preserve their inherited role baseline', () => {
-    const project = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omos-marketplace-extended-prompt-'),
+    withProject(
+      { [promptDir + '/market-agent_append.md']: 'Local extension' },
+      (project) => {
+        const registry = configured(
+          {},
+          {
+            packageOverrides: {
+              extends: { builtin: 'explorer', promptMode: 'append' },
+              model: { source: 'builtin' },
+              skills: [],
+              mcps: [],
+            },
+            projectDirectory: project,
+            hostFlavor: 'v2',
+          },
+        );
+        const prompt = registry.finalAgentConfig['market-agent'].prompt as string;
+        expect(prompt).toContain('Package prompt');
+        expect(prompt.endsWith('\n\nLocal extension')).toBe(true);
+        expect(prompt.split('Local extension').length - 1).toBe(1);
+      },
     );
-    try {
-      const prompts = path.join(project, '.opencode', 'oh-my-opencode-slim');
-      fs.mkdirSync(prompts, { recursive: true });
-      fs.writeFileSync(
-        path.join(prompts, 'market-agent_append.md'),
-        'Local extension',
-      );
-      const runtime = runtimeFor({});
-      const registry = build(
-        runtime,
-        { mcp: { 'host-mcp': { type: 'local' } } },
-        {
-          ...installed({
-            extends: { builtin: 'explorer', promptMode: 'append' },
-            model: { source: 'builtin' },
-            skills: [],
-            mcps: [],
-          }),
-          projectDirectory: project,
-          hostFlavor: 'v2',
+  });
+
+  test('extended role keeps defaults and optional grants under both identities', () => {
+    const registry = configured(
+      {
+        agents: {
+          'market-agent': {
+            displayName: 'ExtendedVisible',
+            skills_add: ['review-a'],
+            mcps: ['host-mcp', 'extra-mcp'],
+          },
         },
-      );
-      const prompt = registry.finalAgentConfig['market-agent'].prompt as string;
-      expect(prompt).toContain('Package prompt');
-      expect(prompt.endsWith('\n\nLocal extension')).toBe(true);
-      expect(prompt.split('Local extension').length - 1).toBe(1);
-    } finally {
-      fs.rmSync(project, { recursive: true, force: true });
+      },
+      {
+        mcps: ['host-mcp', 'extra-mcp'],
+        packageOverrides: {
+          extends: { builtin: 'explorer', promptMode: 'append' },
+          model: { source: 'builtin' },
+          skills: ['skill-a'],
+          mcps: ['host-mcp'],
+        },
+      },
+    );
+    for (const name of ['market-agent', 'ExtendedVisible']) {
+      const policy = registry.nativePolicies[name];
+      expect(policy.decide('skill', 'skill-a')).toBe('allow');
+      expect(policy.decide('skill', 'review-a')).toBe('allow');
+      expect(policy.decide('extra-mcp_search', '*')).toBe('allow');
+      expect(policy.decide('host-mcp_search', '*')).toBe('allow');
+      expect(policy.decide('write', '*')).toBe('deny');
+      expect(registry.finalAgentConfig[name]).toMatchObject({
+        mcps: ['host-mcp', 'extra-mcp'],
+      });
+      const childRules = registry.compileChildPermissions(name, [
+        { action: '*', resource: '*', effect: 'allow' },
+      ]);
+      const childPolicy = compilePermissionPolicy({
+        baselineRules: [],
+        hostRules: childRules,
+      });
+      expect(childPolicy.decide('write', '*')).toBe('deny');
     }
+    const prompt = registry.finalAgentConfig['market-agent'].prompt as string;
+    expect(prompt).toContain('Package prompt');
   });
 });

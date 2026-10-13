@@ -100,7 +100,7 @@ The `skills` array is replacement-based: when a project config defines `agents.<
 
 Effective result: `codemap`, `deepwork`, `project-architecture`, `project-testing` — the global list is not duplicated.
 
-Resolution order is deterministic: resolve the inherited/configured `skills` list, then apply `skills_add`, then apply `skills_remove`. Duplicates are removed (first occurrence wins), and `skills_remove` wins over `skills_add` for the same skill. When the effective list contains `"*"`, removals are expressed with the existing `!name` exclusion syntax (e.g. effective `["*", "!codemap"]`). The directives are folded into `skills` during agent resolution — after all layers (user config, project config, presets, runtime `/preset` switching) have determined the effective `skills` value — and stripped from the final agent configuration, so agent definitions and hooks only ever see a plain `skills` list. On an agent without a `skills` list, directives resolve against that agent's default grants, so `skills_add` keeps the defaults and appends. This includes marketplace agents: their assembled package skills are the defaults, even when the package extends a built-in role.
+Resolution order is deterministic: resolve the inherited/configured `skills` list, then apply `skills_add`, then apply `skills_remove`. Duplicates are removed (first occurrence wins), and `skills_remove` wins over `skills_add` for the same skill. When the effective list contains `"*"`, removals are expressed with the existing `!name` exclusion syntax (e.g. effective `["*", "!codemap"]`). The directives are folded into `skills` during agent resolution — after all layers (user config, project config, presets, runtime `/preset` switching) have determined the effective `skills` value — and stripped from the final agent configuration, so agent definitions and hooks only ever see a plain `skills` list. On an agent without a `skills` list, directives resolve against that agent's default grants, so `skills_add` keeps the defaults and appends.
 
 See [Skills Assignment](skills.md#adding-or-removing-skills-on-top-of-an-inherited-list) for the full rule set, including behavior when no `skills` list is configured.
 
@@ -189,7 +189,7 @@ Inline prompt precedence and the composition rules below are unchanged.
 ## Prompt Composition Rules
 
 For any agent, the final system prompt is computed dynamically. Precedence
-is **inline > file > agent default** (including marketplace packages):
+is **inline > file > agent default**:
 
 1. **Resolve the effective base prompt:**
    ```
@@ -199,10 +199,9 @@ is **inline > file > agent default** (including marketplace packages):
      `agents.<agent>.prompt` (config or preset).
    - `filePrompt` is the content of the resolved `<agent>.md` replacement
      file (located according to the Prompt Lookup Precedence).
-   - `defaultAgentPrompt` is the factory template (built-in agents),
-     the assembled marketplace prompt (marketplace agents, including
-     built-in extensions), or `"You are the <name> specialist."`
-     (custom agents).
+   - `defaultAgentPrompt` is the agent's supplied default prompt
+     (bundled or packaged), or `"You are the <name> specialist."`
+     for custom agents.
 
    An explicit inline `prompt` always wins over a prompt file. The file
    acts as a shared default — useful for the "shared prompt, per-preset
