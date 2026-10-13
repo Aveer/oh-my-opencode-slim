@@ -73,6 +73,14 @@ Its job is to:
 
 Specialists do the work. The orchestrator manages the work.
 
+### Children moved to worktrees
+
+Moving a child session to another directory does not move its task ownership.
+The delegating parent's plugin instance still observes that tracked child's
+lifecycle, so completion and revived-run notifications do not require polling
+`task_result`. The destination directory handles its own permissions and runtime
+profiles; unrelated sessions remain excluded from the parent's event handling.
+
 ### Unattributed sessions and restart scope
 
 A child observed before it can be attributed to a task launch is retained as a
@@ -573,6 +581,26 @@ on v2, set the keys explicitly:
 }
 ```
 
+Child-input wakes wait 250 ms before notifying the parent, on both host
+versions. Requests answered during that window by the host, a UI auto-replier,
+or another caller are discarded. Requests still open are checked again before
+delivery. Duplicate events enrich the queued notice without restarting the
+deadline. Stopped-job recovery and terminal-publication wakes are not delayed.
+An ask arriving during a host read or model-selection lookup defers a
+child-input-only wake until settling completes, without sending a stopped-job
+notice in its place. Overflowed request IDs are also revalidated: resolved
+requests cannot keep an overflow-only wake alive. Remaining overflow notices
+carry task IDs for `task_status`, and delivery retires only the overflow IDs
+actually sent, preserving requests added while a send is in flight. Entries
+beyond the retained-ID cap stay counted because their state cannot be checked.
+
+Wake and `task_status` share compact request details and reply guidance.
+V1 questions and permission requests use `task_reply`; v2 forms require the
+host UI, waiting, or `task_cancel`. V2 notices keep question summaries and option
+labels; full option descriptions stay in the host UI. A pending request
+suppresses the generic “await completion” status guidance. Shorter notices do not skip the host's
+normal model step after a tool result or guarantee that a model emits no filler.
+
 With the board off, the plugin still retires natively delivered results: on
 the parent's next real user turn they are registered, and once the prompt
 advances they are reconciled. Stopped jobs are **not** retired that way,
@@ -798,8 +826,10 @@ path unchanged: it skips background concurrency admission (no semaphore
 slot), is not wall-clock supervised, executes synchronously on the host, and
 its status is registered through the existing foreground bookkeeping.
 Unconfigured providers, different providers, and undeterminable providers
-leave `background: true` untouched (fail-open); the default (omitted)
-behavior is unchanged.
+leave `background: true` untouched (fail-open). On v2 hosts, when the
+background-default flip is active, an omitted
+`background` is first defaulted to `true` (the flip runs before this check), so
+it is converted for configured same-provider pairs too.
 
 ### Opt-in Wall-clock Supervisor
 
