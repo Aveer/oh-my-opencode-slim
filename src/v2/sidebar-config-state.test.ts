@@ -28,6 +28,7 @@ beforeEach(() => {
   process.env.OPENCODE_LOG_DIR = path.join(env.configHome, 'logs');
   delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
   delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS = '25';
 });
 
 afterEach(() => {
@@ -144,7 +145,7 @@ describe('v2 sidebar config-state invalidation', () => {
       await Bun.sleep(25);
       const before = ctx.getRenderCount();
       writeConfig('beta');
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
       expect(ctx.getRenderCount()).toBeGreaterThan(before);
     } finally {
       cleanup?.();
@@ -180,7 +181,7 @@ describe('v2 sidebar config-state invalidation', () => {
 
     try {
       mutable.location.directory = secondProject;
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
 
       expect(
         (await notifyConfigChanged(env.projectDir, 'old-directory')).ok,

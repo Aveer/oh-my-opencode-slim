@@ -71,7 +71,10 @@ describe('v2 tui preset plugin', () => {
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     fs.rmSync(configHome, { recursive: true, force: true });
     fs.rmSync(projectDir, { recursive: true, force: true });
   });

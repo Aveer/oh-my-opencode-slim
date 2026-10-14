@@ -115,20 +115,7 @@ async function scanForViolations(): Promise<string[]> {
 describe('cache-safety tripwire', () => {
   test('prompt-assembly code introduces no unreviewed volatile inputs', async () => {
     const violations = await scanForViolations();
-
-    if (violations.length > 0) {
-      throw new Error(
-        [
-          'Volatile input detected in prompt-assembly code. If its value can',
-          'reach the prompt, it will silently bust the provider cache on',
-          'every request — keep it in the volatile tail via',
-          'src/hooks/cache-safe-injection.ts, or add a justified allowlist',
-          'entry in src/cache-safety-tripwire.test.ts (see file header).',
-          '',
-          ...violations,
-        ].join('\n'),
-      );
-    }
+    expect(violations).toEqual([]);
   });
 
   test('allowlist contains no stale entries', async () => {

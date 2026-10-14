@@ -16,6 +16,7 @@ import { BackgroundTaskConcurrency } from './background-task-concurrency';
 import { classifyTerminalEvidence } from './child-transcript';
 import * as loggerModule from './logger';
 import { COMPLETED_WITHOUT_TEXT_DIAGNOSTIC } from './task';
+import { createTimerHarness, tick } from './test-timers';
 
 // Other test files mock the shared opencode-client module process-globally
 // (Bun mock.module is never auto-restored). Re-pin it to a passthrough so
@@ -28,7 +29,6 @@ const gates: BackgroundJobTerminalGate[] = [];
 afterEach(() => {
   for (const gate of gates.splice(0)) gate.dispose();
 });
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const answer = (text = 'answer') => ({
   data: [
     { info: { id: 'baseline', role: 'user' }, parts: [] },
@@ -55,12 +55,15 @@ function harness(
     now: 0,
   });
   let now = 1;
+  const timers = createTimerHarness();
   const gate = createBackgroundJobTerminalGate({
     backgroundJobBoard: board,
     baselineFor: () => 'baseline',
     readTerminalEvidence: async () => answer(),
     graceMs: 5,
     now: () => now,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
     ...options,
   });
   gates.push(gate);
@@ -84,6 +87,7 @@ function harness(
     run,
     gate,
     observe,
+    timers,
     advance: (time: number) => {
       now = time;
     },
@@ -658,21 +662,23 @@ describe('terminal gate', () => {
   );
   test('late resolution after timeout and identity replacement cannot be reused', async () => {
     let release!: (value: unknown) => void;
-    const read = mock(
-      (): Promise<unknown> =>
-        read.mock.calls.length === 1
-          ? new Promise((resolve) => {
-              release = resolve;
-            })
-          : Promise.resolve(answer('new identity')),
-    );
+    const read = mock((): Promise<unknown> => {
+      if (read.mock.calls.length !== 1)
+        return Promise.resolve(answer('new identity'));
+      const held = Promise.withResolvers<unknown>();
+      release = held.resolve;
+      return held.promise;
+    });
     const h = harness({
       readTerminalEvidence: read,
       readTimeoutMs: 2,
       graceMs: 1000,
     });
     h.observe('quiescent');
-    await h.gate.reconcile(h.run);
+    const firstRead = h.gate.reconcile(h.run);
+    await h.timers.tick(); // arm the evidence deadline
+    await h.timers.advance(2); // readTimeoutMs
+    await firstRead;
     const replacement = h.board.registerLaunch({
       taskID: h.run.taskID,
       parentSessionID: 'parent',
@@ -686,7 +692,10 @@ describe('terminal gate', () => {
       origin: 'test',
       readStartedAt: token.readStartedAt,
     });
-    await h.gate.reconcile(replacement);
+    const replacementRead = h.gate.reconcile(replacement);
+    await h.timers.tick();
+    await h.timers.advance(2);
+    await replacementRead;
     expect(read).toHaveBeenCalledTimes(1);
     expect(h.board.get(h.run.taskID)?.state).toBe('running');
     release(answer('obsolete'));
@@ -807,7 +816,7 @@ describe('terminal gate', () => {
           EVIDENCE_UNAVAILABLE_DIAGNOSTIC;
         i++
       )
-        await tick();
+        await h.timers.advance(5);
       expect(h.board.get(h.run.taskID)).toMatchObject({
         state: 'running',
         statusUncertain: true,
@@ -815,7 +824,7 @@ describe('terminal gate', () => {
       });
       expect(readRuntime).toHaveBeenCalledTimes(source === 'status' ? 4 : 0);
       const calls = inspect.mock.calls.length;
-      await Bun.sleep(25);
+      await h.timers.advance(25); // > graceMs * 4: no poll may remain scheduled
       expect(inspect).toHaveBeenCalledTimes(calls);
     },
   );
@@ -877,12 +886,21 @@ describe('terminal gate', () => {
       graceMs: 1000,
     });
     h.observe('quiescent');
-    await h.gate.reconcile(h.run);
-    await h.gate.reconcile(h.run);
+    const first = h.gate.reconcile(h.run);
+    await h.timers.tick(); // arm the evidence deadline
+    await h.timers.advance(2); // readTimeoutMs
+    await first;
+    const second = h.gate.reconcile(h.run);
+    await h.timers.tick();
+    await h.timers.advance(2);
+    await second;
     expect(read).toHaveBeenCalledTimes(1);
     h.observe('busy');
     h.observe('quiescent');
-    await h.gate.reconcile(h.run);
+    const third = h.gate.reconcile(h.run);
+    await h.timers.tick();
+    await h.timers.advance(2);
+    await third;
     expect(read).toHaveBeenCalledTimes(1);
   });
   test.each([
@@ -1317,6 +1335,10 @@ test('integration: late acknowledgement and transport success for A cannot consu
 test.each(['transcript', 'outcome'])(
   'v2 real shim resumes after %s retry cutoff on the next idle event and returns an idempotent result',
   async (source) => {
+    // EXCEPTION (ts-no-test-timers): v2-shim integration (see the note at
+    // the settle below) — the zero-delay hops must span real time so the
+    // gate's real grace timers fire mid-loop while the shim chain settles.
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
     let valid = false;
     const context = mock(async () => {
       if (!valid) throw new Error('context temporarily unavailable');
@@ -1397,18 +1419,19 @@ test.each(['transcript', 'outcome'])(
         expect(runtimeCalls).toBe(4);
         expect(context).not.toHaveBeenCalled();
       }
+      // EXCEPTION (ts-no-test-timers): v2-shim integration — the shim's
+      // runtime-observation chain interleaves with real event-loop turns
+      // outside the timer seam, so deterministic driving reordered its
+      // retry chain. Backlog: seam the shim's status lookup to convert.
       await Bun.sleep(25); // More than graceMs * 4: neither reader may keep polling.
       expect(context).toHaveBeenCalledTimes(calls);
       expect(get).toHaveBeenCalledTimes(runtimeCalls);
       if (source === 'outcome') {
         // The host signal must renew the budget even if its first lookup still
         // lacks outcome. The next automatic retry, not another signal, succeeds.
-        let release!: () => void;
-        const pending = new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        const held = Promise.withResolvers<void>();
         get.mockImplementationOnce(async () => {
-          await pending;
+          await held.promise;
           return { id: 'ses_v2child', parentID: 'parent' };
         });
         await idle();
@@ -1416,7 +1439,7 @@ test.each(['transcript', 'outcome'])(
           await tick();
         expect(get).toHaveBeenCalledTimes(runtimeCalls + 1);
         valid = true;
-        release();
+        held.resolve();
       } else {
         valid = true;
         await idle();
@@ -1696,11 +1719,9 @@ describe('background reconcile failure containment', () => {
       expect(clientReads).toBeGreaterThanOrEqual(2);
 
       armed = true;
-      // Flush the scheduled timer plus pending microtask/macrotask turns
-      // so the fire-and-forget reconcile has fully settled.
-      for (let i = 0; i < 8; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2));
-      }
+      // Fire the scheduled retry and drain its fire-and-forget reconcile.
+      await h.timers.advance(2);
+      await h.timers.tick();
       // The scheduled reconcile really did hit the throwing client...
       expect(armedThrows).toBeGreaterThanOrEqual(1);
 

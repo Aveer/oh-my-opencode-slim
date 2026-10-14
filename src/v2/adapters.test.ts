@@ -8,26 +8,19 @@ import {
   parseModelRef,
   snapshotNativeAgentForRegistry,
 } from './adapters';
-import type { V2AgentDraft } from './types';
-
-function globMatch(pattern: string, value: string): boolean {
-  if (pattern === '*') return true;
-  if (pattern === value) return true;
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*');
-  return new RegExp(`^${escaped}$`).test(value);
-}
+import { compilePermissionPolicy } from './permissions';
+import type { V2AgentDraft, V2PermissionRule } from './types';
 
 function evaluatePermission(
-  rules: Array<{ action: string; resource: string; effect: string }>,
-  tool: string,
+  rules: readonly V2PermissionRule[],
+  action: string,
   resource = '*',
 ): string {
-  const match = [...rules]
-    .reverse()
-    .find((r) => globMatch(r.action, tool) && globMatch(r.resource, resource));
-  return match?.effect ?? 'ask';
+  const policy = compilePermissionPolicy({
+    baselineRules: rules,
+    hostRules: [],
+  });
+  return policy.decide(action, resource);
 }
 
 describe('parseModelRef', () => {

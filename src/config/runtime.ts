@@ -265,7 +265,9 @@ export class RuntimeConfig {
    * loader's preset merge so this is correct even when seeded with a raw
    * (not yet loader-merged) plugin config.
    */
-  agents(): Record<string, AgentOverrideConfig> {
+  agents(
+    defaultSkills: Readonly<Record<string, readonly string[]>> = {},
+  ): Record<string, AgentOverrideConfig> {
     let base = mergeAgentOverrides({}, this.pluginConfig?.agents ?? {});
     const filePreset = this.pluginConfig?.preset
       ? this.resolvedPresetAgents(this.pluginConfig.preset)
@@ -277,8 +279,10 @@ export class RuntimeConfig {
     const merged = runtimePreset
       ? mergeAgentOverrides(base, runtimePreset)
       : base;
-    return resolveEffectiveAgentOverrides(merged, () =>
-      this.projectLocalSkillNames(),
+    return resolveEffectiveAgentOverrides(
+      merged,
+      () => this.projectLocalSkillNames(),
+      defaultSkills,
     );
   }
 

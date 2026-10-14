@@ -424,6 +424,7 @@ describe('watchPluginConfigFiles scheduling', () => {
         fs.rmSync(env.userConfigPath, { force: true });
         seamListener(seam)?.('rename', 'oh-my-opencode-slim.json');
         await waitFor(() => calls() === 1);
+        expect(calls()).toBe(1);
       },
     );
   });
@@ -462,6 +463,7 @@ describe('watchPluginConfigFiles scheduling', () => {
       async ({ seam, calls }) => {
         seamListener(seam)?.('rename', 'oh-my-opencode-slim.jsonc');
         await waitFor(() => calls() === 1);
+        expect(calls()).toBe(1);
       },
     );
   });

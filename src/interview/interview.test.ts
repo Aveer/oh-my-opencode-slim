@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import { createServer } from 'node:http';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { InterviewConfigSchema } from '../config/schema';
 import { INTERNAL_INITIATOR_METADATA_KEY } from '../utils';
@@ -21,6 +22,11 @@ mock.module('../utils/opencode-client', () => ({
     session: ctx._sessionMock ?? ctx.client.session,
   }),
 }));
+
+/** Unique temp dir under the platform tmpdir (cross-platform). */
+async function makeTempDir(prefix = 'interview-test-'): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), prefix));
+}
 
 // Mock the plugin context with mutable message array
 function createMockContext(overrides?: {
@@ -149,7 +155,7 @@ function createRuntimeEnv(
 describe('interview service', () => {
   describe('/interview <idea> command', () => {
     test('creates interview and sends kickoff prompt with UI notification', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
       // Set up base URL resolver to avoid server error
@@ -196,7 +202,7 @@ describe('interview service', () => {
     });
 
     test('renames session with interview title on creation', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
       service.setBaseUrlResolver(async () => 'http://localhost:9999');
@@ -221,7 +227,7 @@ describe('interview service', () => {
     });
 
     test('truncates session title to 50 chars with ellipsis', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
       service.setBaseUrlResolver(async () => 'http://localhost:9999');
@@ -245,7 +251,7 @@ describe('interview service', () => {
     });
 
     test('creates markdown file with readable unique filename', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -287,7 +293,7 @@ describe('interview service', () => {
 
   describe('answer submission', () => {
     test('appends only Q/A history to markdown document', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages, then add questions after interview creation
       const messagesData: Array<{
@@ -356,7 +362,7 @@ describe('interview service', () => {
     });
 
     test('preserves existing history when appending new answers', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with messages that include one answered question and one pending
       const messagesData: Array<{
@@ -445,7 +451,7 @@ describe('interview service', () => {
     });
 
     test('replaces placeholder history on first answer submission', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       const messagesData: Array<{
         info?: { role: string };
@@ -503,7 +509,7 @@ describe('interview service', () => {
     });
 
     test('rejects concurrent submission when first request holds busy lock', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages
       const messagesData: Array<{
@@ -580,7 +586,7 @@ describe('interview service', () => {
     });
 
     test('busy lock released when validation fails after lock acquired', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages
       const messagesData: Array<{
@@ -642,7 +648,7 @@ describe('interview service', () => {
     });
 
     test('busy lock released when no active questions validation fails', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages (no questions)
       const messagesData: Array<{
@@ -702,7 +708,7 @@ describe('interview service', () => {
 
   describe('session interview lifecycle', () => {
     test('starting /interview with different idea creates fresh interview', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -751,7 +757,7 @@ describe('interview service', () => {
     });
 
     test('polling an abandoned interview cannot sync or alter the new interview', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-poll-abandoned-');
+      const tempDir = await makeTempDir('interview-poll-abandoned-');
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
       service.setBaseUrlResolver(async () => 'http://localhost:9999');
@@ -805,7 +811,7 @@ describe('interview service', () => {
     });
 
     test('/interview with no idea and no active interview asks for idea', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -824,7 +830,7 @@ describe('interview service', () => {
     });
 
     test('/interview reopen instruction includes the tool fallback hint in non-printState mode', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -859,7 +865,7 @@ describe('interview service', () => {
     });
 
     test('no-arg reopen includes the printed-state contract in printState mode', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx, { printState: true });
       service.setBaseUrlResolver(async () => 'http://localhost:9999');
@@ -884,7 +890,7 @@ describe('interview service', () => {
     });
 
     test('reusing same idea in same session returns existing interview', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -938,7 +944,7 @@ describe('interview service', () => {
     });
 
     test('reopening completed interviews clears completion for every command form', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-reopen-complete-');
+      const tempDir = await makeTempDir('interview-reopen-complete-');
       const messagesData = [
         {
           info: { role: 'assistant' },
@@ -991,7 +997,7 @@ describe('interview service', () => {
     });
 
     test('session.deleted event marks interview as abandoned', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -1033,7 +1039,7 @@ describe('interview service', () => {
 
   describe('session status handling', () => {
     test('session.status busy marks interview as awaiting-agent', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with no questions (awaiting-agent state)
       const messagesData: Array<{
@@ -1094,7 +1100,7 @@ describe('interview service', () => {
     });
 
     test('message.updated stores current session model for interview follow-ups', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx);
@@ -1139,7 +1145,7 @@ describe('interview service', () => {
 
   describe('configurable output folder', () => {
     test('creates interview in configured output folder', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Create service with custom output folder config
@@ -1179,7 +1185,7 @@ describe('interview service', () => {
     });
 
     test('handles nested output folder paths', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Create service with nested output folder path
@@ -1213,7 +1219,7 @@ describe('interview service', () => {
 
   describe('resuming with existing markdown file', () => {
     test('resumes existing file and sends resume prompt instead of kickoff', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Pre-create an existing interview file
@@ -1256,7 +1262,7 @@ describe('interview service', () => {
     });
 
     test('resumes by full relative path to existing file', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Pre-create an existing interview file in custom location
@@ -1292,7 +1298,7 @@ describe('interview service', () => {
     });
 
     test('reuses same file when resuming multiple times', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Pre-create an existing interview file
@@ -1355,7 +1361,7 @@ describe('interview service', () => {
 
   describe('configurable maxQuestions', () => {
     test('kickoff prompt references configured maxQuestions count', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Create service with custom maxQuestions
@@ -1386,7 +1392,7 @@ describe('interview service', () => {
     });
 
     test('resume prompt references configured maxQuestions count', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       // Pre-create an existing file to trigger resume
@@ -1424,7 +1430,7 @@ describe('interview service', () => {
     });
 
     test('state exposes at most configured maxQuestions questions', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages
       const messagesData: Array<{
@@ -1482,7 +1488,7 @@ describe('interview service', () => {
     });
 
     test('answer prompt references configured maxQuestions count', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages
       const messagesData: Array<{
@@ -1548,7 +1554,7 @@ describe('interview service', () => {
     });
 
     test('reuses observed session model when submitting interview answers', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       const messagesData: Array<{
         info?: { role: string };
@@ -1618,7 +1624,7 @@ describe('interview service', () => {
 
   describe('agent-provided title', () => {
     test('keeps path stable and stores assistant title in markdown', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       // Start with empty messages
       const messagesData: Array<{
@@ -1688,7 +1694,7 @@ describe('interview service', () => {
     });
 
     test('keeps original filename when assistant omits title', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       const messagesData: Array<{
         info?: { role: string };
@@ -1745,7 +1751,7 @@ describe('interview service', () => {
     });
 
     test('keeps shared path when title matches another file', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
 
       const messagesData: Array<{
         info?: { role: string };
@@ -1822,7 +1828,7 @@ describe('interview service', () => {
 
   describe('autoOpenBrowser config', () => {
     test('does not open a browser during automated test runtimes', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const { service, openBrowserMock } = createTestService(
@@ -1857,7 +1863,7 @@ describe('interview service', () => {
     });
 
     test('does not open a browser in CI even when auto-open is enabled', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const { service, openBrowserMock } = createTestService(
@@ -1891,7 +1897,7 @@ describe('interview service', () => {
     });
 
     test('uses injected browser opener instead of opening a real browser in tests', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const { service, openBrowserMock } = createTestService(
@@ -1926,7 +1932,7 @@ describe('interview service', () => {
     });
 
     test('kickoff prompt includes title field guidance', async () => {
-      const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+      const tempDir = await makeTempDir();
       const ctx = createMockContext({ directory: tempDir });
 
       const service = createInterviewService(ctx, {
@@ -2207,7 +2213,7 @@ describe('interview service abandoned-record retention', () => {
   }
 
   test('evicts oldest abandoned records once the retention cap is exceeded', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+    const tempDir = await makeTempDir();
     try {
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
@@ -2242,7 +2248,7 @@ describe('interview service abandoned-record retention', () => {
   });
 
   test('prunes by abandonment order instead of creation order', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+    const tempDir = await makeTempDir();
     try {
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
@@ -2289,7 +2295,7 @@ describe('interview service abandoned-record retention', () => {
   });
 
   test('retains abandoned records that stay within the cap', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+    const tempDir = await makeTempDir();
     try {
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx);
@@ -2315,7 +2321,7 @@ describe('interview service abandoned-record retention', () => {
 
 describe('interview service empty-transcript belt (v2 retention loss)', () => {
   test('an active interview with an empty whole-transcript read stays awaiting-agent', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-test-');
+    const tempDir = await makeTempDir();
     try {
       const ctx = createMockContext({ directory: tempDir });
       const service = createInterviewService(ctx, undefined, {
@@ -2366,7 +2372,7 @@ describe('interview service empty-transcript belt (v2 retention loss)', () => {
 
 describe('spec patch contract', () => {
   test('applies a later patch and sends one repair when a hunk misses', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-patch-contract-');
+    const tempDir = await makeTempDir('interview-patch-contract-');
     const messagesData: Array<{
       info?: { role: string };
       parts?: Array<{ type: string; text?: string }>;
@@ -2463,7 +2469,7 @@ describe('spec patch contract', () => {
   });
 
   test('does not repair when the same turn is polled again', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-patch-cursor-');
+    const tempDir = await makeTempDir('interview-patch-cursor-');
     const messagesData: Array<{
       info?: { role: string };
       parts?: Array<{ type: string; text?: string }>;
@@ -2539,7 +2545,7 @@ describe('spec patch contract', () => {
 
 describe('/implement', () => {
   test('refuses while the interview still has open questions', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-implement-open-');
+    const tempDir = await makeTempDir('interview-implement-open-');
     const messagesData: Array<{
       info?: { role: string };
       parts?: Array<{ type: string; text?: string }>;
@@ -2584,7 +2590,7 @@ describe('/implement', () => {
   });
 
   test('names the completed file without pasting the spec', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-implement-done-');
+    const tempDir = await makeTempDir('interview-implement-done-');
     const messagesData: Array<{
       info?: { role: string };
       parts?: Array<{ type: string; text?: string }>;
@@ -2628,7 +2634,7 @@ describe('/implement', () => {
   });
 
   test('uses the newest completed file after a restart', async () => {
-    const tempDir = await fs.mkdtemp('/tmp/interview-implement-restart-');
+    const tempDir = await makeTempDir('interview-implement-restart-');
     const interviewDir = path.join(tempDir, 'interview');
     await fs.mkdir(interviewDir, { recursive: true });
     const older = path.join(interviewDir, 'older.md');

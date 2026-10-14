@@ -62,7 +62,7 @@ Control which MCPs each agent can use via the `mcps` array in your preset config
 | `["!*"]` | Deny all MCPs |
 
 **Rules:**
-- `*` expands to all available MCPs
+- `*` expands to all available enabled MCPs
 - `!item` excludes a specific MCP
 - Conflicts (e.g. `["a", "!a"]`) → deny wins
 
@@ -102,3 +102,8 @@ To disable specific MCPs for all agents regardless of preset, add them to `disab
 ```
 
 This is useful when you want to cut external network calls entirely (e.g. air-gapped environments or cost control).
+
+An explicit `agents.<name>.mcps` list replaces the agent's defaults.
+MCP availability, native core-tool permissions, and host restrictions remain
+separate. For installed packages, see
+[Marketplace customization](marketplace.md#customize-an-installed-agent).

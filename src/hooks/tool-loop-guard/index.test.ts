@@ -371,16 +371,23 @@ describe('tool-loop-guard', () => {
   test('identical args with stable identical output warn but no block for non-readonly tool', async () => {
     // bash is not in BLOCK_TOOLS: warn at 3 but never throw even at 6.
     for (let i = 1; i <= 6; i++) {
-      await hook['tool.execute.before'](
-        beforeInput({ tool: 'bash', callID: `e${i}` }),
-        { args: { command: 'uname' } },
-      );
+      await expect(
+        hook['tool.execute.before'](
+          beforeInput({ tool: 'bash', callID: `e${i}` }),
+          { args: { command: 'uname' } },
+        ),
+      ).resolves.toBeUndefined();
+      const output = { output: 'Linux', metadata: {} };
       await hook['tool.execute.after'](
         afterInput({ tool: 'bash', callID: `e${i}` }),
-        { output: 'Linux', metadata: {} },
+        output,
       );
+      if (i < 3) {
+        expect(output.output).toBe('Linux');
+      } else {
+        expect(output.output).toContain(LOOP_GUARD_WARNING);
+      }
     }
-    // never throws (bash is not in BLOCK_TOOLS)
   });
 
   test('overlapping same-args calls with changing results never block', async () => {

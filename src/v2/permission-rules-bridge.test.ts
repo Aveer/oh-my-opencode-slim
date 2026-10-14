@@ -39,6 +39,7 @@ import {
   test,
 } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { createAgents } from '../agents/index';
 import { PluginConfigSchema } from '../config';
@@ -1134,7 +1135,7 @@ describe('createV2Setup permission rules wiring', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    fixtureRoot = await mkdtemp('/tmp/omo-v2-perm-rules-');
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'omo-v2-perm-rules-'));
     const configDir = path.join(fixtureRoot, 'config');
     await Bun.write(
       path.join(configDir, 'oh-my-opencode-slim.json'),
@@ -1154,20 +1155,20 @@ describe('createV2Setup permission rules wiring', () => {
         },
       }),
     );
-    process.env = {
-      ...originalEnv,
-      OPENCODE_CONFIG_DIR: configDir,
-      XDG_CONFIG_HOME: path.join(fixtureRoot, 'xdg-config'),
-      XDG_DATA_HOME: path.join(fixtureRoot, 'xdg-data'),
-      XDG_CACHE_HOME: path.join(fixtureRoot, 'xdg-cache'),
-      OPENCODE_LOG_DIR: path.join(fixtureRoot, 'logs'),
-    };
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    process.env.XDG_CONFIG_HOME = path.join(fixtureRoot, 'xdg-config');
+    process.env.XDG_DATA_HOME = path.join(fixtureRoot, 'xdg-data');
+    process.env.XDG_CACHE_HOME = path.join(fixtureRoot, 'xdg-cache');
+    process.env.OPENCODE_LOG_DIR = path.join(fixtureRoot, 'logs');
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
     resetV2GenerationWarnings();
   });
 
   afterEach(async () => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     await rm(fixtureRoot, { recursive: true, force: true });
   });
 

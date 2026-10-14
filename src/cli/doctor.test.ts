@@ -66,7 +66,10 @@ describe('runDoctorCheck', () => {
   afterEach(() => {
     process.chdir(originalCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   test('no config files returns ok', () => {
@@ -611,7 +614,10 @@ describe('doctor CLI wrapper', () => {
   afterEach(() => {
     process.chdir(originalCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   test('help exits 0', async () => {

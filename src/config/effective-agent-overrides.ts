@@ -5,6 +5,7 @@ import { normalizeAgentSkillDirectives } from './utils';
 export function resolveEffectiveAgentOverrides(
   agents: Record<string, AgentOverrideConfig>,
   projectLocalSkillNames: () => readonly string[],
+  defaultSkills: Readonly<Record<string, readonly string[]>> = {},
 ): Record<string, AgentOverrideConfig> {
   const includesLocalSkills = Object.values(agents).some(
     (override) => override.skills_include_local === true,
@@ -12,5 +13,6 @@ export function resolveEffectiveAgentOverrides(
   return normalizeAgentSkillDirectives(
     agents,
     includesLocalSkills ? projectLocalSkillNames() : [],
+    defaultSkills,
   );
 }

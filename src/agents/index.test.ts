@@ -2057,7 +2057,11 @@ describe('PluginConfigSchema custom-agent-only prompt fields', () => {
     });
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      throw new Error(
+        `Schema validation failed: ${JSON.stringify(result.error)}`,
+      );
+    }
     expect(result.data.acpAgents?.research.timeoutMs).toBe(0);
   });
 

@@ -1,12 +1,16 @@
 import type { AgentConfig as SDKAgentConfig } from '@opencode-ai/sdk/v2';
-import { AGENT_ALIASES } from '../config';
+import { getSkillPermissionsForAgent } from '../cli/skills';
+import { AGENT_ALIASES, loadAgentPrompt } from '../config';
 import { parseList } from '../config/agent-mcps';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
 import { legacyAliasFor } from '../config/utils';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
-import { resolveMarketplaceActivation } from '../marketplace/activation';
+import {
+  ambiguousMcpNamespaces,
+  resolveMarketplaceActivation,
+} from '../marketplace/activation';
 import {
   createMarketplaceAgentDefinitions,
   type MarketplaceAgentMetadata,
@@ -29,7 +33,7 @@ import {
   createAgents,
   getAgentConfigsFromDefinitions,
 } from './index';
-import type { AgentDefinition } from './orchestrator';
+import { type AgentDefinition, resolvePrompt } from './orchestrator';
 import { mergeTaskStance } from './permissions';
 
 export interface ResolvedAgentRegistry {
@@ -227,15 +231,32 @@ function projectMarketplacePermission(
     }
   }
   const existingSkills = existing.skill;
-  const skillPermissions: Record<string, unknown> = { '*': 'deny' };
-  for (const skill of skills) {
-    skillPermissions[skill] =
-      existingSkills === undefined
+  const grants = getSkillPermissionsForAgent('__marketplace__', skills);
+  const wildcard = grants['*'] === 'allow';
+  const skillPermissions: Record<string, unknown> = {
+    '*': wildcard
+      ? existingSkills === undefined
         ? permissionEffect(existing, 'skill')
         : permissionEffect(
             existingSkills as Record<string, unknown> | string,
-            skill,
-          );
+            '*',
+          )
+      : 'deny',
+    ...(wildcard && existingSkills && typeof existingSkills === 'object'
+      ? clone(existingSkills as Record<string, unknown>)
+      : {}),
+  };
+  for (const [skill, effect] of Object.entries(grants)) {
+    if (skill === '*') continue;
+    skillPermissions[skill] =
+      effect === 'deny'
+        ? 'deny'
+        : existingSkills === undefined
+          ? permissionEffect(existing, 'skill')
+          : permissionEffect(
+              existingSkills as Record<string, unknown> | string,
+              skill,
+            );
   }
   projected.skill = skillPermissions;
   const allowedMcps = new Set(mcps);
@@ -262,7 +283,9 @@ function marketplacePermissionCeilings(
       actions[tool] = 'allow';
     }
   }
-  actions.skill = skills.length > 0 ? 'allow' : 'deny';
+  const grants = getSkillPermissionsForAgent('__marketplace__', skills);
+  const permitted = Object.values(grants).includes('allow');
+  actions.skill = permitted ? 'allow' : 'deny';
   const namespaces = mcps.map(
     (name) => `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_*`,
   );
@@ -270,13 +293,10 @@ function marketplacePermissionCeilings(
     defaultEffect: 'allow',
     actions,
     namespaces,
-    ...(skills.length
+    ...(permitted
       ? {
           resources: {
-            skill: {
-              '*': 'deny',
-              ...Object.fromEntries(skills.map((skill) => [skill, 'allow'])),
-            },
+            skill: { ...grants },
           },
         }
       : {}),
@@ -584,6 +604,7 @@ export function buildResolvedAgentRegistry(
     }
   }
   const marketplaceMetadata = new Map<string, MarketplaceAgentMetadata>();
+  let marketplaceSkillDefaults: Record<string, readonly string[]> = {};
   let marketplacePackages: MarketplaceLivePackage[] = [];
   if (options.marketplace?.selectedPackageIds.length) {
     const customOwnerNames = new Set(runtime.customAgentNames);
@@ -625,6 +646,12 @@ export function buildResolvedAgentRegistry(
       configFingerprint: '',
     }));
     const constructed = createMarketplaceAgentDefinitions(plan);
+    marketplaceSkillDefaults = Object.fromEntries(
+      constructed.metadata.map((metadata) => [
+        metadata.runtimeName,
+        metadata.capabilities.skills,
+      ]),
+    );
     const admittedNames = new Set(
       constructed.agents.map((agent) => agent.name),
     );
@@ -651,6 +678,18 @@ export function buildResolvedAgentRegistry(
           ? owner.displayName
           : undefined);
       applyMarketplaceOwnerOverride(agent, owner);
+      const prompts = loadAgentPrompt(agent.name, {
+        preset: runtime.preset,
+        projectDirectory: options.projectDirectory,
+        hostFlavor: options.hostFlavor,
+      });
+      agent.config.prompt = resolvePrompt(
+        agent.name,
+        owner?.prompt,
+        prompts.prompt,
+        sourceAgent.config.prompt ?? '',
+        prompts.appendPrompt,
+      );
       if (displayName) agent.displayName = displayName;
       return agent;
     });
@@ -758,6 +797,11 @@ export function buildResolvedAgentRegistry(
   // collision (issue #1290).
   const mcpConfig = { ...pluginMcps, ...(host.mcp ?? {}) };
   const availableMcpNames = Object.keys(mcpConfig);
+  const selectableMcpNames = availableMcpNames.filter(
+    (name) =>
+      isMcpEnabled(mcpConfig[name]) && !runtime.disabledMcps.includes(name),
+  );
+  const configuredAgents = runtime.agents(marketplaceSkillDefaults);
   const preset = resolvedPreset(runtime);
   const runtimeAgentOverrides = runtime.agents();
   const overrideFor = (name: string) => {
@@ -1040,13 +1084,21 @@ export function buildResolvedAgentRegistry(
       packageTools = packageMetadata.capabilities.tools.filter(
         (tool) => requestedTools?.[tool] !== false,
       );
-      packageSkills = narrowCapabilities(
-        packageMetadata.capabilities.skills,
-        runtime.agents()[name]?.skills,
-      );
-      packageMcps = narrowCapabilities(
-        packageMetadata.capabilities.mcps,
-        runtime.agents()[name]?.mcps,
+      packageSkills = [
+        ...(configuredAgents[name]?.skills ??
+          packageMetadata.capabilities.skills),
+        ...runtime.disabledSkills.map((skill) => `!${skill}`),
+      ];
+      const requestedMcps =
+        configuredAgents[name]?.mcps ?? packageMetadata.capabilities.mcps;
+      const selectableMcpSet = new Set(selectableMcpNames);
+      packageMcps = parseList(requestedMcps, selectableMcpNames).filter(
+        // A `*` expansion must not brick the registry over an MCP the user
+        // never named: drop wildcard-only picks with ambiguous namespaces
+        // (fail closed). Explicitly named ones still throw below.
+        (mcp) =>
+          requestedMcps.includes(mcp) ||
+          ambiguousMcpNamespaces([mcp], selectableMcpSet).length === 0,
       );
       const displayHostName = definition.displayName
         ? normalizeAgentName(definition.displayName)
@@ -1055,6 +1107,13 @@ export function buildResolvedAgentRegistry(
         hostEntries[name]?.mcps ?? hostEntries[displayHostName]?.mcps;
       if (Array.isArray(hostMcps)) {
         packageMcps = narrowCapabilities(packageMcps, hostMcps as string[]);
+      }
+      const ambiguous = ambiguousMcpNamespaces(packageMcps, selectableMcpSet);
+      if (ambiguous.length > 0) {
+        throw new Error(
+          `Marketplace agent '${name}' has ambiguous MCP namespaces: ` +
+            ambiguous.join(', '),
+        );
       }
       marketplaceMetadata.set(name, {
         ...packageMetadata,
@@ -1182,16 +1241,10 @@ export function buildResolvedAgentRegistry(
           )
         : [];
       const visibleSkills = packageMetadata
-        ? narrowCapabilities(
-            packageMetadata.capabilities.skills,
-            runtime.agents()[definition.name]?.skills,
-          )
+        ? packageMetadata.capabilities.skills
         : [];
       let cappedMcps = packageMetadata
-        ? narrowCapabilities(
-            packageMetadata.capabilities.mcps,
-            runtime.agents()[definition.name]?.mcps,
-          )
+        ? packageMetadata.capabilities.mcps
         : visibleMcps;
       if (packageMetadata && Array.isArray(aliasHost?.mcps)) {
         cappedMcps = narrowCapabilities(cappedMcps, aliasHost.mcps as string[]);

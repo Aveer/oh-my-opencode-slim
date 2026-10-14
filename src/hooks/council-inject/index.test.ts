@@ -234,9 +234,10 @@ describe('buildCouncilModeBlock', () => {
       // Pure function of the wording + mode: repeated renders are
       // byte-identical, and the mode is NOT read per call (a per-call read
       // would flap the bytes and violate the exact-prefix contract).
-      expect(buildCouncilModeBlock(wording, seatAttachment)).toBe(
-        buildCouncilModeBlock(wording, seatAttachment),
-      );
+      const block1 = buildCouncilModeBlock(wording, seatAttachment);
+      const block2 = buildCouncilModeBlock(wording, seatAttachment);
+      expect(block1).toContain('## Council Mode');
+      expect(block1).toBe(block2);
       const hook = createCouncilInjectHook({ wording, seatAttachment });
       const repeat = hook['experimental.chat.messages.transform'];
       const render = () => ({

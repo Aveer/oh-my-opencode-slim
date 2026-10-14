@@ -10,6 +10,7 @@ import {
 } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import * as os from 'node:os';
 import path from 'node:path';
 import type { RegistryFactoryBridge } from './agents/registry-bridge';
 import {
@@ -144,25 +145,40 @@ describe('plugin env disable', () => {
 });
 
 describe('plugin tool registration', () => {
-  let originalEnv: typeof process.env;
+  const ENV_KEYS = [
+    'OH_MY_OPENCODE_SLIM_DISABLE',
+    'OPENCODE_CONFIG_DIR',
+    'XDG_CONFIG_HOME',
+    'XDG_DATA_HOME',
+    'XDG_CACHE_HOME',
+    'OPENCODE_LOG_DIR',
+  ] as const;
+  const originalEnv: Partial<
+    Record<(typeof ENV_KEYS)[number], string | undefined>
+  > = {};
 
   beforeEach(() => {
-    originalEnv = { ...process.env };
+    for (const key of ENV_KEYS) {
+      originalEnv[key] = process.env[key];
+    }
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
-    process.env.OPENCODE_CONFIG_DIR =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-config';
-    process.env.XDG_CONFIG_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-xdg';
-    process.env.XDG_DATA_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-data';
-    process.env.XDG_CACHE_HOME =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-cache';
-    process.env.OPENCODE_LOG_DIR =
-      '/private/tmp/oh-my-opencode-slim-hitl-empty-logs';
+    const base = path.join(os.tmpdir(), 'oh-my-opencode-slim-hitl-empty');
+    process.env.OPENCODE_CONFIG_DIR = `${base}-config`;
+    process.env.XDG_CONFIG_HOME = `${base}-xdg`;
+    process.env.XDG_DATA_HOME = `${base}-data`;
+    process.env.XDG_CACHE_HOME = `${base}-cache`;
+    process.env.OPENCODE_LOG_DIR = `${base}-logs`;
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    for (const key of ENV_KEYS) {
+      const orig = originalEnv[key];
+      if (orig === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = orig;
+      }
+    }
   });
 
   test('registers wait_for_user and recovers a stale orchestrator session mapping', async () => {
@@ -330,7 +346,7 @@ describe('plugin tool registration', () => {
   test('activates only marketplace packages selected by the resolved preset at first host finalization', async () => {
     const originalEnv = { ...process.env };
     const root = await mkdtemp(
-      '/tmp/oh-my-opencode-slim-marketplace-finalize-',
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-marketplace-finalize-'),
     );
     const configDir = path.join(root, 'config');
     const dataDir = path.join(root, 'data');
@@ -621,7 +637,9 @@ describe('plugin tool registration', () => {
 
   test('v1 config hook rejects selected packages with MCPs absent from an MCP-less host config', async () => {
     const originalEnv = { ...process.env };
-    const root = await mkdtemp('/tmp/oh-my-opencode-slim-marketplace-mcp-');
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-marketplace-mcp-'),
+    );
     const configDir = path.join(root, 'config');
     await mkdir(configDir, { recursive: true });
     process.env = {
@@ -3078,7 +3096,9 @@ describe('background task admission model resolution', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-concurrency-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-concurrency-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -3402,7 +3422,8 @@ describe('plugin config model inheritance', () => {
     hostFlavor?: 'v2',
   ) {
     const configDir =
-      existingDirectory ?? (await mkdtemp('/tmp/oh-my-opencode-inheritance-'));
+      existingDirectory ??
+      (await mkdtemp(path.join(os.tmpdir(), 'oh-my-opencode-inheritance-')));
     if (!existingDirectory) configDirs.push(configDir);
     lastConfigDir = configDir;
     await Bun.write(
@@ -4607,7 +4628,9 @@ describe('system.transform orchestrator injection', () => {
   async function loadPluginWithOrchestratorSession(
     config: Record<string, unknown> = {},
   ) {
-    const configDir = await mkdtemp('/tmp/oh-my-system-transform-');
+    const configDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-system-transform-'),
+    );
     configDirs.push(configDir);
     await Bun.write(
       `${configDir}/oh-my-opencode-slim.json`,
@@ -4808,7 +4831,9 @@ describe('plugin foreground fallback host gating', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-fallback-gate-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-fallback-gate-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -5392,7 +5417,9 @@ describe('plugin command registration gating', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-command-gate-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-command-gate-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -5550,7 +5577,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    projectDir = await mkdtemp('/tmp/oh-my-opencode-slim-gc-wiring-');
+    projectDir = await mkdtemp(
+      path.join(os.tmpdir(), 'oh-my-opencode-slim-gc-wiring-'),
+    );
     process.env = {
       ...originalEnv,
       OPENCODE_CONFIG_DIR: projectDir,
@@ -5696,7 +5725,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
         agent: 'fixer',
         background: true,
       });
-      gcCallbackOf(coordinator)?.(evicted());
+      const callback1 = gcCallbackOf(coordinator);
+      expect(typeof callback1).toBe('function');
+      callback1?.(evicted());
       await pendingSessionPrune('ses_gc_child');
       expect(remove).not.toHaveBeenCalled();
     } finally {
@@ -5709,7 +5740,9 @@ describe('backgroundJobs.pruneEvictedSessions wiring', () => {
     // missing method — the shim's capability-probed degradation shape.
     const { hooks, coordinator } = await createHooksWithBoard();
     try {
-      expect(() => gcCallbackOf(coordinator)?.(evicted())).not.toThrow();
+      const callback2 = gcCallbackOf(coordinator);
+      expect(typeof callback2).toBe('function');
+      expect(() => callback2?.(evicted())).not.toThrow();
     } finally {
       await hooks.dispose?.();
     }
