@@ -1842,7 +1842,26 @@ function injectLatestBoard(state: InjectionState, messages: unknown[]): void {
   //   byte prefix. The state change renders on the next user-side tail.
   const recordId = anchor.id;
   if (canCarryBoardPart(anchor.message)) {
-    if (unchanged) return;
+    if (unchanged) {
+      // Byte-identical replay: display-then-consume holds because
+      // boardTextVisible proved these exact bytes are in the payload. Most
+      // keys were registered at their placement; a same-text relaunch that
+      // re-terminated into identical bytes (no rendered generation) is the
+      // one gap — register only what the live entry does not cover.
+      const live = state.terminalJobsInjectedByParent.get(sessionID);
+      const uncovered = boardMeta.terminalUnreconciledTaskIDs.filter(
+        (execution) => !live?.executions.has(executionKey(execution)),
+      );
+      if (uncovered.length > 0) {
+        rememberInjectedTerminalJobs(
+          state,
+          sessionID,
+          uncovered,
+          shapeKey ?? promptShapeKey(realMessages(messages, state.metadataKey)),
+        );
+      }
+      return;
+    }
     appendTaggedSyntheticPart(anchor.message, {
       text: reminder,
       metadataKey: state.metadataKey,
@@ -1855,25 +1874,15 @@ function injectLatestBoard(state: InjectionState, messages: unknown[]): void {
       text: reminder,
     });
   } else {
-    // A5, assistant tail: place NOTHING. A board appended after an
-    // assistant tail can never be retained — reproducing it once the tail
-    // advances would require splicing a message back mid-array, which is
-    // exactly what orphaned an assistant tool_call from its tool_result
-    // (AI_InvalidPromptError). An unretained placement would silently
-    // vanish from the next payload, breaking the provider byte prefix on
-    // precisely these transitions. The digest stays unpinned, so the state
-    // change renders on the next user-side tail (a v2 tool-result is
-    // user-role after conversion), where the placement IS retained.
+    // A5, assistant tail: place NOTHING and register nothing. An appended
+    // board can never be retained for replay, and registering here would
+    // let the next shape change consume a stop that was never shown (and
+    // starve the recovery wake's terminalUnreconciled check, Greptile P1).
+    // The state change renders on the next user-side tail.
     return;
   }
-  // A fresh board went out: only NOW are its terminal facts parent-visible,
-  // so only now are they registered for prompt-shape consumption. (A5
-  // registration-before-placement let an assistant-tail skip mark a stopped
-  // job consumed without it ever being shown — and starved the recovery
-  // wake's terminalUnreconciled check, Greptile P1.) The unchanged early
-  // return above needs no registration either: identical text cannot hide a
-  // new terminal state (a state change always rewrites the board), so every
-  // terminal-unreconciled entry it shows was registered at its placement.
+  // A fresh board went out: its terminal facts are parent-visible, so they
+  // register for prompt-shape consumption now — never before placement.
   if (boardMeta.terminalUnreconciledTaskIDs.length > 0) {
     rememberInjectedTerminalJobs(
       state,

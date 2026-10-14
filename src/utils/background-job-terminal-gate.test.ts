@@ -1280,10 +1280,10 @@ test('integration: late acknowledgement and transport success for A cannot consu
     });
     await hook['experimental.chat.messages.transform']({}, { messages });
     await hook.injectBackgroundJobBoard({}, { messages });
-    // Change-only: the stop surfaces on the next user-side tail (assistant
-    // tails neither place nor register), so consumption needs one more
-    // shape advance. The old S1 registration is stale (revision moved to
-    // B) and is dropped without acknowledging.
+    // Change-only: the completion surfaces on the next user-side tail
+    // (assistant tails neither place nor register), so consumption needs
+    // one more shape advance. The stale step-1 entry (revision of A) is
+    // dropped without acknowledging.
     expect(acknowledge).not.toHaveBeenCalled();
     messages.push({
       info: {

@@ -120,12 +120,9 @@ describe('change-only board digest', () => {
   });
 
   test('(d) an assistant-tail skip registers nothing: the stop stays pending for the recovery wake', async () => {
-    // Greptile P1 (5dd58fb review): registration used to run BEFORE the
-    // placement decision, so an assistant-tail turn (A5: nothing placed)
-    // recorded the terminal jobs as consumed. The next shape change then
-    // reconciled them without the stop ever being displayed, and the
-    // queued stopped-job recovery wake failed its terminalUnreconciled
-    // check — the parent could miss the stop entirely.
+    // Contract: an assistant tail neither places nor registers, so a stop
+    // cannot be consumed sight-unseen and stays pending for the recovery
+    // wake until its deferred user-tail render.
     const { board, state } = setup();
     await inject(state, [user('u1')]);
 
@@ -159,6 +156,61 @@ describe('change-only board digest', () => {
     expect(board.get('child-1')).toMatchObject({
       state: 'stopped',
       terminalUnreconciled: true,
+    });
+  });
+
+  test('(e) a same-text relaunch registers on the unchanged turn and still consumes', async () => {
+    // Council round-4 (A): a relaunch that re-terminates into byte-identical
+    // text (no rendered generation, empty summary) hits the unchanged
+    // return — the new run must still register there, or it sits
+    // terminalUnreconciled at a fixed point on v1 board-on.
+    const { board, state } = setup();
+    board.updateStatus({ taskID: 'child-1', state: 'completed' });
+    const first = await inject(state, [user('u1')]);
+    expect(boardParts(first)).toHaveLength(1);
+    expect(state.terminalJobsInjectedByParent?.has(SESSION)).toBe(true);
+
+    // Assistant tail: the shape change consumes the gen-1 registration.
+    const assistant = {
+      info: { role: 'assistant', agent: 'orchestrator', sessionID: SESSION },
+      parts: [{ type: 'text', text: 'acknowledged' }],
+    };
+    await inject(state, [user('u1'), assistant]);
+    expect(state.terminalJobsInjectedByParent?.has(SESSION)).toBe(false);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'reconciled',
+      terminalUnreconciled: false,
+    });
+
+    // Relaunch and re-complete into the SAME bytes.
+    board.registerLaunch({
+      taskID: 'child-1',
+      parentSessionID: SESSION,
+      agent: 'explorer',
+      description: 'map hooks',
+    });
+    board.updateStatus({ taskID: 'child-1', state: 'completed' });
+
+    const unchangedTurn = await inject(state, [
+      user('u1'),
+      assistant,
+      user('u2'),
+    ]);
+    // Unchanged: no fresh placement, but the uncovered relaunch key
+    // registers — the bytes are visible (frozen replay), so
+    // display-then-consume holds.
+    expect(boardParts(unchangedTurn)).toHaveLength(1);
+    expect(state.terminalJobsInjectedByParent?.has(SESSION)).toBe(true);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'completed',
+      terminalUnreconciled: true,
+    });
+
+    // The next shape change consumes the relaunch.
+    await inject(state, [user('u1'), assistant, user('u2'), assistant]);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'reconciled',
+      terminalUnreconciled: false,
     });
   });
 });

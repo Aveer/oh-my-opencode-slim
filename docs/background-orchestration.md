@@ -625,7 +625,7 @@ uses the `question` tool as the blocking boundary instead. On v2 hosts
 
 ### Background Job Board Injection
 
-Board placement is change-only and not configurable. A fresh board part is
+Board placement is change-only; the placement rule itself is not configurable. A fresh board part is
 placed only when the rendered board text differs from the board last injected
 for that parent — one board per state change of the job set. Once placed, the
 board is frozen: later turns replay it byte-identically on its original anchor
