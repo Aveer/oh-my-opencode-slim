@@ -995,9 +995,16 @@ export function buildResolvedAgentRegistry(
           packageMetadata.capabilities.skills),
         ...runtime.disabledSkills.map((skill) => `!${skill}`),
       ];
-      packageMcps = parseList(
-        configuredAgents[name]?.mcps ?? packageMetadata.capabilities.mcps,
-        selectableMcpNames,
+      const requestedMcps =
+        configuredAgents[name]?.mcps ?? packageMetadata.capabilities.mcps;
+      const selectableMcpSet = new Set(selectableMcpNames);
+      packageMcps = parseList(requestedMcps, selectableMcpNames).filter(
+        // A `*` expansion must not brick the registry over an MCP the user
+        // never named: drop wildcard-only picks with ambiguous namespaces
+        // (fail closed). Explicitly named ones still throw below.
+        (mcp) =>
+          requestedMcps.includes(mcp) ||
+          ambiguousMcpNamespaces([mcp], selectableMcpSet).length === 0,
       );
       const displayHostName = definition.displayName
         ? normalizeAgentName(definition.displayName)
@@ -1007,10 +1014,7 @@ export function buildResolvedAgentRegistry(
       if (Array.isArray(hostMcps)) {
         packageMcps = narrowCapabilities(packageMcps, hostMcps as string[]);
       }
-      const ambiguous = ambiguousMcpNamespaces(
-        packageMcps,
-        new Set(selectableMcpNames),
-      );
+      const ambiguous = ambiguousMcpNamespaces(packageMcps, selectableMcpSet);
       if (ambiguous.length > 0) {
         throw new Error(
           `Marketplace agent '${name}' has ambiguous MCP namespaces: ` +

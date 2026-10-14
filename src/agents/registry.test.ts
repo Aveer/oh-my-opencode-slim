@@ -2417,6 +2417,17 @@ describe('marketplace agent customization', () => {
     ).toThrow('ambiguous MCP namespaces');
   });
 
+  test('drops ambiguous MCPs reached only through a wildcard', () => {
+    const registry = configured(
+      { agents: { 'market-agent': { mcps: ['*'] } } },
+      { mcps: ['host-mcp', 'agent', 'agent_tools'] },
+    );
+    const policy = registry.nativePolicies['market-agent'];
+    expect(policy.decide('host-mcp_search', '*')).toBe('allow');
+    expect(policy.decide('agent_search', '*')).toBe('deny');
+    expect(policy.decide('agent_tools_search', '*')).toBe('deny');
+  });
+
   test('replaces and appends marketplace prompts using project files', () => {
     withProject(
       {
