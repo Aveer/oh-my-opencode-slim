@@ -2467,6 +2467,43 @@ describe('children-driven degraded mode (v2)', () => {
       }),
     );
   });
+  test('explicit todo mode on v2 degrades at scheduler setup and wakes via children', async () => {
+    const promptAsync = mock(async () => ({}));
+    const { scheduler } = createScheduler({
+      hostFlavor: 'v2',
+      mode: 'todo',
+      intervalMs: 60_000,
+      sessionClient: makeV2Client({
+        promptAsync,
+        listChildren: [
+          {
+            id: 'child-1',
+            parentID: 'p1',
+            directory: '/project',
+            time: { updated: Date.now() },
+          },
+        ],
+      }),
+    });
+    await scheduler.event({
+      event: { type: 'session.idle', properties: { sessionID: 'p1' } },
+    });
+    await clock.advance(60_000);
+    await clock.advance(60_000);
+
+    // The children wake text proves scheduler setup degraded the configured
+    // todo mode; a wiring bug would send the todo wake text instead.
+    expect(promptAsync).toHaveBeenCalledTimes(1);
+    const call = (
+      promptAsync.mock.calls as unknown as Array<[Record<string, unknown>]>
+    )[0]?.[0] as {
+      body: { agent: string; parts: Array<{ text: string }> };
+    };
+    expect(call.body.agent).toBe('orchestrator');
+    expect(call.body.parts[0]?.text).toBe(
+      `${ORCHESTRATOR_CHILDREN_WAKE_TEXT}\n${WAKE_ANTI_FORGERY_TEXT}\n<!-- SLIM_INTERNAL_INITIATOR -->`,
+    );
+  });
 
   test('v2 children wake carries the session model variant as modelVariant', async () => {
     const promptAsync = mock(async () => ({}));

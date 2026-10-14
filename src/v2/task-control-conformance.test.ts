@@ -546,7 +546,11 @@ describe('task controls through the real v2 client shim', () => {
           return Promise.resolve({ error: 'not idle' });
         if (outcome === 'non-promise') return undefined;
         if (outcome === 'blocked') {
-          return new Promise<void>((resolve) => setTimeout(resolve, 25));
+          const until = Date.now() + 25;
+          while (Date.now() < until) {
+            /* Timer cannot run while the host blocks. */
+          }
+          return Promise.resolve();
         }
         return idle.promise;
       });
