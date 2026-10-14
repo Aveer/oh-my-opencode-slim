@@ -125,6 +125,7 @@ function reconcileAliasSkillDirectives(
 export function normalizeAgentSkillDirectives(
   agents: Record<string, AgentOverrideConfig>,
   localSkillNames: readonly string[] = [],
+  defaultSkills: Readonly<Record<string, readonly string[]>> = {},
 ): Record<string, AgentOverrideConfig> {
   const reconciled = reconcileAliasSkillDirectives(agents);
   let changed = reconciled !== agents;
@@ -149,6 +150,7 @@ export function normalizeAgentSkillDirectives(
       override.skills,
       additions,
       override.skills_remove,
+      defaultSkills[name],
     );
     const {
       skills: _skills,

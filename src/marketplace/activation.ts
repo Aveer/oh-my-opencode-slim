@@ -114,7 +114,7 @@ function loadErrorCode(error: unknown): MarketplaceDiagnosticCode {
   return 'operational';
 }
 
-function ambiguousMcpNamespaces(
+export function ambiguousMcpNamespaces(
   required: readonly string[],
   available: ReadonlySet<string>,
 ): string[] {
