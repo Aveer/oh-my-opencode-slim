@@ -475,7 +475,7 @@ describe('event filtering and readiness (2.2)', () => {
 
     expect(h.reader.calls).toEqual([DIRECTORY, DIRECTORY]);
     expect(h.adapter.spawnCalls).toHaveLength(1);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('records readiness-timeout and never spawns when probes stay empty', async () => {
@@ -619,7 +619,7 @@ describe('dedup and stable-idle close (2.3)', () => {
     await flushAsync();
 
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('reconcile re-arms a quiescent held pane whose idle edge was lost', async () => {
@@ -666,7 +666,7 @@ describe('dedup and stable-idle close (2.3)', () => {
 
     expect(h.clock.pendingTimers).toBe(0);
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('closes after the window when the pre-close re-check is still idle', async () => {
@@ -695,7 +695,7 @@ describe('dedup and stable-idle close (2.3)', () => {
     await flushAsync();
 
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('keeps the pane when the pre-close re-check reports retry', async () => {
@@ -709,7 +709,7 @@ describe('dedup and stable-idle close (2.3)', () => {
     await flushAsync();
 
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('a busy event while the pre-close re-check is in flight keeps the pane', async () => {
@@ -732,7 +732,7 @@ describe('dedup and stable-idle close (2.3)', () => {
     await flushAsync();
 
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('closes after the window when the pre-close re-check no longer lists the child', async () => {
@@ -763,7 +763,7 @@ describe('dedup and stable-idle close (2.3)', () => {
     await flushAsync();
 
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('close retries keep a provisional deadline until the first real idle', async () => {
@@ -1133,7 +1133,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     await flushAsync();
     expect(h.adapter.closeCalls).toEqual(['pane-2']);
     expect(h.lifecycle.getPane('child-2')).toBeUndefined();
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('a watched child created during another watched backfill is not duplicated', async () => {
@@ -1172,7 +1172,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     barrier.resolve();
     await reconnect;
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('a queued backfill child deleted during another spawn never spawns', async () => {
@@ -1431,7 +1431,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     await h.lifecycle.handleEvent(
       createdEvent({ sessionId: 'child-2', parentSessionId: 'parent-2' }),
     );
-    expect(h.lifecycle.getPane('child-2')).toBeDefined();
+    expect(h.lifecycle.getPane('child-2')?.directory).toBe(DIRECTORY);
 
     // The user switches back; the server list only knows PARENT's child.
     h.lifecycle.setDisplayedSession(PARENT);
@@ -1441,7 +1441,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     // The other conversation's pane is still live: it must not be closed as
     // backfill-gone just because this parent's list does not name it.
     expect(h.adapter.closeCalls).toHaveLength(0);
-    expect(h.lifecycle.getPane('child-2')).toBeDefined();
+    expect(h.lifecycle.getPane('child-2')?.directory).toBe(DIRECTORY);
   });
 
   test('reconcile skips a parent that changed during the list read', async () => {
@@ -1481,7 +1481,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     await h.lifecycle.handleEvent(lifecycleEvent('status', { status: 'busy' }));
 
     expect(h.adapter.spawnCalls).toHaveLength(2);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('an idle edge during an in-flight spawn still closes the pane', async () => {
@@ -1500,7 +1500,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     h.adapter.spawnBarrier = null;
     await spawnPromise;
 
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
     expect(h.clock.pendingTimers).toBe(1); // the stable-idle debounce is armed
 
     h.reader.statuses.set(CHILD, 'idle');
@@ -1532,7 +1532,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     await h.lifecycle.handleEvent(lifecycleEvent('status', { status: 'busy' }));
 
     expect(h.adapter.spawnCalls).toHaveLength(3);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('a watched child that resumes in retry is rebuilt', async () => {
@@ -1550,7 +1550,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     );
 
     expect(h.adapter.spawnCalls).toHaveLength(2);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('reconcile rebuilds a watched child whose live status is retry', async () => {
@@ -1567,7 +1567,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
     await h.lifecycle.onReconnect();
 
     expect(h.adapter.spawnCalls).toHaveLength(2);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('dispose releases a spawn waiting on a readiness retry delay', async () => {
@@ -1604,7 +1604,7 @@ describe('rebuild and reconnect backfill (2.4)', () => {
 
     // The edge was consumed by the close, so the pane is rebuilt right away.
     expect(h.adapter.spawnCalls).toHaveLength(2);
-    expect(h.lifecycle.getPane(CHILD)).toBeDefined();
+    expect(h.lifecycle.getPane(CHILD)?.directory).toBe(DIRECTORY);
   });
 
   test('dispose closes tracked panes and a spawn that finishes later', async () => {

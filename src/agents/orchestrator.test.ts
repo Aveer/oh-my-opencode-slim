@@ -211,7 +211,9 @@ describe('v1 prompt byte parity (frozen template)', () => {
 
     const agentsBlock = /<Agents>([\s\S]*?)<\/Agents>/.exec(prompt);
     expect(agentsBlock).not.toBeNull();
-    expect(agentsBlock![1].trim()).toContain(ROLE_ROUTING_SLIM_LINES.designer);
+    expect(agentsBlock?.[1]?.trim()).toContain(
+      ROLE_ROUTING_SLIM_LINES.designer,
+    );
     // Exactly one wrapper element — no duplicated or unclosed tag.
     expect(prompt.match(/<Agents>/g)?.length).toBe(1);
     expect(prompt.match(/<\/Agents>/g)?.length).toBe(1);
@@ -230,7 +232,7 @@ describe('v1 prompt byte parity (frozen template)', () => {
     // '\n\n'. Only the wrapper padding differs: v1 uses
     // `<Agents>\n\n${enabledAgents}\n\n</Agents>` (frozen template wording),
     // v2 uses `<Agents>\n${enabledAgents}\n</Agents>` — hence the trim.
-    expect(v1Block![1].trim()).toBe(v2Block![1].trim());
+    expect(v1Block?.[1]?.trim()).toBe(v2Block?.[1]?.trim());
   });
 });
 
@@ -335,10 +337,28 @@ describe('v2 slim prompt (buildOrchestratorPromptV2)', () => {
   test('renders byte-identical output for identical arguments (construction-time constant)', () => {
     // b-seat cache-safety assertion: no time, randomness, or per-request
     // state may reach the template.
-    expect(buildOrchestratorPromptV2()).toBe(buildOrchestratorPromptV2());
-    expect(
-      buildOrchestratorPromptV2(new Set(['explorer']), undefined, false),
-    ).toBe(buildOrchestratorPromptV2(new Set(['explorer']), undefined, false));
+    const defaultPrompt1 = buildOrchestratorPromptV2();
+    const defaultPrompt2 = buildOrchestratorPromptV2();
+    expect(defaultPrompt1.length).toBeGreaterThan(100);
+    expect(defaultPrompt1).toContain(
+      'You are a workflow manager for coding work',
+    );
+    expect(defaultPrompt1).toBe(defaultPrompt2);
+
+    const scopedPrompt1 = buildOrchestratorPromptV2(
+      new Set(['explorer']),
+      undefined,
+      false,
+    );
+    const scopedPrompt2 = buildOrchestratorPromptV2(
+      new Set(['explorer']),
+      undefined,
+      false,
+    );
+    expect(scopedPrompt1.length).toBeGreaterThan(100);
+    expect(scopedPrompt1).not.toContain('@explorer');
+    expect(scopedPrompt1).toContain('@librarian');
+    expect(scopedPrompt1).toBe(scopedPrompt2);
   });
 
   test('v2 render is snapshot-pinned (waitForUser flag is byte-inert)', () => {

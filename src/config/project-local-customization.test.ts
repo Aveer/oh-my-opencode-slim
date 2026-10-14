@@ -28,7 +28,10 @@ describe('Project-local customization - 15 core cases', () => {
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   test('inherits prompts across repository and nested worktree boundaries', () => {
