@@ -17,9 +17,9 @@ When deepwork is active, the orchestrator must manage the work as a scheduler,
 not as the default implementation worker. Scheduling does not mean
 delegating everything: apply small integration and remediation edits
 yourself when you already hold the context, rather than starting a lane
-that must re-read the same files. Measure progress by working results, not
-by review rounds — deepwork is heavy because the task is large, not because
-every step needs debate.
+that must re-read the same files. Value productivity: working results
+matter more than review rounds — deepwork is heavy because the task is
+large, not because every step needs debate.
 
 ## Setup and Deepwork State
 
