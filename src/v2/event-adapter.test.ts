@@ -108,6 +108,18 @@ function v2Usage(overrides: {
   };
 }
 
+/**
+ * Plugin ctx for task-session-manager hooks built in this file. The
+ * `client.session` stub (no `get`/`messages`) keeps the terminal gate's
+ * reads inert by construction instead of relying on `{}` — a ctx without
+ * `client` throws once another file's `mock.module` of
+ * `utils/opencode-client` leaks into this one and dereferences
+ * `ctx.client.session`.
+ */
+function createHookCtx(): never {
+  return { client: { session: {} }, directory: '/tmp/proj' } as never;
+}
+
 describe('mapV2EventToV1', () => {
   test('passes unknown events through unchanged (raw reference first)', () => {
     const ev = { type: 'permission.asked', properties: { sessionID: 's' } };
@@ -428,9 +440,8 @@ describe('mapV2EventToV1 session.execution.* lifecycle synthesis', () => {
     );
     const { BackgroundJobBoard } = await import('../utils');
     const board = new BackgroundJobBoard();
-    const hook = createTaskSessionManagerHook({} as never, {
+    const hook = createTaskSessionManagerHook(createHookCtx(), {
       maxSessionsPerAgent: 2,
-      maxRetainedSnapshots: 2,
       backgroundJobBoard: board,
       shouldManageSession: (id: string) => id === 'parent-1',
     });
@@ -894,9 +905,8 @@ describe('mapV2EventToV1 form → question bridge', () => {
     const { createTaskSessionManagerHook } = await import(
       '../hooks/task-session-manager'
     );
-    const hook = createTaskSessionManagerHook({} as never, {
+    const hook = createTaskSessionManagerHook(createHookCtx(), {
       maxSessionsPerAgent: 2,
-      maxRetainedSnapshots: 2,
       shouldManageSession: (id: string) => id === 'parent-1',
     });
     const asked = mapV2EventToV1({
@@ -1070,9 +1080,8 @@ describe('mapV2EventToV1 permission field mapping', () => {
     const { createTaskSessionManagerHook } = await import(
       '../hooks/task-session-manager'
     );
-    const hook = createTaskSessionManagerHook({} as never, {
+    const hook = createTaskSessionManagerHook(createHookCtx(), {
       maxSessionsPerAgent: 2,
-      maxRetainedSnapshots: 2,
       shouldManageSession: (id: string) => id === 'parent-1',
     });
     const asked = mapV2EventToV1({
@@ -1165,9 +1174,8 @@ describe('mapV2EventToV1 session.deleted synthesis', () => {
     const { BackgroundJobBoard, getBackgroundJobLifecycleLedger } =
       await import('../utils');
     const board = new BackgroundJobBoard();
-    const hook = createTaskSessionManagerHook({} as never, {
+    const hook = createTaskSessionManagerHook(createHookCtx(), {
       maxSessionsPerAgent: 2,
-      maxRetainedSnapshots: 2,
       backgroundJobBoard: board,
       shouldManageSession: (id: string) => id === 'parent-1',
     });
