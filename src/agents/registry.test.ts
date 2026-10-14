@@ -2482,6 +2482,144 @@ describe('child permission payload stance tail', () => {
     expect(decideOf(compiled)('skill', 'ghost-skill')).toBe('deny');
   });
 
+  const STRICTNESS = { allow: 0, ask: 1, deny: 2 } as const;
+
+  /** Monotonicity over a resource grid: the compiled child payload is never
+   * looser than the host payload it was compiled from. */
+  function expectNeverLooser(
+    payload: readonly V2PermissionRule[],
+    compiled: readonly V2PermissionRule[],
+    action: string,
+    resources: readonly string[],
+  ) {
+    const host = decideOf(payload);
+    const child = decideOf(compiled);
+    for (const resource of resources) {
+      expect({
+        resource,
+        looser:
+          STRICTNESS[child(action, resource)] <
+          STRICTNESS[host(action, resource)],
+      }).toEqual({ resource, looser: false });
+    }
+  }
+
+  const EDIT_GRID = [
+    'src/index.ts',
+    'src/private/key.ts',
+    'src/private/nested/key.ts',
+    'src/public/a.ts',
+    'src/generated/a.ts',
+    'lib/a.ts',
+    'README.md',
+  ];
+
+  test('replayed allow never reopens a narrower host deny inside its pattern', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: { permission: { edit: { '*': 'deny', 'src/*': 'allow' } } },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const hostPrivateDeny: V2PermissionRule = {
+      action: 'edit',
+      resource: 'src/private/*',
+      effect: 'deny',
+    };
+    for (const payload of [
+      [...(registry.nativePolicies.explorer?.rules ?? []), hostPrivateDeny],
+      [
+        ...(registry.nativePolicies.explorer?.rules ?? []),
+        USER_GLOBAL_ALLOW,
+        hostPrivateDeny,
+      ],
+    ]) {
+      expect(decideOf(payload)('edit', 'src/private/key.ts')).toBe('deny');
+      const compiled = registry.compileChildPermissions('explorer', payload);
+      const decide = decideOf(compiled);
+      expect(decide('edit', 'src/private/key.ts')).toBe('deny');
+      expect(decide('edit', 'src/private/nested/key.ts')).toBe('deny');
+      expect(decide('edit', 'src/index.ts')).toBe('allow');
+      expect(decide('edit', 'lib/a.ts')).toBe('deny');
+      expectNeverLooser(payload, compiled, 'edit', EDIT_GRID);
+      // Idempotent with the re-appended host restriction in the tail.
+      expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
+        compiled,
+      );
+    }
+  });
+
+  test('a deny gated by a declared ask is not replayed over the ask', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: {
+          permission: {
+            edit: {
+              'src/*': 'deny',
+              'src/public/*': 'allow',
+              'src/generated/*': 'ask',
+            },
+          },
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const native = registry.nativePolicies.explorer?.rules ?? [];
+    expect(decideOf(native)('edit', 'src/generated/a.ts')).toBe('ask');
+    for (const payload of [native, [...native, USER_GLOBAL_ALLOW]]) {
+      const compiled = registry.compileChildPermissions('explorer', payload);
+      const decide = decideOf(compiled);
+      // The consent gate keeps the host verdict; it never becomes deny.
+      expect(decide('edit', 'src/generated/a.ts')).toBe(
+        decideOf(payload)('edit', 'src/generated/a.ts'),
+      );
+      expect(decide('edit', 'src/generated/a.ts')).not.toBe('deny');
+      expectNeverLooser(payload, compiled, 'edit', EDIT_GRID);
+    }
+    expect(
+      decideOf(registry.compileChildPermissions('explorer', native))(
+        'edit',
+        'src/generated/a.ts',
+      ),
+    ).toBe('ask');
+  });
+
+  test('#1564: a read-only explorer preset still cannot edit or write under a global allow', () => {
+    // The issue's preset: explorer declared read-only by the user.
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: {
+          permission: {
+            edit: 'deny',
+            write: 'deny',
+            apply_patch: 'deny',
+            task: 'deny',
+            bash: { 'git add*': 'deny', 'rm *': 'deny' },
+          },
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    expect(decideOf(payload)('edit', 'src/index.ts')).toBe('allow');
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    const decide = decideOf(compiled);
+    for (const action of ['edit', 'write', 'apply_patch']) {
+      for (const resource of EDIT_GRID) {
+        expect(`${action} ${resource} ${decide(action, resource)}`).toBe(
+          `${action} ${resource} deny`,
+        );
+      }
+    }
+    expect(decide('read', 'src/index.ts')).toBe('allow');
+  });
+
   test('marketplace child payloads keep subagent deny through ceilings (same path, no tail needed)', () => {
     const runtime = runtimeFor({ disabled_agents: [] });
     const registry = build(

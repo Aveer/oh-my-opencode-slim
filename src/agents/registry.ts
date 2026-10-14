@@ -319,7 +319,8 @@ function marketplaceReadSafeguards(
  * denials of its registered permission map, each riding with its declared
  * allow exceptions. Only the agent's own rules replay. Empty for agents
  * without declarations (the orchestrator); an ask is never appended: it
- * would park a background child on input nothing can answer. Denies only
+ * would park a background child on input nothing can answer, so a deny
+ * gated by a later declared ask is not replayed at all. Denies only
  * move earlier with their exceptions; a baseline-final deny stays final in
  * the tail, so the replay can only flip allow→deny, never deny→allow.
  */
@@ -388,6 +389,19 @@ function denyCeilingTail(
               resourcePatternCovers(rule.resource, later.resource))),
       );
     if (exceptions.length === 0 && shadowed) continue;
+    // A later same-action ask that can reach any resource of this deny is a
+    // declared consent gate. Asks never ride (an appended ask parks a
+    // background child), so replaying the deny would turn the gated
+    // resources from ask into deny — the deny stays home instead.
+    const askGated = baselineRules
+      .slice(index + 1)
+      .some(
+        (later) =>
+          later.effect === 'ask' &&
+          resourcePatternsOverlap(later.action, rule.action) &&
+          resourcePatternsOverlap(later.resource, rule.resource),
+      );
+    if (askGated) continue;
     tail.push(
       { ...rule },
       ...exceptions.map((exception) => ({ ...exception })),
@@ -419,6 +433,130 @@ function resourcePatternCovers(cover: string, target: string): boolean {
         .replace(/\?/g, '.');
       return new RegExp(`^${expression}$`, 's').test(targetVariant);
     }),
+  );
+}
+
+/**
+ * Whether two permission patterns may match a common value. Exact when
+ * either side is literal; for two patterns it checks only that the literal
+ * heads and tails are compatible, which over-approximates overlap. Callers
+ * use it only to keep restrictions, so an over-approximation can only make
+ * the result stricter, never looser.
+ */
+function resourcePatternsOverlap(left: string, right: string): boolean {
+  const variants = (pattern: string): string[] => {
+    const normalized = pattern.replaceAll('\\', '/');
+    if (!normalized.endsWith(' *') || normalized.endsWith(' **'))
+      return [normalized];
+    return [normalized.slice(0, -2), normalized];
+  };
+  const isPattern = (pattern: string) => /[*?]/.test(pattern);
+  return variants(left).some((leftVariant) =>
+    variants(right).some((rightVariant) => {
+      if (!isPattern(leftVariant))
+        return resourcePatternCovers(rightVariant, leftVariant);
+      if (!isPattern(rightVariant))
+        return resourcePatternCovers(leftVariant, rightVariant);
+      const head = (pattern: string) =>
+        pattern.slice(0, pattern.search(/[*?]/));
+      const tail = (pattern: string) =>
+        pattern.slice(
+          Math.max(pattern.lastIndexOf('*'), pattern.lastIndexOf('?')) + 1,
+        );
+      const leftHead = head(leftVariant);
+      const rightHead = head(rightVariant);
+      const leftTail = tail(leftVariant);
+      const rightTail = tail(rightVariant);
+      return (
+        (leftHead.startsWith(rightHead) || rightHead.startsWith(leftHead)) &&
+        (leftTail.endsWith(rightTail) || rightTail.endsWith(leftTail))
+      );
+    }),
+  );
+}
+
+const EFFECT_STRICTNESS = { allow: 0, ask: 1, deny: 2 } as const;
+
+function stricterEffect(
+  left: V2PermissionRule['effect'],
+  right: V2PermissionRule['effect'],
+): V2PermissionRule['effect'] {
+  return EFFECT_STRICTNESS[left] >= EFFECT_STRICTNESS[right] ? left : right;
+}
+
+/**
+ * Bound one replayed grant (a declared allow exception) by the host rules
+ * across EVERY resource its pattern matches, not just the pattern string.
+ *
+ * Let `cover` be the last host rule whose action and resource patterns
+ * cover the whole grant. For any resource the grant matches, the host's
+ * findLast verdict is `cover` or a rule after it (default `ask` when there
+ * is no cover). The grant is emitted at meet(grant, cover), followed by
+ * every same-action host deny/ask after `cover`, in host order and narrowed
+ * to the grant's action. Proof sketch: if the grant is a resource's final
+ * match, no host deny/ask after `cover` matches it, so the host verdict is
+ * `cover` or an allow — both at least as loose as the emitted grant. If a
+ * re-appended host rule is the final match, any later host rule matching
+ * the resource is an allow (a later deny/ask would itself be re-appended
+ * after it). Either way the replay is never looser than the host.
+ *
+ * A grant whose action is itself a pattern cannot be narrowed safely, so it
+ * folds every overlapping host deny/ask into its own effect instead.
+ */
+function boundGrantByHost(
+  hostRules: readonly V2PermissionRule[],
+  grant: V2PermissionRule,
+): V2PermissionRule[] {
+  let coverIndex = -1;
+  for (let index = hostRules.length - 1; index >= 0; index -= 1) {
+    const rule = hostRules[index];
+    if (
+      resourcePatternCovers(rule.action, grant.action) &&
+      resourcePatternCovers(rule.resource, grant.resource)
+    ) {
+      coverIndex = index;
+      break;
+    }
+  }
+  let effect = stricterEffect(
+    grant.effect,
+    coverIndex >= 0 ? hostRules[coverIndex].effect : 'ask',
+  );
+  const restrictions = hostRules
+    .slice(coverIndex + 1)
+    .filter(
+      (rule) =>
+        rule.effect !== 'allow' &&
+        resourcePatternsOverlap(rule.action, grant.action),
+    );
+  if (/[*?]/.test(grant.action)) {
+    for (const rule of restrictions) {
+      if (resourcePatternsOverlap(rule.resource, grant.resource))
+        effect = stricterEffect(effect, rule.effect);
+    }
+    return effect === 'deny' ? [] : [{ ...grant, effect }];
+  }
+  if (effect === 'deny') return [];
+  return [
+    { ...grant, effect },
+    ...restrictions.map((rule) => ({
+      action: grant.action,
+      resource: rule.resource,
+      effect: rule.effect,
+    })),
+  ];
+}
+
+/**
+ * The deny-ceiling tail for one compiled child payload: denies replay
+ * verbatim, grants are bounded by the host rules (boundGrantByHost).
+ */
+function buildChildTail(
+  hostRules: readonly V2PermissionRule[],
+  denyCeiling: readonly V2PermissionRule[],
+): V2PermissionRule[] {
+  return denyCeiling.flatMap((rule) =>
+    rule.effect === 'deny' ? [{ ...rule }] : boundGrantByHost(hostRules, rule),
   );
 }
 
@@ -1428,18 +1566,35 @@ export function buildResolvedAgentRegistry(
       // plugin resurrecting a capability the user explicitly withheld. So each
       // grant is emitted at meet(grant, host-effective): allow stays allow,
       // ask is preserved, and deny is dropped (the deny ceiling already covers
-      // it). The host-effective decision needs no rule provenance — findLast
-      // over the actual compiled array encodes the user's last word.
+      // it). The meet runs over every resource the grant's pattern matches,
+      // not the pattern string alone: narrower host denies/asks inside the
+      // grant are re-appended after it (boundGrantByHost), so a broad replayed
+      // allow can never reopen a host-protected subpath.
       const denyCeiling = frozenDenyCeilings[agent];
       if (!denyCeiling || denyCeiling.length === 0) return compiled;
-      const tail = denyCeiling.flatMap((rule) => {
-        if (rule.effect !== 'allow') return [rule];
-        const effective = policy.decide(rule.action, rule.resource);
-        if (effective === 'deny') return [];
-        return [{ ...rule, effect: effective }];
-      });
-      if (rulesEndWithTail(compiled, tail)) return compiled;
-      return [...compiled, ...tail];
+      // Idempotent: a payload that already ends with the tail built from its
+      // own prefix is returned unchanged. Every tail opens with the
+      // ceiling's first deny verbatim, so only those positions can start it.
+      const first = denyCeiling[0];
+      for (let start = compiled.length - 1; start >= 0; start -= 1) {
+        const rule = compiled[start];
+        if (
+          rule.action !== first.action ||
+          rule.resource !== first.resource ||
+          rule.effect !== first.effect
+        )
+          continue;
+        const prefixTail = buildChildTail(
+          compiled.slice(0, start),
+          denyCeiling,
+        );
+        if (
+          prefixTail.length === compiled.length - start &&
+          rulesEndWithTail(compiled, prefixTail)
+        )
+          return compiled;
+      }
+      return [...compiled, ...buildChildTail(compiled, denyCeiling)];
     },
     mcpConfig: frozenMcps,
     managedMcpConfig: frozenPluginMcps,
