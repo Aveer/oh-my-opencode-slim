@@ -419,7 +419,7 @@ export function createBackgroundJobTerminalGate(options: {
     if (disposed || record?.generation !== run.generation) return;
     let value = observations.get(run.taskID);
     if (!value || value.generation !== run.generation) {
-      if (value?.timer) clearTimeout(value.timer);
+      if (value?.timer) clearTimer(value.timer);
       value = {
         generation: run.generation,
         activityRevision: record.activityRevision,
@@ -429,7 +429,7 @@ export function createBackgroundJobTerminalGate(options: {
       observations.set(run.taskID, value);
     }
     if (value.activityRevision !== record.activityRevision) {
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value = {
         generation: run.generation,
         activityRevision: record.activityRevision,
@@ -587,7 +587,7 @@ export function createBackgroundJobTerminalGate(options: {
       latest.state === 'running'
     )
       return { kind: 'stale' };
-    if (value.timer) clearTimeout(value.timer);
+    if (value.timer) clearTimer(value.timer);
     value.timer = undefined;
     value.candidate = undefined;
     options.onTerminal?.(record);
@@ -670,7 +670,7 @@ export function createBackgroundJobTerminalGate(options: {
       // Ambiguous busy/retry is live activity: drop held candidates.
       value.candidate = undefined;
       value.idleCandidate = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       return deferred(token);
     }
@@ -690,7 +690,7 @@ export function createBackgroundJobTerminalGate(options: {
       value.retries = 0;
       value.candidate = undefined;
       value.idleCandidate = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       value.runtime = runtime;
       const record = board.markRunningFromLiveSession(
@@ -724,7 +724,7 @@ export function createBackgroundJobTerminalGate(options: {
       // Unknown invalidates open evidence, but never replenishes retries.
       // inspect accounts for the failed attempt, including missing APIs.
       value.quiescentSince = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       return deferred(
         token,
@@ -1361,7 +1361,7 @@ export function createBackgroundJobTerminalGate(options: {
       disposed = true;
       authorizedByGate.delete(gate);
       for (const value of observations.values())
-        if (value.timer) clearTimeout(value.timer);
+        if (value.timer) clearTimer(value.timer);
       observations.clear();
       inFlight.clear();
     },
