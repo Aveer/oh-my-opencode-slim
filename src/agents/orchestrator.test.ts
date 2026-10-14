@@ -142,7 +142,7 @@ describe('orchestrator prompt', () => {
     expect(prompt).toContain(
       'Evaluate approach by: quality, speed, cost, and reliability.',
     );
-    expect(prompt).toContain('Choose the path that optimizes all four.');
+    expect(prompt).toContain('Build like a painter:');
   });
 });
 
@@ -251,7 +251,7 @@ describe('v2 slim prompt (buildOrchestratorPromptV2)', () => {
       'You are a workflow manager for coding work: plan, delegate, monitor, reconcile, and verify specialist work.',
     );
     // The frozen v1 template must never leak into the v2 render.
-    expect(v2.config.prompt).not.toContain('You have perfect understanding');
+    expect(v2.config.prompt).not.toContain('Delegation is not free');
     expect(v2.config.prompt).not.toContain('Marketplace Packages');
     expect(v2.config.prompt).not.toContain('Delegation Check');
   });
