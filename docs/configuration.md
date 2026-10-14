@@ -66,6 +66,11 @@ features. This is a temporary escape hatch:
 OH_MY_OPENCODE_SLIM_DISABLE=1 opencode
 ```
 
+Set `OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS` to override the sidebar's 1-second
+config re-read interval, in milliseconds. Non-numeric values and values below
+10 fall back to the default. This knob exists mainly to speed up the test
+suite; leave it unset for normal use.
+
 If OmO-slim detects an invalid plugin config for the current project, the TUI sidebar shows a warning. Run `oh-my-opencode-slim doctor` from your project root for full diagnostics.
 
 Marketplace agent packages are selected through the active preset's

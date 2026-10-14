@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -13,6 +13,22 @@ import {
   resolvePresets,
 } from './presets';
 import { PluginConfigSchema } from './schema';
+
+const originalXdg = process.env.XDG_CONFIG_HOME;
+const originalCustom = process.env.OPENCODE_CONFIG_DIR;
+
+afterEach(() => {
+  if (originalXdg === undefined) {
+    delete process.env.XDG_CONFIG_HOME;
+  } else {
+    process.env.XDG_CONFIG_HOME = originalXdg;
+  }
+  if (originalCustom === undefined) {
+    delete process.env.OPENCODE_CONFIG_DIR;
+  } else {
+    process.env.OPENCODE_CONFIG_DIR = originalCustom;
+  }
+});
 
 function parsePresets(input: unknown) {
   const presets = PluginConfigSchema.parse(input).presets;

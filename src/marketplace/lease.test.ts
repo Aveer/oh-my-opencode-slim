@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import {
@@ -29,6 +29,16 @@ import {
   writeAtomic,
 } from './lease';
 import { getMarketplacePaths, type MarketplacePaths } from './paths';
+
+const originalXdgDataHome = process.env.XDG_DATA_HOME;
+
+afterEach(() => {
+  if (originalXdgDataHome === undefined) {
+    delete process.env.XDG_DATA_HOME;
+  } else {
+    process.env.XDG_DATA_HOME = originalXdgDataHome;
+  }
+});
 
 const LOCK: MarketplaceLockOptions = {
   staleMs: 80,

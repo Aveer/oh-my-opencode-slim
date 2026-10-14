@@ -1952,7 +1952,12 @@ function createSidebarRuntime(adapter: SidebarRuntimeAdapter) {
   };
   bindConfigListener();
   scheduleRefresh();
-  const renderTimer = setInterval(scheduleRefresh, 1000);
+  const rawRefreshMs = Number(process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS);
+  // Test hook: shrink the 1s sidebar poll. Guarded so a bad value cannot
+  // spin the timer (setInterval clamps non-positive delays to ~1ms).
+  const renderIntervalMs =
+    Number.isFinite(rawRefreshMs) && rawRefreshMs >= 10 ? rawRefreshMs : 1000;
+  const renderTimer = setInterval(scheduleRefresh, renderIntervalMs);
   const animationTimer = setInterval(() => {
     if (
       !disposed &&

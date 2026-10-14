@@ -1,7 +1,29 @@
-import { describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+const tempDirs: string[] = [];
+const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+
+afterEach(() => {
+  mock.restore();
+  if (originalXdgCacheHome === undefined) {
+    delete process.env.XDG_CACHE_HOME;
+  } else {
+    process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+  }
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function createTempRoot(): string {
+  const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+  tempDirs.push(root);
+  return root;
+}
 
 // Compare paths without caring about the platform separator.
 const normalizeSlashes = (value: string): string => value.replace(/\\/g, '/');
@@ -229,7 +251,7 @@ describe('auto-update-checker/cache', () => {
     }
 
     test('publishes a verified staged package atomically', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const prepared = createPrepared(root, '1.2.4');
       createPackage(prepared.stagingDir, '1.2.4');
       const { publishPackageUpdate } = await import(
@@ -245,7 +267,7 @@ describe('auto-update-checker/cache', () => {
     });
 
     test('cleans staging when a valid concurrent target already exists', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const prepared = createPrepared(root, '1.2.4');
       createPackage(prepared.stagingDir, '1.2.4');
       createPackage(prepared.targetDir, '1.2.4');
@@ -264,7 +286,7 @@ describe('auto-update-checker/cache', () => {
     });
 
     test('replaces an invalid target and removes its quarantine', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const prepared = createPrepared(root, '1.2.4');
       createPackage(prepared.stagingDir, '1.2.4');
       fs.mkdirSync(prepared.targetDir, { recursive: true });
@@ -284,7 +306,7 @@ describe('auto-update-checker/cache', () => {
     });
 
     test('removes an unverifiable freshly published target and staging', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const prepared = createPrepared(root, '1.2.4');
       createPackage(prepared.stagingDir, '1.2.3');
       const { publishPackageUpdate } = await import(
@@ -298,7 +320,7 @@ describe('auto-update-checker/cache', () => {
     });
 
     test('restores the prior usable target when replacement verification fails', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const prepared = createPrepared(root, '1.2.4');
       createPackage(prepared.targetDir, '1.2.3');
       createPackage(prepared.stagingDir, '1.2.3');
@@ -332,7 +354,7 @@ describe('auto-update-checker/cache', () => {
 
   describe('acquirePackageUpdateLock', () => {
     test('creates and releases a hidden lock dir next to the target install dir', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const targetDir = join(root, 'packages', 'oh-my-opencode-slim@1.2.4');
       const lockDir = `${join(
         root,
@@ -352,7 +374,7 @@ describe('auto-update-checker/cache', () => {
     });
 
     test('returns null when a live process holds the lock', async () => {
-      const root = fs.mkdtempSync(join(tmpdir(), 'omo-cache-'));
+      const root = createTempRoot();
       const targetDir = join(root, 'packages', 'oh-my-opencode-slim@1.2.4');
       const lockDir = `${join(
         root,

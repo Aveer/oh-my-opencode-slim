@@ -137,8 +137,26 @@ describe('interview prompt tool fallback', () => {
     );
   });
 
-  test('printState prompts are deterministic', () => {
-    expect(printStatePrompts()).toEqual(printStatePrompts());
-    expect(toolModePrompts()).toEqual(toolModePrompts());
+  test('printState prompts are deterministic and carry state blocks', () => {
+    const printState = printStatePrompts();
+    const toolMode = toolModePrompts();
+
+    expect(Object.keys(printState).sort()).toEqual([
+      'answer',
+      'blockComment',
+      'chat',
+      'kickoff',
+      'nudge',
+      'patchRepair',
+      'resume',
+    ]);
+    for (const prompt of Object.values(printState)) {
+      expect(prompt).toContain('<interview_state>');
+      expect(prompt).toContain('</interview_state>');
+    }
+    for (const prompt of Object.values(toolMode)) {
+      expect(prompt).toContain(TOOL_FALLBACK_HINT);
+    }
+    expect(buildKickoffPrompt('An idea', 2, true)).toBe(printState.kickoff);
   });
 });

@@ -23,13 +23,10 @@ function deferred<T>() {
 async function loadPlugin(session: Record<string, unknown>) {
   const projectDir = await mkdtemp(join(tmpdir(), 'omo-revive-dispose-'));
   const previous = { ...process.env };
-  process.env = {
-    ...previous,
-    OPENCODE_CONFIG_DIR: projectDir,
-    XDG_DATA_HOME: `${projectDir}/data`,
-    XDG_CACHE_HOME: `${projectDir}/cache`,
-    OPENCODE_LOG_DIR: `${projectDir}/logs`,
-  };
+  process.env.OPENCODE_CONFIG_DIR = projectDir;
+  process.env.XDG_DATA_HOME = `${projectDir}/data`;
+  process.env.XDG_CACHE_HOME = `${projectDir}/cache`;
+  process.env.OPENCODE_LOG_DIR = `${projectDir}/logs`;
   delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
   await Bun.write(
     `${projectDir}/oh-my-opencode-slim.json`,
@@ -49,7 +46,10 @@ async function loadPlugin(session: Record<string, unknown>) {
     hooks,
     projectDir,
     async cleanup() {
-      process.env = previous;
+      for (const key of Object.keys(process.env)) {
+        if (!(key in previous)) delete process.env[key];
+      }
+      Object.assign(process.env, previous);
       await rm(projectDir, { recursive: true, force: true });
     },
   };

@@ -204,7 +204,7 @@ describe('task_cancel tool', () => {
       if (!oldLease) throw new Error('missing cancellation lease');
       expect(board.validateLease(oldLease)).toBe(false);
       const replacement = board.acquireCancellationLease('ses_1', 1);
-      expect(replacement).toBeDefined();
+      expect(replacement?.kind).toBe('cancellation');
       if (!replacement) throw new Error('read timeout retained exclusion');
       const uncertain = board.get('ses_1');
       if (settlement === 'resolve') read.resolve(response);
@@ -217,7 +217,7 @@ describe('task_cancel tool', () => {
       expect(board.validateLease(replacement)).toBe(true);
       board.releaseLease(replacement);
       const relaunch = board.acquireRelaunchLease('ses_1', 1);
-      expect(relaunch).toBeDefined();
+      expect(relaunch?.kind).toBe('relaunch');
       if (relaunch) board.releaseLease(relaunch);
     },
   );
@@ -250,7 +250,7 @@ describe('task_cancel tool', () => {
       expect(board.get('ses_1')).toMatchObject({ statusUncertain: true });
       expect(commit).not.toHaveBeenCalled();
       const available = board.acquireRelaunchLease('ses_1', 1);
-      expect(available).toBeDefined();
+      expect(available?.kind).toBe('relaunch');
       if (available) board.releaseLease(available);
     },
   );
@@ -292,7 +292,7 @@ describe('task_cancel tool', () => {
           'ses_1',
           board.get('ses_1')?.generation ?? -1,
         );
-        expect(replacement).toBeDefined();
+        expect(replacement?.kind).toBe('cancellation');
       }
       const output = await pending;
       expect(String(output)).toMatch(
@@ -308,7 +308,7 @@ describe('task_cancel tool', () => {
           state: 'completed',
         });
         const notification = board.acquireTerminalNotificationLease('ses_1', 1);
-        expect(notification).toBeDefined();
+        expect(notification?.kind).toBe('terminal-notification');
         if (notification) board.releaseLease(notification);
       }
       if (change === 'generation changed') {
@@ -331,7 +331,7 @@ describe('task_cancel tool', () => {
         'ses_1',
         board.get('ses_1')?.generation ?? -1,
       );
-      expect(available).toBeDefined();
+      expect(available?.kind).toBe('relaunch');
       if (available) board.releaseLease(available);
     },
   );
@@ -393,10 +393,10 @@ describe('task_cancel tool', () => {
       expect(board.get('ses_1')).toEqual(uncertain);
       expect(board.validateLease(lease)).toBe(false);
       const available = board.acquireCancellationLease('ses_1', 1);
-      expect(available).toBeDefined();
+      expect(available?.kind).toBe('cancellation');
       if (available) board.releaseLease(available);
       const relaunch = board.acquireRelaunchLease('ses_1', 1);
-      expect(relaunch).toBeDefined();
+      expect(relaunch?.kind).toBe('relaunch');
       if (relaunch) board.releaseLease(relaunch);
     },
   );
@@ -529,7 +529,7 @@ describe('task_cancel tool', () => {
       terminalState: 'cancelled',
     });
     expect(deleteSession).not.toHaveBeenCalled();
-    expect(board.acquireRelaunchLease('ses_1', 1)).toBeDefined();
+    expect(board.acquireRelaunchLease('ses_1', 1)?.kind).toBe('relaunch');
   });
 
   test('returns an uncertain running result when quiescence cannot be verified', async () => {

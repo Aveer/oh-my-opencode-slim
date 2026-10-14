@@ -29,7 +29,12 @@ describe('loadPluginConfig', () => {
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) {
+        delete process.env[key];
+      }
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   test('returns empty config when no config files exist', () => {
@@ -599,9 +604,8 @@ describe('loadPluginConfig', () => {
   });
 
   test('respects OPENCODE_CONFIG_DIR for user config location', () => {
-    const customDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omc-opencode-config-'),
-    );
+    const customDir = path.join(tempDir, 'custom-opencode-config');
+    fs.mkdirSync(customDir, { recursive: true });
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
     // Write plugin config in the custom directory
@@ -619,14 +623,11 @@ describe('loadPluginConfig', () => {
     expect(config.agents?.oracle?.model).toBe(
       'custom/model-from-opencode-config-dir',
     );
-
-    fs.rmSync(customDir, { recursive: true, force: true });
   });
 
   test('falls back to default user config dir when OPENCODE_CONFIG_DIR has no config', () => {
-    const customDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omc-opencode-config-empty-'),
-    );
+    const customDir = path.join(tempDir, 'custom-opencode-config-empty');
+    fs.mkdirSync(customDir, { recursive: true });
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
     const defaultConfigDir = path.join(userConfigDir, 'opencode');
@@ -643,8 +644,6 @@ describe('loadPluginConfig', () => {
 
     const config = loadPluginConfig(projectDir);
     expect(config.agents?.oracle?.model).toBe('fallback/default-config');
-
-    fs.rmSync(customDir, { recursive: true, force: true });
   });
 
   test('project multiplexer keys still override the user layer when explicitly set', () => {
@@ -2534,7 +2533,12 @@ describe('loadAgentPrompt', () => {
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) {
+        delete process.env[key];
+      }
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   test('returns empty object when no prompt files exist', () => {
@@ -2721,9 +2725,8 @@ describe('loadAgentPrompt', () => {
   });
 
   test('respects OPENCODE_CONFIG_DIR for prompt location', () => {
-    const customDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omc-prompt-config-'),
-    );
+    const customDir = path.join(tempDir, 'custom-prompt-config');
+    fs.mkdirSync(customDir, { recursive: true });
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
     const promptsDir = path.join(customDir, 'oh-my-opencode-slim');
@@ -2735,14 +2738,11 @@ describe('loadAgentPrompt', () => {
 
     const result = loadAgentPrompt('oracle');
     expect(result.prompt).toBe('prompt from OPENCODE_CONFIG_DIR dir');
-
-    fs.rmSync(customDir, { recursive: true, force: true });
   });
 
   test('falls back to default prompt dir when OPENCODE_CONFIG_DIR has no prompt', () => {
-    const customDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'omc-prompt-config-empty-'),
-    );
+    const customDir = path.join(tempDir, 'custom-prompt-config-empty');
+    fs.mkdirSync(customDir, { recursive: true });
     process.env.OPENCODE_CONFIG_DIR = customDir;
 
     const promptsDir = path.join(tempDir, 'opencode', 'oh-my-opencode-slim');
@@ -2751,8 +2751,6 @@ describe('loadAgentPrompt', () => {
 
     const result = loadAgentPrompt('oracle');
     expect(result.prompt).toBe('fallback prompt');
-
-    fs.rmSync(customDir, { recursive: true, force: true });
   });
 });
 

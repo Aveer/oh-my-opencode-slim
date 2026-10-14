@@ -45,11 +45,6 @@ mock.module('../../utils/opencode-client', () => ({
   getClient: (input: { client: unknown }) => input.client as never,
 }));
 
-/** Wait for the idle reconciliation delay (2s + margin) to flush. */
-function flushIdleReconcileDelay() {
-  return new Promise((resolve) => setTimeout(resolve, 2100));
-}
-
 async function flushContinuation(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2806,16 +2801,18 @@ describe('task-session-manager hook', () => {
 
     // Different suffix after the shared 48-char prefix: the full objective
     // differs, so the guard must not treat it as a duplicate.
-    await hook['tool.execute.before'](
-      { tool: 'task', sessionID: 'parent-1', callID: 'long-objective' },
-      {
-        args: {
-          subagent_type: 'oracle',
-          background: true,
-          description: `${sharedPrefix} distinct suffix B`,
+    await expect(
+      hook['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-1', callID: 'long-objective' },
+        {
+          args: {
+            subagent_type: 'oracle',
+            background: true,
+            description: `${sharedPrefix} distinct suffix B`,
+          },
         },
-      },
-    );
+      ),
+    ).resolves.toBeUndefined();
   });
 
   test('blocks an exact duplicate whose objective exceeds the 48-char label', async () => {
@@ -3087,7 +3084,10 @@ describe('task-session-manager hook', () => {
     'injected completion for managed %s through message transform remains terminal-unreconciled before parent idle, then reconciles after',
     async (agent) => {
       const board = new BackgroundJobBoard();
-      const { hook, complete } = createHook({ backgroundJobBoard: board });
+      const { hook, complete } = createHook({
+        backgroundJobBoard: board,
+        idleReconcileDelayMs: 0,
+      });
 
       await hook['tool.execute.before'](
         { tool: 'task', sessionID: 'parent-1', callID: 'call-1' },
@@ -3155,7 +3155,7 @@ describe('task-session-manager hook', () => {
         },
       });
 
-      await flushIdleReconcileDelay();
+      await flushChildIdleReconcile();
 
       expect(board.get('child-1')).toMatchObject({
         state: 'reconciled',
@@ -3166,7 +3166,10 @@ describe('task-session-manager hook', () => {
 
   test('another terminal-unreconciled sibling remains unreconciled when only first child completion was injected', async () => {
     const board = new BackgroundJobBoard();
-    const { hook, complete } = createHook({ backgroundJobBoard: board });
+    const { hook, complete } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     // setup child-1
     await hook['tool.execute.before'](
@@ -3238,7 +3241,7 @@ describe('task-session-manager hook', () => {
         properties: { sessionID: 'parent-1', status: { type: 'idle' } },
       },
     });
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     expect(board.get('child-1')).toMatchObject({
       state: 'reconciled',
@@ -3401,7 +3404,10 @@ describe('task-session-manager hook', () => {
 
   test('no-starvation latest pipeline: child-1 synthetic remembered; child-2 becomes terminal before idle; next full transform emits child-2 in board; idle reconciles both', async () => {
     const board = new BackgroundJobBoard();
-    const { hook, complete } = createHook({ backgroundJobBoard: board });
+    const { hook, complete } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     // child-1 via tool + synthetic injected (narrow + metadata will remember it)
     await hook['tool.execute.before'](
@@ -3465,7 +3471,7 @@ describe('task-session-manager hook', () => {
         properties: { sessionID: 'parent-1', status: { type: 'idle' } },
       },
     });
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     expect(board.get('child-1')).toMatchObject({
       state: 'reconciled',
@@ -3497,7 +3503,10 @@ describe('task-session-manager hook', () => {
         ),
       };
     };
-    const { hook } = createHook({ backgroundJobBoard: board });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     board.registerLaunch({
       taskID: 'child-1',
@@ -3534,7 +3543,7 @@ describe('task-session-manager hook', () => {
         properties: { sessionID: 'parent-1', status: { type: 'idle' } },
       },
     });
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     expect(board.get('child-1')).toMatchObject({
       state: 'reconciled',
@@ -4476,7 +4485,10 @@ describe('task-session-manager hook', () => {
 
   test('marks terminal jobs reconciled after injected prompt reaches idle', async () => {
     const board = new BackgroundJobBoard();
-    const { hook } = createHook({ backgroundJobBoard: board });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     board.registerLaunch({
       taskID: 'child-1',
@@ -4504,7 +4516,7 @@ describe('task-session-manager hook', () => {
     });
 
     // Wait for deferred idle reconciliation timeout
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     expect(board.get('child-1')).toMatchObject({
       state: 'reconciled',
@@ -4550,7 +4562,10 @@ describe('task-session-manager hook', () => {
 
   test('an earlier idle delivery cannot acknowledge a replacement publication', async () => {
     const board = new BackgroundJobBoard();
-    const { hook } = createHook({ backgroundJobBoard: board });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     setupCompletedJob(board);
 
@@ -4576,7 +4591,7 @@ describe('task-session-manager hook', () => {
       resultSummary: 'actual error from child',
     });
 
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     // The pending timer only acknowledges A's publication revision.
     expect(board.get('child-1')).toMatchObject({
@@ -6135,7 +6150,10 @@ describe('task-session-manager hook', () => {
 
   test('completed reconciled job appears reusable and resumes via task', async () => {
     const board = new BackgroundJobBoard();
-    const { hook } = createHook({ backgroundJobBoard: board });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
 
     board.registerLaunch({
       taskID: 'child-1',
@@ -6159,7 +6177,7 @@ describe('task-session-manager hook', () => {
     });
 
     // Wait for deferred idle reconciliation timeout
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     const nextMessages = createMessages('parent-1', 'reuse');
     await transformMessages(hook, nextMessages);
@@ -6546,7 +6564,10 @@ describe('task-session-manager hook', () => {
 
   test('resuming reusable job relaunches running and removes reusable entry', async () => {
     const board = new BackgroundJobBoard();
-    const { hook } = createHook({ backgroundJobBoard: board });
+    const { hook } = createHook({
+      backgroundJobBoard: board,
+      idleReconcileDelayMs: 0,
+    });
     board.registerLaunch({
       taskID: 'child-1',
       parentSessionID: 'parent-1',
@@ -6623,7 +6644,7 @@ describe('task-session-manager hook', () => {
     });
 
     // Wait for deferred idle reconciliation timeout
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     const reusable = createMessages('parent-1', 'reuse');
     await transformMessages(hook, reusable);
@@ -6701,6 +6722,7 @@ describe('task-session-manager hook', () => {
     const { hook } = createHook({
       readContextMinLines: 5,
       readContextMaxFiles: 1,
+      idleReconcileDelayMs: 0,
     });
     await hook.event({
       event: {
@@ -6761,7 +6783,7 @@ describe('task-session-manager hook', () => {
     });
 
     // Wait for deferred idle reconciliation timeout
-    await flushIdleReconcileDelay();
+    await flushChildIdleReconcile();
 
     const next = createMessages('parent-1', 'reuse');
     await transformMessages(hook, next);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OhMyOpenCodeLite } from '../../index';
@@ -223,6 +223,7 @@ describe('alias numbering', () => {
       return aliases;
     } finally {
       await hooks.dispose?.();
+      await rm(projectDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
@@ -733,62 +734,66 @@ describe('recorded host alias interleave', () => {
 describe('oracle audit fences', () => {
   test('root dispose before a launch does not create pending work or abort', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'omo-alias-dispose-'));
-    const abort = mock(async () => ({}));
-    const prompt = mock(async () => ({}));
-    const client = {
-      app: { log: async () => ({}) },
-      session: {
-        abort,
-        prompt,
-        status: async () => ({ data: {} }),
-        get: async () => ({ data: {} }),
-      },
-    };
-    const hooks = await OhMyOpenCodeLite({
-      client,
-      directory: projectDir,
-      worktree: projectDir,
-      serverUrl: new URL('http://127.0.0.1:4096'),
-    } as never);
-    await hooks.event?.({
-      event: {
-        type: 'server.instance.disposed',
-        properties: { directory: projectDir },
-      },
-    } as never);
-    await expect(
-      hooks['tool.execute.before']?.(
+    try {
+      const abort = mock(async () => ({}));
+      const prompt = mock(async () => ({}));
+      const client = {
+        app: { log: async () => ({}) },
+        session: {
+          abort,
+          prompt,
+          status: async () => ({ data: {} }),
+          get: async () => ({ data: {} }),
+        },
+      };
+      const hooks = await OhMyOpenCodeLite({
+        client,
+        directory: projectDir,
+        worktree: projectDir,
+        serverUrl: new URL('http://127.0.0.1:4096'),
+      } as never);
+      await hooks.event?.({
+        event: {
+          type: 'server.instance.disposed',
+          properties: { directory: projectDir },
+        },
+      } as never);
+      await expect(
+        hooks['tool.execute.before']?.(
+          {
+            tool: 'task',
+            sessionID: 'ses_parentdispose01',
+            callID: 'call_held',
+          },
+          {
+            args: {
+              subagent_type: 'fixer',
+              description: 'held launch',
+              prompt: 'do not send',
+              background: true,
+            },
+          },
+        ),
+      ).rejects.toThrow(/disposed/);
+      expect(abort).not.toHaveBeenCalled();
+      expect(prompt).not.toHaveBeenCalled();
+      await hooks['tool.execute.after']?.(
         {
           tool: 'task',
           sessionID: 'ses_parentdispose01',
           callID: 'call_held',
         },
-        {
-          args: {
-            subagent_type: 'fixer',
-            description: 'held launch',
-            prompt: 'do not send',
-            background: true,
-          },
-        },
-      ),
-    ).rejects.toThrow(/disposed/);
-    expect(abort).not.toHaveBeenCalled();
-    expect(prompt).not.toHaveBeenCalled();
-    await hooks['tool.execute.after']?.(
-      {
-        tool: 'task',
-        sessionID: 'ses_parentdispose01',
-        callID: 'call_held',
-      },
-      { output: withRef(HOST, 'fix-4'), metadata: {} },
-    );
-    await expect(
-      hooks.tool?.task_status?.execute({ task_id: HOST }, {
-        sessionID: 'ses_parentdispose01',
-        agent: 'orchestrator',
-      } as never),
-    ).rejects.toThrow(/disposed|Unknown task/);
+        { output: withRef(HOST, 'fix-4'), metadata: {} },
+      );
+      await expect(
+        hooks.tool?.task_status?.execute({ task_id: HOST }, {
+          sessionID: 'ses_parentdispose01',
+          agent: 'orchestrator',
+        } as never),
+      ).rejects.toThrow(/disposed|Unknown task/);
+    } finally {
+      await rm(projectDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 });
 
