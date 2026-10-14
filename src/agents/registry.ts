@@ -491,14 +491,19 @@ function stricterEffect(
  * Let `cover` be the last host rule whose action and resource patterns
  * cover the whole grant. For any resource the grant matches, the host's
  * findLast verdict is `cover` or a rule after it (default `ask` when there
- * is no cover). The grant is emitted at meet(grant, cover), followed by
- * every same-action host deny/ask after `cover`, in host order and narrowed
- * to the grant's action. Proof sketch: if the grant is a resource's final
- * match, no host deny/ask after `cover` matches it, so the host verdict is
- * `cover` or an allow — both at least as loose as the emitted grant. If a
- * re-appended host rule is the final match, any later host rule matching
- * the resource is an allow (a later deny/ask would itself be re-appended
- * after it). Either way the replay is never looser than the host.
+ * is no cover). The grant is emitted at meet(grant, cover), followed, in
+ * host order and narrowed to the grant's action, by every host rule after
+ * `cover` that is either a deny/ask for the action or an allow whose
+ * pattern lies within the grant's pattern (the host's own exceptions to
+ * its restrictions inside the grant).
+ *
+ * Never looser than the host: if the grant is a resource's final match, no
+ * host deny/ask after `cover` matches it, so the host verdict is `cover` or
+ * an allow. If a re-appended host rule is the final match, any later host
+ * deny/ask matching the resource would itself have been re-appended after
+ * it, so the host's own last match is that rule or an allow. Never looser
+ * than the declared ceiling: a re-appended allow only matches resources
+ * inside the grant's pattern, which the declared ceiling already allows.
  *
  * A grant whose action is itself a pattern cannot be narrowed safely, so it
  * folds every overlapping host deny/ask into its own effect instead.
@@ -522,28 +527,39 @@ function boundGrantByHost(
     grant.effect,
     coverIndex >= 0 ? hostRules[coverIndex].effect : 'ask',
   );
-  const restrictions = hostRules
+  const later = hostRules
     .slice(coverIndex + 1)
-    .filter(
-      (rule) =>
-        rule.effect !== 'allow' &&
-        resourcePatternsOverlap(rule.action, grant.action),
-    );
+    .filter((rule) => resourcePatternsOverlap(rule.action, grant.action));
   if (/[*?]/.test(grant.action)) {
-    for (const rule of restrictions) {
+    for (const rule of later) {
+      if (rule.effect === 'allow') continue;
       if (resourcePatternsOverlap(rule.resource, grant.resource))
         effect = stricterEffect(effect, rule.effect);
     }
     return effect === 'deny' ? [] : [{ ...grant, effect }];
   }
   if (effect === 'deny') return [];
+  // Within, not merely overlapping: an allow reaching outside the grant
+  // would loosen the declared ceiling. The string match below implies set
+  // inclusion only when the grant's pattern uses `*` alone as a wildcard.
+  const withinGrant = (rule: V2PermissionRule) =>
+    !grant.resource.includes('?') &&
+    resourcePatternCovers(rule.action, grant.action) &&
+    // Every matcher variant of the rule (a trailing ` *` also matches the
+    // bare prefix) must fall inside the grant.
+    (rule.resource.endsWith(' *') && !rule.resource.endsWith(' **')
+      ? [rule.resource.slice(0, -2), rule.resource]
+      : [rule.resource]
+    ).every((variant) => resourcePatternCovers(grant.resource, variant));
   return [
     { ...grant, effect },
-    ...restrictions.map((rule) => ({
-      action: grant.action,
-      resource: rule.resource,
-      effect: rule.effect,
-    })),
+    ...later
+      .filter((rule) => rule.effect !== 'allow' || withinGrant(rule))
+      .map((rule) => ({
+        action: grant.action,
+        resource: rule.resource,
+        effect: rule.effect,
+      })),
   ];
 }
 

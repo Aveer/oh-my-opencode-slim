@@ -2504,8 +2504,42 @@ describe('child permission payload stance tail', () => {
     }
   }
 
+  /** Exact sweep: on every sample path the compiled child verdict equals
+   * the host-effective verdict met with the declared ceiling — never looser
+   * (a host- or ceiling-protected path reopened) and never stricter (a
+   * host exception dropped). */
+  function expectHostMeetCeiling(
+    payload: readonly V2PermissionRule[],
+    compiled: readonly V2PermissionRule[],
+    ceiling: readonly V2PermissionRule[],
+    action: string,
+    resources: readonly string[],
+  ) {
+    const host = decideOf(payload);
+    const declared = decideOf(ceiling);
+    const child = decideOf(compiled);
+    for (const resource of resources) {
+      const hostEffect = host(action, resource);
+      const ceilingEffect = declared(action, resource);
+      const expected =
+        STRICTNESS[hostEffect] >= STRICTNESS[ceilingEffect]
+          ? hostEffect
+          : ceilingEffect;
+      expect(`${resource}: ${child(action, resource)}`).toBe(
+        `${resource}: ${expected}`,
+      );
+    }
+  }
+
+  const SRC_ONLY_EDIT_CEILING: V2PermissionRule[] = [
+    { action: 'edit', resource: '*', effect: 'deny' },
+    { action: 'edit', resource: 'src/*', effect: 'allow' },
+  ];
+
   const EDIT_GRID = [
     'src/index.ts',
+    'src/private/approved.ts',
+    'src/private/other.ts',
     'src/private/key.ts',
     'src/private/nested/key.ts',
     'src/public/a.ts',
@@ -2542,8 +2576,54 @@ describe('child permission payload stance tail', () => {
       expect(decide('edit', 'src/private/nested/key.ts')).toBe('deny');
       expect(decide('edit', 'src/index.ts')).toBe('allow');
       expect(decide('edit', 'lib/a.ts')).toBe('deny');
-      expectNeverLooser(payload, compiled, 'edit', EDIT_GRID);
+      expectHostMeetCeiling(
+        payload,
+        compiled,
+        SRC_ONLY_EDIT_CEILING,
+        'edit',
+        EDIT_GRID,
+      );
       // Idempotent with the re-appended host restriction in the tail.
+      expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
+        compiled,
+      );
+    }
+  });
+
+  test('host allow exceptions inside a replayed allow survive the re-appended host deny', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: { permission: { edit: { '*': 'deny', 'src/*': 'allow' } } },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const hostRules: V2PermissionRule[] = [
+      { action: 'edit', resource: 'src/private/*', effect: 'deny' },
+      { action: 'edit', resource: 'src/private/approved.ts', effect: 'allow' },
+      // An allow outside the declared grant must not ride into the tail.
+      { action: 'edit', resource: 'lib/*', effect: 'allow' },
+    ];
+    const native = registry.nativePolicies.explorer?.rules ?? [];
+    for (const payload of [
+      [...native, ...hostRules],
+      [...native, USER_GLOBAL_ALLOW, ...hostRules],
+    ]) {
+      expect(decideOf(payload)('edit', 'src/private/approved.ts')).toBe(
+        'allow',
+      );
+      const compiled = registry.compileChildPermissions('explorer', payload);
+      const decide = decideOf(compiled);
+      expect(decide('edit', 'src/private/approved.ts')).toBe('allow');
+      expect(decide('edit', 'src/private/other.ts')).toBe('deny');
+      expect(decide('edit', 'lib/a.ts')).toBe('deny');
+      expectHostMeetCeiling(
+        payload,
+        compiled,
+        SRC_ONLY_EDIT_CEILING,
+        'edit',
+        EDIT_GRID,
+      );
       expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
         compiled,
       );
@@ -2584,6 +2664,22 @@ describe('child permission payload stance tail', () => {
         'src/generated/a.ts',
       ),
     ).toBe('ask');
+    // Without a host allow-all the host already carries the declared map,
+    // so the child matches host-meet-ceiling exactly. Under a trailing
+    // allow-all the gated deny stays home: never looser than the host, but
+    // src/* outside the exceptions follows the host's allow.
+    expectHostMeetCeiling(
+      native,
+      registry.compileChildPermissions('explorer', native),
+      [
+        { action: 'edit', resource: '*', effect: 'allow' },
+        { action: 'edit', resource: 'src/*', effect: 'deny' },
+        { action: 'edit', resource: 'src/public/*', effect: 'allow' },
+        { action: 'edit', resource: 'src/generated/*', effect: 'ask' },
+      ],
+      'edit',
+      EDIT_GRID,
+    );
   });
 
   test('#1564: a read-only explorer preset still cannot edit or write under a global allow', () => {
@@ -2611,6 +2707,13 @@ describe('child permission payload stance tail', () => {
     const compiled = registry.compileChildPermissions('explorer', payload);
     const decide = decideOf(compiled);
     for (const action of ['edit', 'write', 'apply_patch']) {
+      expectHostMeetCeiling(
+        payload,
+        compiled,
+        [{ action, resource: '*', effect: 'deny' }],
+        action,
+        EDIT_GRID,
+      );
       for (const resource of EDIT_GRID) {
         expect(`${action} ${resource} ${decide(action, resource)}`).toBe(
           `${action} ${resource} deny`,
