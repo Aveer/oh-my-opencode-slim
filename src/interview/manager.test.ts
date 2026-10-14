@@ -544,7 +544,16 @@ describe('interview manager - session registration', () => {
       (globalThis as any).setInterval = setIntervalSpy;
       (globalThis as any).clearInterval = clearIntervalSpy;
 
-      createInterviewManager(dashboardCtx, config, { server });
+      const dashboardManager = createInterviewManager(dashboardCtx, config, {
+        server,
+      });
+      // Deterministic init barrier: the awaited handleEvent runs
+      // ensureInitialized, whose dashboard election writes the
+      // credentials the client manager needs to avoid a per-session
+      // fallback server (a second fallback timer, hence a double clear).
+      await dashboardManager.handleEvent({
+        event: { type: 'session.warmup', properties: {} },
+      });
 
       const clientManager = createInterviewManager(clientCtx, config);
 

@@ -419,18 +419,28 @@ test('task_cancel during fallback resend backoff prevents a second replay', asyn
 
 test('a timed-out fallback replay retains its owner without aborting or resending', async () => {
   const h = await fallbackAssembly();
-  h.promptAsync.mockImplementation(async () => new Promise(() => {}));
-  await h.fail();
-  await h.idle();
-  for (let i = 0; i < 38; i++) await h.advance(1000);
-  expect(h.abort).not.toHaveBeenCalled();
-  expect(h.promptAsync).toHaveBeenCalledTimes(1);
-  expect(
-    h.revivedTracker?.isTracked('child', h.board.get('child')?.generation ?? 0),
-  ).toBe(true);
-  expect(h.board.get('child')?.state).toBe('running');
-  for (let i = 0; i < 12; i++) await h.advance(1000);
-  expect(h.board.get('child')?.state).toBe('stopped');
+  const hung = Promise.withResolvers<Record<string, never>>();
+  h.promptAsync.mockImplementation(async () => hung.promise);
+  try {
+    await h.fail();
+    await h.idle();
+    for (let i = 0; i < 38; i++) await h.advance(1000);
+    expect(h.abort).not.toHaveBeenCalled();
+    expect(h.promptAsync).toHaveBeenCalledTimes(1);
+    expect(
+      h.revivedTracker?.isTracked(
+        'child',
+        h.board.get('child')?.generation ?? 0,
+      ),
+    ).toBe(true);
+    expect(h.board.get('child')?.state).toBe('running');
+    for (let i = 0; i < 12; i++) await h.advance(1000);
+    expect(h.board.get('child')?.state).toBe('stopped');
+  } finally {
+    // Release the hung prompt so plugin disposal can settle during cleanup;
+    // leaving it pending leaked a timed-out afterEach into the next test.
+    hung.resolve({});
+  }
 });
 
 test('terminal failover during a retry-armed delay waits for replay, notice and one result', async () => {
