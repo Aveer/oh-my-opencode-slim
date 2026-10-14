@@ -3,7 +3,8 @@ import type { BackgroundJobStore } from './background-job-store';
 import type { BackgroundJobTerminalGate } from './background-job-terminal-gate';
 import { log } from './logger';
 
-type TimerHandle = ReturnType<typeof setTimeout>;
+/** Platform timer handle; fake harnesses may return bare numeric ids. */
+type TimerHandle = Timer;
 
 export interface BackgroundJobSupervisorOptions {
   backgroundJobStore: BackgroundJobStore;

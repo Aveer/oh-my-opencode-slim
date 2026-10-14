@@ -1,6 +1,7 @@
 /// <reference types="bun-types" />
 
 import { describe, expect, mock, spyOn, test } from 'bun:test';
+import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,20 +82,25 @@ describe('system', () => {
 
   test('getOpenCodeVersion parses stdout on success', async () => {
     const childProcess = await import('node:child_process');
-    const originalSpawnSync = childProcess.spawnSync;
+    const fakeResult = (stdout: string): SpawnSyncReturns<string> => ({
+      status: 0,
+      stdout,
+      stderr: '',
+      pid: 1234,
+      output: [],
+      signal: null,
+    });
     const spawnSpy = spyOn(childProcess, 'spawnSync').mockImplementation(
-      (cmd: any, args: any) => {
-        if (Array.isArray(args) && args.includes('--version')) {
-          return {
-            status: 0,
-            stdout: '1.2.3\n',
-            stderr: '',
-            pid: 1234,
-            output: [],
-            signal: null,
-          } as any;
+      (cmd: string, args?: readonly string[]) => {
+        // Hermetic: intercept the PATH resolver too, so the test does not
+        // depend on opencode being installed on the host.
+        if (cmd === 'which' || cmd === 'where') {
+          return fakeResult('/usr/local/bin/opencode\n');
         }
-        return originalSpawnSync(cmd, args);
+        if (args?.includes('--version')) {
+          return fakeResult('1.2.3\n');
+        }
+        return undefined;
       },
     );
 

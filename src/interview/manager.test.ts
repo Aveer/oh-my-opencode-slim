@@ -232,9 +232,6 @@ describe('interview manager - per-session mode', () => {
 
       const manager = createInterviewManager(ctx, config, { server });
 
-      // Wait for dashboard init
-      await new Promise((r) => setTimeout(r, 100));
-
       try {
         // Create interview (should trigger session registration)
         const output = { parts: [] as Array<{ type: string; text?: string }> };
@@ -326,9 +323,6 @@ describe('interview manager - state push callback wiring', () => {
 
     const manager = createInterviewManager(ctx, config, { server });
 
-    // Wait for dashboard init
-    await new Promise((r) => setTimeout(r, 100));
-
     try {
       // Create interview
       const output = { parts: [] as Array<{ type: string; text?: string }> };
@@ -417,9 +411,6 @@ describe('interview manager - session registration', () => {
 
     const manager = createInterviewManager(ctx, config, { server });
 
-    // Wait for dashboard init
-    await new Promise((r) => setTimeout(r, 100));
-
     try {
       // Create interview (should trigger session registration)
       const output = { parts: [] as Array<{ type: string; text?: string }> };
@@ -471,9 +462,6 @@ describe('interview manager - session registration', () => {
     });
 
     const manager = createInterviewManager(ctx, config, { server });
-
-    // Wait for dashboard init
-    await new Promise((r) => setTimeout(r, 100));
 
     try {
       // Create interview
@@ -558,13 +546,7 @@ describe('interview manager - session registration', () => {
 
       createInterviewManager(dashboardCtx, config, { server });
 
-      // Wait for dashboard init
-      await new Promise((r) => setTimeout(r, 100));
-
       const clientManager = createInterviewManager(clientCtx, config);
-
-      // Wait for client init to connect to the dashboard
-      await new Promise((r) => setTimeout(r, 100));
 
       const output = { parts: [] as Array<{ type: string; text?: string }> };
       await clientManager.handleCommandExecuteBefore(
