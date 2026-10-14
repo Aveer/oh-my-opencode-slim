@@ -7,6 +7,7 @@ import {
   adaptPermissions,
   snapshotNativeAgentForRegistry,
 } from '../v2/adapters';
+import { compilePermissionPolicy } from '../v2/permissions';
 import type { V2PermissionRule } from '../v2/types';
 import { createAgents } from './index';
 import { buildResolvedAgentRegistry } from './registry';
@@ -2015,6 +2016,14 @@ describe('child permission payload stance tail', () => {
     effect: 'allow',
   };
 
+  /** The production evaluator (pattern-aware, findLast, default ask)
+   * over a compiled child payload — the existing `evaluateLast` helper
+   * cannot express pattern resources like `git add*`. */
+  function decideOf(rules: readonly V2PermissionRule[]) {
+    return compilePermissionPolicy({ baselineRules: [], hostRules: rules })
+      .decide;
+  }
+
   test('no-nested stance agent: trailing global */* allow cannot defeat subagent deny', () => {
     const runtime = runtimeFor({ disabled_agents: [] });
     const registry = build(runtime, {}, { hostFlavor: 'v2' });
@@ -2029,9 +2038,12 @@ describe('child permission payload stance tail', () => {
     expect(evaluateLast(payload, 'subagent', 'explorer')).toBe('allow');
 
     const compiled = registry.compileChildPermissions('fixer', payload);
+    const subagentTail = compiled
+      .slice(payload.length)
+      .filter((rule) => rule.action === 'subagent');
     expect(evaluateLast(compiled, 'subagent', 'explorer')).toBe('deny');
     expect(evaluateLast(compiled, 'subagent', 'librarian')).toBe('deny');
-    expect(compiled.slice(-1)).toEqual([
+    expect(subagentTail).toEqual([
       { action: 'subagent', resource: '*', effect: 'deny' },
     ]);
   });
@@ -2048,12 +2060,17 @@ describe('child permission payload stance tail', () => {
     expect(evaluateLast(payload, 'subagent', 'explorer')).toBe('allow');
 
     const compiled = registry.compileChildPermissions('explorer', payload);
+    const subagentTail = compiled
+      .slice(payload.length)
+      .filter((rule) => rule.action === 'subagent');
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('allow');
     expect(evaluateLast(compiled, 'subagent', 'explorer')).toBe('deny');
     expect(evaluateLast(compiled, 'subagent', 'librarian')).toBe('deny');
     // Deny first, observer allow last — findLast terminates on the allow for
-    // observer targets and on the deny for everything else.
-    expect(compiled.slice(-2)).toEqual([
+    // observer targets and on the deny for everything else. The deny-ceiling
+    // tail carries other declared denies too, so only the subagent rules of
+    // the tail are pinned here.
+    expect(subagentTail).toEqual([
       { action: 'subagent', resource: '*', effect: 'deny' },
       { action: 'subagent', resource: 'observer', effect: 'allow' },
     ]);
@@ -2070,8 +2087,12 @@ describe('child permission payload stance tail', () => {
       { action: 'subagent', resource: 'observer', effect: 'deny' },
     ];
     const compiled = registry.compileChildPermissions('explorer', payload);
-    // Deny ceiling still appended, but no observer grant follows it.
-    expect(compiled.slice(-1)).toEqual([
+    const subagentTail = compiled
+      .slice(payload.length)
+      .filter((rule) => rule.action === 'subagent');
+    // Deny ceiling still appended, but no observer grant follows it: the
+    // meet drops the grant against the host's explicit deny.
+    expect(subagentTail).toEqual([
       { action: 'subagent', resource: '*', effect: 'deny' },
     ]);
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('deny');
@@ -2086,9 +2107,15 @@ describe('child permission payload stance tail', () => {
     ];
     const compiled = registry.compileChildPermissions('explorer', payload);
     // The grant is downgraded to the host's ask — never escalated to allow.
-    expect(compiled.slice(-1)).toEqual([
-      { action: 'subagent', resource: 'observer', effect: 'ask' },
-    ]);
+    // The meet'd exception stays the last subagent rule of the tail.
+    const subagentTail = compiled
+      .slice(payload.length)
+      .filter((rule) => rule.action === 'subagent');
+    expect(subagentTail.at(-1)).toEqual({
+      action: 'subagent',
+      resource: 'observer',
+      effect: 'ask',
+    });
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('ask');
   });
 
@@ -2115,9 +2142,14 @@ describe('child permission payload stance tail', () => {
       { action: 'subagent', resource: 'observer', effect: 'allow' },
     ];
     const compiled = registry.compileChildPermissions('explorer', payload);
-    expect(compiled.slice(-1)).toEqual([
-      { action: 'subagent', resource: 'observer', effect: 'allow' },
-    ]);
+    const subagentTail = compiled
+      .slice(payload.length)
+      .filter((rule) => rule.action === 'subagent');
+    expect(subagentTail.at(-1)).toEqual({
+      action: 'subagent',
+      resource: 'observer',
+      effect: 'allow',
+    });
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('allow');
   });
 
@@ -2145,7 +2177,7 @@ describe('child permission payload stance tail', () => {
     expect(twice).toEqual(once);
   });
 
-  test('council task:"deny" stance gets the same tail treatment', () => {
+  test('council all-deny matrix gets the same ceiling treatment', () => {
     const runtime = runtimeFor({
       disabled_agents: [],
       council: CouncilConfigSchema.parse({
@@ -2158,10 +2190,23 @@ describe('child permission payload stance tail', () => {
       USER_GLOBAL_ALLOW,
     ];
     const compiled = registry.compileChildPermissions('council', payload);
-    expect(compiled.slice(-1)).toEqual([
-      { action: 'subagent', resource: '*', effect: 'deny' },
-    ]);
+    const tail = compiled.slice(payload.length);
+    // The whole deny ceiling rides: the trailing global allow admits nothing
+    // the matrix declared denied. The subagent deny survives among them.
+    expect(
+      tail.some(
+        (rule) =>
+          rule.action === 'subagent' &&
+          rule.resource === '*' &&
+          rule.effect === 'deny',
+      ),
+    ).toBe(true);
+    // No wildcard-action deny and no ask rule leaks into the tail.
+    expect(tail.some((rule) => rule.action === '*')).toBe(false);
+    expect(tail.some((rule) => rule.effect === 'ask')).toBe(false);
     expect(evaluateLast(compiled, 'subagent', 'anything')).toBe('deny');
+    expect(decideOf(compiled)('edit', 'src/index.ts')).toBe('deny');
+    expect(decideOf(compiled)('read', 'src/index.ts')).toBe('deny');
   });
 
   test('agents without a task stance get no tail: orchestrator payload passes through unchanged', () => {
@@ -2181,15 +2226,257 @@ describe('child permission payload stance tail', () => {
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('allow');
   });
 
-  test('is idempotent: a payload already ending with the stance tail is not duplicated', () => {
+  test('is idempotent: recompiling a tailed payload changes nothing', () => {
     const runtime = runtimeFor({ disabled_agents: [] });
     const registry = build(runtime, {}, { hostFlavor: 'v2' });
     const payload: V2PermissionRule[] = [
-      { action: 'read', resource: '*', effect: 'allow' },
-      { action: 'subagent', resource: '*', effect: 'deny' },
+      ...(registry.nativePolicies.fixer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
     ];
-    const compiled = registry.compileChildPermissions('fixer', payload);
-    expect(compiled).toEqual(payload);
+    const once = registry.compileChildPermissions('fixer', payload);
+    expect(once.length).toBeGreaterThan(payload.length);
+    const twice = registry.compileChildPermissions('fixer', once);
+    expect(twice).toEqual(once);
+  });
+
+  test('read-only factory matrix: the wildcard deny stays out, read tools survive, specific denies ride', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      council: CouncilConfigSchema.parse({
+        presets: { default: { alpha: { model: 'provider/council' } } },
+      }),
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies['councillor-alpha']?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    expect(payload.length).toBeGreaterThan(1);
+    const compiled = registry.compileChildPermissions(
+      'councillor-alpha',
+      payload,
+    );
+    const tail = compiled.slice(payload.length);
+    expect(tail.length).toBeGreaterThan(0);
+    // The `'*': 'deny'` base of the factory read-only matrix never replays:
+    // a trailing wildcard deny would swallow the allow exceptions behind it.
+    expect(tail.some((rule) => rule.action === '*')).toBe(false);
+    expect(tail.some((rule) => rule.effect === 'ask')).toBe(false);
+    // The specific mutating/delegation denies ride the ceiling.
+    for (const action of [
+      'edit',
+      'write',
+      'apply_patch',
+      'subagent',
+      'question',
+    ]) {
+      expect(
+        tail.some(
+          (rule) =>
+            rule.action === action &&
+            rule.resource === '*' &&
+            rule.effect === 'deny',
+        ),
+      ).toBe(true);
+    }
+    // read/glob/grep allows are not suppressed by the appended tail: the
+    // trailing global allow is still their last match.
+    expect(decideOf(compiled)('read', 'src/index.ts')).toBe('allow');
+    expect(decideOf(compiled)('glob', 'src/**/*.ts')).toBe('allow');
+    expect(decideOf(compiled)('grep', 'needle')).toBe('allow');
+    expect(decideOf(compiled)('edit', 'src/index.ts')).toBe('deny');
+  });
+
+  test('user preset shape: declared edit/write/apply_patch/task denies survive a trailing global allow', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: {
+          permission: {
+            edit: 'deny',
+            write: 'deny',
+            apply_patch: 'deny',
+            task: 'deny',
+            external_directory: 'allow',
+            bash: { 'git add*': 'deny', 'rm *': 'deny' },
+          },
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    // Incident shape: the user's trailing global allow defeats the declared
+    // denies when nothing replays them.
+    expect(evaluateLast(payload, 'edit', 'src/index.ts')).toBe('allow');
+    expect(evaluateLast(payload, 'subagent', 'explorer')).toBe('allow');
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    const decide = decideOf(compiled);
+    expect(decide('edit', 'src/index.ts')).toBe('deny');
+    expect(decide('write', 'src/index.ts')).toBe('deny');
+    expect(decide('apply_patch', 'src/index.ts')).toBe('deny');
+    expect(decide('subagent', 'explorer')).toBe('deny');
+  });
+
+  test('user preset shape: bash pattern denies apply, unrelated commands stay allowed', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: {
+          permission: {
+            edit: 'deny',
+            write: 'deny',
+            apply_patch: 'deny',
+            task: 'deny',
+            external_directory: 'allow',
+            bash: { 'git add*': 'deny', 'rm *': 'deny' },
+          },
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    const decide = decideOf(compiled);
+    expect(decide('bash', 'git add -A')).toBe('deny');
+    expect(decide('execute', 'git add -A')).toBe('deny');
+    expect(decide('bash', 'rm -rf /tmp/scratch')).toBe('deny');
+    expect(decide('bash', 'git log')).toBe('allow');
+  });
+
+  test('string shorthand deny: the wildcard-action deny never enters the tail', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: { explorer: { permission: 'deny' } },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    // The whole-map deny adapts to a single `action: '*'` deny — the
+    // default floor, never a ceiling. Nothing is invented from it.
+    expect(compiled.slice(payload.length)).toEqual([]);
+    expect(
+      compiled.slice(payload.length).some((rule) => rule.action === '*'),
+    ).toBe(false);
+  });
+
+  test('ask-only exception: a deny shadowed by an ask consent gate stays home', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: {
+          permission: {
+            edit: { 'src/generated/**': 'ask' },
+          },
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    const tail = compiled.slice(payload.length);
+    // The edit deny at the trailing global allow must not resurrect a
+    // wildcard deny that would kill the host's ask consent gate: no edit
+    // deny rides, no ask enters the tail.
+    expect(
+      tail.some((rule) => rule.action === 'edit' && rule.effect === 'deny'),
+    ).toBe(false);
+    expect(tail.some((rule) => rule.effect === 'ask')).toBe(false);
+  });
+
+  test('deny rides with its declared skill exceptions: granted skills stay usable, others stay denied', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        oracle: {
+          skills: ['simplify', 'requesting-code-review', 'ghost-skill'],
+        },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.oracle?.rules ?? []),
+      USER_GLOBAL_ALLOW,
+    ];
+    const compiled = registry.compileChildPermissions('oracle', payload);
+    const tail = compiled.slice(payload.length);
+    const denyIndex = tail.findIndex(
+      (rule) => rule.action === 'skill' && rule.resource === '*',
+    );
+    expect(denyIndex).toBeGreaterThanOrEqual(0);
+    // The declared grants ride behind the blanket deny in baseline order.
+    const allowIndexes = [
+      'simplify',
+      'requesting-code-review',
+      'ghost-skill',
+    ].map((name) =>
+      tail.findIndex(
+        (rule) =>
+          rule.action === 'skill' &&
+          rule.resource === name &&
+          rule.effect === 'allow',
+      ),
+    );
+    expect(allowIndexes.every((index) => index > denyIndex)).toBe(true);
+    // No wildcard-action deny leaks into the tail.
+    expect(tail.some((rule) => rule.action === '*')).toBe(false);
+    expect(decideOf(compiled)('skill', 'requesting-code-review')).toBe('allow');
+    expect(decideOf(compiled)('skill', 'simplify')).toBe('allow');
+    expect(decideOf(compiled)('skill', 'ghost-skill')).toBe('allow');
+    expect(decideOf(compiled)('skill', 'other-skill')).toBe('deny');
+  });
+  test('host deny drops a riding exception at meet: ghost grant withheld, blanket deny kept', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: { oracle: { skills: ['simplify', 'ghost-skill'] } },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const payload = [
+      ...(registry.nativePolicies.oracle?.rules ?? []),
+      // The host's finalized rules carry an explicit ghost restriction AFTER
+      // the plugin's own grant. The tail must not resurrect it.
+      { action: 'skill', resource: 'ghost-skill', effect: 'deny' as const },
+    ];
+    const compiled = registry.compileChildPermissions('oracle', payload);
+    const tail = compiled.slice(payload.length);
+    // The host's explicit deny meets the riding grant away...
+    expect(
+      tail.some(
+        (rule) =>
+          rule.action === 'skill' &&
+          rule.resource === 'ghost-skill' &&
+          rule.effect === 'allow',
+      ),
+    ).toBe(false);
+    // ...while the blanket deny and the unwithheld grant survive.
+    expect(
+      tail.some(
+        (rule) =>
+          rule.action === 'skill' &&
+          rule.resource === '*' &&
+          rule.effect === 'deny',
+      ),
+    ).toBe(true);
+    expect(
+      tail.some(
+        (rule) =>
+          rule.action === 'skill' &&
+          rule.resource === 'simplify' &&
+          rule.effect === 'allow',
+      ),
+    ).toBe(true);
+    expect(decideOf(compiled)('skill', 'ghost-skill')).toBe('deny');
   });
 
   test('marketplace child payloads keep subagent deny through ceilings (same path, no tail needed)', () => {
