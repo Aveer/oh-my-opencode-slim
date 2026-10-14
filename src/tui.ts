@@ -2172,7 +2172,7 @@ function buildPresetCommand(
   return {
     title: 'Switch preset',
     value: 'preset',
-    description: 'Switch agent presets at runtime (opens the preset picker)',
+    description: 'Switch agent presets at runtime',
     slash: { name: 'preset' },
     onSelect: () => {
       openPresetManager(api, directoryGetter(), snapshotRef);
