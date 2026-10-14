@@ -2420,8 +2420,8 @@ describe('marketplace agent customization', () => {
   test('replaces and appends marketplace prompts using project files', () => {
     withProject(
       {
-        [promptDir + '/market-agent.md']: 'Project base',
-        [promptDir + '/market-agent_append.md']: 'Project appendix',
+        [`${promptDir}/market-agent.md`]: 'Project base',
+        [`${promptDir}/market-agent_append.md`]: 'Project appendix',
       },
       (project) => {
         const registry = configured(
@@ -2438,8 +2438,8 @@ describe('marketplace agent customization', () => {
   test('inline prompts beat replacement files and keep appended text', () => {
     withProject(
       {
-        [promptDir + '/market-agent.md']: 'Ignored base',
-        [promptDir + '/market-agent_append.md']: 'Added instructions',
+        [`${promptDir}/market-agent.md`]: 'Ignored base',
+        [`${promptDir}/market-agent_append.md`]: 'Added instructions',
       },
       (project) => {
         const registry = configured(
@@ -2489,7 +2489,7 @@ describe('marketplace agent customization', () => {
   test('resolves preset append files without replacing package base', () => {
     withProject(
       {
-        [promptDir + '/team/market-agent_append.md']:
+        [`${promptDir}/team/market-agent_append.md`]:
           'Team-specific instructions',
       },
       (project) => {
@@ -2511,7 +2511,7 @@ describe('marketplace agent customization', () => {
 
   test('keeps local append instructions when a package prompt changes', () => {
     withProject(
-      { [promptDir + '/market-agent_append.md']: 'Local appendix' },
+      { [`${promptDir}/market-agent_append.md`]: 'Local appendix' },
       (project) => {
         const options = { projectDirectory: project, hostFlavor: 'v2' };
         const host = mcpHost('host-mcp');
@@ -2557,7 +2557,7 @@ describe('marketplace agent customization', () => {
 
   test('extended package prompts preserve their inherited role baseline', () => {
     withProject(
-      { [promptDir + '/market-agent_append.md']: 'Local extension' },
+      { [`${promptDir}/market-agent_append.md`]: 'Local extension' },
       (project) => {
         const registry = configured(
           {},
@@ -2572,7 +2572,8 @@ describe('marketplace agent customization', () => {
             hostFlavor: 'v2',
           },
         );
-        const prompt = registry.finalAgentConfig['market-agent'].prompt as string;
+        const prompt = registry.finalAgentConfig['market-agent']
+          .prompt as string;
         expect(prompt).toContain('Package prompt');
         expect(prompt.endsWith('\n\nLocal extension')).toBe(true);
         expect(prompt.split('Local extension').length - 1).toBe(1);
