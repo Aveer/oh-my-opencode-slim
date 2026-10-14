@@ -1273,10 +1273,26 @@ test('integration: late acknowledgement and transport success for A cannot consu
       info: {
         id: 'consume-B',
         sessionID: 'parent',
-        role: 'assistant',
+        role: 'user',
         agent: 'orchestrator',
       },
       parts: [{ type: 'text', text: 'received B' }],
+    });
+    await hook['experimental.chat.messages.transform']({}, { messages });
+    await hook.injectBackgroundJobBoard({}, { messages });
+    // Change-only: the stop surfaces on the next user-side tail (assistant
+    // tails neither place nor register), so consumption needs one more
+    // shape advance. The old S1 registration is stale (revision moved to
+    // B) and is dropped without acknowledging.
+    expect(acknowledge).not.toHaveBeenCalled();
+    messages.push({
+      info: {
+        id: 'consume-B-2',
+        sessionID: 'parent',
+        role: 'assistant',
+        agent: 'orchestrator',
+      },
+      parts: [{ type: 'text', text: 'acknowledged B' }],
     });
     await hook['experimental.chat.messages.transform']({}, { messages });
     await hook.injectBackgroundJobBoard({}, { messages });

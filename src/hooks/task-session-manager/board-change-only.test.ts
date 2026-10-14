@@ -118,4 +118,47 @@ describe('change-only board digest', () => {
     const recreated = await inject(state, [user('u1')]);
     expect(boardParts(recreated)).toHaveLength(1);
   });
+
+  test('(d) an assistant-tail skip registers nothing: the stop stays pending for the recovery wake', async () => {
+    // Greptile P1 (5dd58fb review): registration used to run BEFORE the
+    // placement decision, so an assistant-tail turn (A5: nothing placed)
+    // recorded the terminal jobs as consumed. The next shape change then
+    // reconciled them without the stop ever being displayed, and the
+    // queued stopped-job recovery wake failed its terminalUnreconciled
+    // check — the parent could miss the stop entirely.
+    const { board, state } = setup();
+    await inject(state, [user('u1')]);
+
+    const assistant = {
+      info: { role: 'assistant', agent: 'orchestrator', sessionID: SESSION },
+      parts: [{ type: 'text', text: 'working on it' }],
+    };
+    board.updateStatus({
+      taskID: 'child-1',
+      state: 'stopped',
+      resultSummary: 'crashed',
+    });
+    const skipped = await inject(state, [user('u1'), assistant]);
+    expect(boardParts(skipped)).toHaveLength(1); // frozen replay only
+
+    // Nothing registered: the stop is still unreconciled and no entry
+    // awaits shape-change consumption.
+    expect(state.terminalJobsInjectedByParent?.has(SESSION)).toBe(false);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'stopped',
+      terminalUnreconciled: true,
+    });
+
+    // The deferred render lands on the next user tail — and only now is
+    // the stop registered for prompt-shape consumption.
+    const surfaced = await inject(state, [user('u1'), assistant, user('u2')]);
+    const tailPart = surfaced.at(-1)?.parts.at(-1);
+    expect(tailPart?.metadata?.[BACKGROUND_JOB_BOARD_METADATA_KEY]).toBe(true);
+    expect(tailPart?.text).toContain('stopped');
+    expect(state.terminalJobsInjectedByParent?.has(SESSION)).toBe(true);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'stopped',
+      terminalUnreconciled: true,
+    });
+  });
 });

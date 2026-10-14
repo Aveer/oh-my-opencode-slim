@@ -1790,18 +1790,6 @@ function injectLatestBoard(state: InjectionState, messages: unknown[]): void {
     return;
   }
 
-  // Registration runs every eligible turn (unchanged turns included): a
-  // same-text relaunch re-pins the delivery shape, so the next shape change
-  // retires the newest terminal run even though no new board bytes appear.
-  if (boardMeta.terminalUnreconciledTaskIDs.length > 0) {
-    rememberInjectedTerminalJobs(
-      state,
-      sessionID,
-      boardMeta.terminalUnreconciledTaskIDs,
-      shapeKey ?? promptShapeKey(realMessages(messages, state.metadataKey)),
-    );
-  }
-
   // Change-only digest: a fresh tail board is placed only when the rendered
   // text differs from the last board injected for this parent AND that board
   // is still visible in this payload. A retained (user-anchor) board is
@@ -1878,7 +1866,23 @@ function injectLatestBoard(state: InjectionState, messages: unknown[]): void {
     // user-role after conversion), where the placement IS retained.
     return;
   }
-  // A fresh board went out: pin the digest for this parent.
+  // A fresh board went out: only NOW are its terminal facts parent-visible,
+  // so only now are they registered for prompt-shape consumption. (A5
+  // registration-before-placement let an assistant-tail skip mark a stopped
+  // job consumed without it ever being shown — and starved the recovery
+  // wake's terminalUnreconciled check, Greptile P1.) The unchanged early
+  // return above needs no registration either: identical text cannot hide a
+  // new terminal state (a state change always rewrites the board), so every
+  // terminal-unreconciled entry it shows was registered at its placement.
+  if (boardMeta.terminalUnreconciledTaskIDs.length > 0) {
+    rememberInjectedTerminalJobs(
+      state,
+      sessionID,
+      boardMeta.terminalUnreconciledTaskIDs,
+      shapeKey ?? promptShapeKey(realMessages(messages, state.metadataKey)),
+    );
+  }
+  // Pin the digest for this parent.
   state.lastInjectedBoardTextByParent ??= new Map();
   state.lastInjectedBoardTextByParent.set(sessionID, reminder);
 }

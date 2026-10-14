@@ -5238,10 +5238,8 @@ describe('task-session-manager hook', () => {
     ).length;
 
     await transformMessages(hook, surfacedRequest);
-    // Change-only: an assistant tail renders nothing — the board defers to
-    // the next user-side tail. This test pins the RECONCILIATION semantics
-    // across compaction (board surface behavior is covered by the
-    // user-tail tests above).
+    // Change-only: an assistant tail renders nothing and registers nothing
+    // — the completion stays pending for the next user-side tail.
     expect(board.get('child-1')).toMatchObject({
       state: 'completed',
       terminalUnreconciled: true,
@@ -5279,6 +5277,59 @@ describe('task-session-manager hook', () => {
 
     await transformMessages(hook, compactedWithNewTurn);
 
+    // Still an assistant tail: still deferred, nothing consumed.
+    expect(board.get('child-1')).toMatchObject({
+      state: 'completed',
+      terminalUnreconciled: true,
+    });
+
+    // The compaction preserved message and part counts, so when the next
+    // real user turn arrives the board renders on it and registers the
+    // completion; the following shape change consumes it.
+    const resumed = {
+      messages: [
+        ...compactedWithNewTurn.messages,
+        {
+          info: {
+            id: 'user-3',
+            role: 'user',
+            agent: 'orchestrator',
+            sessionID: 'parent-1',
+          },
+          parts: [{ type: 'text', text: 'user is back' }],
+        },
+      ],
+    };
+    await transformMessages(hook, resumed);
+    expect(board.get('child-1')).toMatchObject({
+      state: 'completed',
+      terminalUnreconciled: true,
+    });
+
+    const after = {
+      messages: [
+        ...resumed.messages,
+        {
+          info: {
+            id: 'assistant-4',
+            role: 'assistant',
+            agent: 'orchestrator',
+            sessionID: 'parent-1',
+          },
+          parts: [{ type: 'text', text: 'acknowledged the result' }],
+        },
+        {
+          info: {
+            id: 'user-5',
+            role: 'user',
+            agent: 'orchestrator',
+            sessionID: 'parent-1',
+          },
+          parts: [{ type: 'text', text: 'continue' }],
+        },
+      ],
+    };
+    await transformMessages(hook, after);
     expect(board.get('child-1')).toMatchObject({
       state: 'reconciled',
       terminalUnreconciled: false,
