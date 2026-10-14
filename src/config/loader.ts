@@ -780,6 +780,7 @@ export function loadPluginConfig(
   // Object.hasOwn distinguishes an explicit key from an applied default.
   // periodicWakeEnabled needs no derivation here: v2 disables the periodic
   // evaluation structurally where the wake scheduler is wired (src/index.ts).
+  // An explicit true warns the same way, so the override is never silent.
   if (options?.hostFlavor === 'v2' && !options?.silent) {
     const backgroundJobs = (config.backgroundJobs ?? {}) as Record<
       string,
@@ -791,6 +792,17 @@ export function loadPluginConfig(
     ) {
       console.warn(
         '[oh-my-opencode-slim] backgroundJobs.boardInjection is ignored on OpenCode v2 hosts: the native background notifier and inbox delivery replace the passive board. Run oh-my-opencode-slim doctor for details.',
+      );
+    }
+    const orchestratorWake = backgroundJobs.orchestratorWake;
+    if (
+      orchestratorWake !== null &&
+      typeof orchestratorWake === 'object' &&
+      Object.hasOwn(orchestratorWake, 'periodicWakeEnabled') &&
+      (orchestratorWake as Record<string, unknown>).periodicWakeEnabled === true
+    ) {
+      console.warn(
+        '[oh-my-opencode-slim] backgroundJobs.orchestratorWake.periodicWakeEnabled is ignored on OpenCode v2 hosts: the native background notifier delivers terminal publications to an idle parent, so the periodic idle evaluation is off. Run oh-my-opencode-slim doctor for details.',
       );
     }
   }

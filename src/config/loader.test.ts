@@ -1186,6 +1186,57 @@ describe('onWarning callback', () => {
     ).toHaveLength(0);
   });
 
+  test('v2 warns only on an explicit periodicWakeEnabled true; unset and v1 stay silent', () => {
+    // Mirrors the boardInjection warning: v2 forces the periodic wake off
+    // where the scheduler is wired, so an explicit true must not be lost
+    // silently. Pre-parse, so the schema default never warns.
+    const mkProject = (name: string, backgroundJobs: unknown) => {
+      const dir = path.join(tempDir, name);
+      const configDir = path.join(dir, '.opencode');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'oh-my-opencode-slim.json'),
+        JSON.stringify({ backgroundJobs }),
+      );
+      return dir;
+    };
+    const capture = (dir: string, options?: { hostFlavor?: string }) => {
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (message: string) => warnings.push(message);
+      try {
+        loadPluginConfig(dir, options);
+      } finally {
+        console.warn = originalWarn;
+      }
+      return warnings.filter((message) =>
+        message.includes('periodicWakeEnabled'),
+      );
+    };
+
+    const explicitTrue = mkProject('wake-explicit', {
+      orchestratorWake: { periodicWakeEnabled: true },
+    });
+    const warnings = capture(explicitTrue, { hostFlavor: 'v2' });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(
+      'backgroundJobs.orchestratorWake.periodicWakeEnabled is ignored on OpenCode v2',
+    );
+
+    // An explicit false already matches the v2 behaviour: nothing to warn.
+    const explicitFalse = mkProject('wake-false', {
+      orchestratorWake: { periodicWakeEnabled: false },
+    });
+    expect(capture(explicitFalse, { hostFlavor: 'v2' })).toHaveLength(0);
+
+    const unset = mkProject('wake-unset', {
+      orchestratorWake: { intervalMs: 60_000 },
+    });
+    expect(capture(unset, { hostFlavor: 'v2' })).toHaveLength(0);
+
+    expect(capture(explicitTrue)).toHaveLength(0);
+  });
+
   test('no options object does not break loadPluginConfig', () => {
     const projectDir = path.join(tempDir, 'project');
     const projectConfigDir = path.join(projectDir, '.opencode');

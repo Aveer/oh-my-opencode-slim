@@ -565,7 +565,7 @@ channels would duplicate that delivery, so on v2 they are **structurally off**
   explicit `true` is ignored with a load-time warning.
 - The periodic idle evaluation described above never runs.
   `backgroundJobs.orchestratorWake.periodicWakeEnabled` is honored on v1
-  only.
+  only: on v2 an explicit `true` is ignored with a load-time warning.
 
 Event-driven wakes keep working on both flavors: stopped-job recovery, later
 terminal publications of the same run (for example a child that
