@@ -1369,6 +1369,9 @@ await new Promise(() => {});`,
       expect(() => store.install(bundle())).toThrow(MarketplaceBusyError);
       worker.kill();
       await worker.exited;
+      // EXCEPTION (ts-no-test-timers): cross-process lease recovery —
+      // waits out the lock's staleMs TTL (100ms above) after the worker
+      // dies; the store exposes no clock seam to drive deterministically.
       await Bun.sleep(150);
       expect(store.list()).toEqual([]);
       expect(store.install(bundle()).manifest.id).toBe('community/example');

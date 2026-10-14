@@ -1011,6 +1011,9 @@ writeFileSync(donePath, 'done');`,
         }
         await Bun.sleep(10);
       }
+      // EXCEPTION (ts-no-test-timers): bounded negative window — a
+      // cross-process worker effect has no event to await; the sleep IS
+      // the assertion's "long enough for it to have happened" bound.
       await Bun.sleep(100);
       expect(existsSync(join(fixture.root, 'docs-researcher.done'))).toBe(
         false,
@@ -1094,6 +1097,8 @@ try {
         }
         await Bun.sleep(10);
       }
+      // EXCEPTION (ts-no-test-timers): bounded negative window for a
+      // cross-process worker effect (see the earlier note).
       await Bun.sleep(100);
       expect(existsSync(showPath)).toBe(false);
 
