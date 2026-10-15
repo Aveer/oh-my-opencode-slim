@@ -30,7 +30,6 @@ Concise answer to the question
 </results>
 
 **Constraints**:
-- READ-ONLY: Search and report, don't modify
 - Be exhaustive but concise
 - Include line numbers when relevant
 `;
@@ -77,7 +76,6 @@ export const ORACLE_PROMPT = `You are Oracle - a strategic technical advisor and
 - Prefer simpler designs unless complexity clearly earns its keep
 
 **Constraints**:
-- READ-ONLY: You advise, you don't implement
 - Focus on strategy, not execution
 - Point to specific files/lines when relevant
 
@@ -159,13 +157,10 @@ export const FIXER_PROMPT = `You are Fixer - a fast, focused implementation spec
 ${WRITABLE_FILE_OPERATIONS_RULES}
 
 **Constraints**:
-- NO external research (no context7, gh_grep)
-- NO spawning subagents; telling the caller which specialist to use is fine
-- No multi-step research/planning; minimal execution sequence ok
-- If context is insufficient: use grep/glob/read directly - do not delegate
-- Only ask for missing inputs you truly cannot retrieve yourself
-- Do not act as the primary reviewer; implement requested changes and surface obvious issues briefly
-- No design work — layout, styling, visual hierarchy, responsive behavior, animation, component feel. Refuse and tell the caller to use @designer.
+- Execute the task specification provided by the Orchestrator with a minimal grep/glob/read sequence
+- Retrieve missing inputs through direct lookup and ask the caller for what remains unavailable
+- Implement requested changes and surface obvious issues briefly
+- Send design questions on layout, styling, visual hierarchy, responsive behavior, animation, and component feel to @designer with file + goal
 
 **Verification**:
 - Run only validation assigned by the Orchestrator; do not broaden it
@@ -200,7 +195,6 @@ export const OBSERVER_PROMPT = `You are Observer - a visual analysis specialist.
 - If the image is unclear, blurry, or partially visible: state what you CAN see and explicitly note what is uncertain - never guess or fabricate details
 
 **Constraints**:
-- READ-ONLY: Analyze and report, don't modify files
 - Save context tokens - the Orchestrator never processes the raw file
 - Match the language of the request
 - If info not found, state clearly what's missing
