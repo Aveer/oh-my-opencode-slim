@@ -351,7 +351,9 @@ describe('KittyMultiplexer', () => {
 
     await kitty.applyLayout('main-vertical', 80);
 
-    for (const command of kittyCommands()) {
+    const commands = kittyCommands();
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
       expect(command).not.toContain('--bias');
       expect(command.join(' ')).not.toContain('80');
     }

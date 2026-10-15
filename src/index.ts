@@ -3106,14 +3106,14 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
             ? finalizedOrchestrator.prompt
             : typeof orchestratorDef?.config?.prompt === 'string'
               ? orchestratorDef.config.prompt
-              : buildOrchestratorPrompt(
-                  runtime.disabledAgents,
-                  undefined,
-                  true,
-                  true,
+              : buildOrchestratorPrompt({
+                  disabledAgents: runtime.disabledAgents,
+                  waitForUser: !runtime.disabledTools.includes('wait_for_user'),
+                  wakeScheduler:
+                    runtime.backgroundJobs.orchestratorWake.enabled,
                   hostFlavor,
-                  runtime.backgroundJobs.boardInjection,
-                );
+                  routingBlock: runtime.routingBlock,
+                });
         // Dedup by the EFFECTIVE prompt, not by default-prompt markers:
         // a custom replacement without `<Role>` previously slipped past
         // the marker check and was appended twice (P + host + P).

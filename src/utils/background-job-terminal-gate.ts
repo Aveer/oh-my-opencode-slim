@@ -124,20 +124,30 @@ export function consumeTerminalCommitToken(
   );
 }
 
+/** Platform timer handle; fake harnesses may return bare numeric ids. */
+type TimerHandle = Timer;
+
+interface TimerFns {
+  setTimeout: (callback: () => void, delay: number) => TimerHandle;
+  clearTimeout: (timer: TimerHandle) => void;
+}
+
 export function raceEvidenceDeadline<T>(
   promise: Promise<T>,
   timeoutMs: number,
+  timers?: TimerFns,
 ): Promise<T | undefined> {
   const settled = promise.catch(() => undefined);
   if (timeoutMs <= 0) return settled;
-  let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([
-    settled,
-    new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), timeoutMs);
-      timer.unref?.();
-    }),
-  ]).finally(() => clearTimeout(timer));
+  const setTimer =
+    timers?.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+  const clearTimer = timers?.clearTimeout ?? ((timer) => clearTimeout(timer));
+  const deadline = Promise.withResolvers<undefined>();
+  const timer = setTimer(() => deadline.resolve(undefined), timeoutMs);
+  timer.unref?.();
+  return Promise.race([settled, deadline.promise]).finally(() =>
+    clearTimer(timer),
+  );
 }
 
 export function runtimeObservationFromSnapshot(
@@ -174,7 +184,7 @@ interface Observation {
   quiescentSince?: number;
   candidate?: { signal: TerminalSignal; token: ObservationToken };
   retries: number;
-  timer?: ReturnType<typeof setTimeout>;
+  timer?: TimerHandle;
 }
 
 type ReadResult =
@@ -380,9 +390,15 @@ export function createBackgroundJobTerminalGate(options: {
   readTimeoutMs?: number;
   maxEvidenceRetries?: number;
   now?: () => number;
+  /** Test seam: defaults to the platform timers. */
+  setTimeout?: (callback: () => void, delay: number) => TimerHandle;
+  clearTimeout?: (timer: TimerHandle) => void;
 }): BackgroundJobTerminalGate {
   const board = options.backgroundJobBoard;
   const now = options.now ?? Date.now;
+  const setTimer =
+    options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+  const clearTimer = options.clearTimeout ?? ((timer) => clearTimeout(timer));
   const graceMs = options.graceMs ?? STOP_CONFIRMATION_GRACE_MS;
   const timeoutMs = options.readTimeoutMs ?? DEFAULT_EVIDENCE_READ_TIMEOUT_MS;
   const observations = new Map<string, Observation>();
@@ -403,7 +419,7 @@ export function createBackgroundJobTerminalGate(options: {
     if (disposed || record?.generation !== run.generation) return;
     let value = observations.get(run.taskID);
     if (!value || value.generation !== run.generation) {
-      if (value?.timer) clearTimeout(value.timer);
+      if (value?.timer) clearTimer(value.timer);
       value = {
         generation: run.generation,
         activityRevision: record.activityRevision,
@@ -413,7 +429,7 @@ export function createBackgroundJobTerminalGate(options: {
       observations.set(run.taskID, value);
     }
     if (value.activityRevision !== record.activityRevision) {
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value = {
         generation: run.generation,
         activityRevision: record.activityRevision,
@@ -486,7 +502,7 @@ export function createBackgroundJobTerminalGate(options: {
       value.retries <= (options.maxEvidenceRetries ?? 3) &&
       board.get(run.taskID)?.state === 'running'
     ) {
-      value.timer = setTimeout(
+      value.timer = setTimer(
         () => {
           value.timer = undefined;
           if (observation(run) !== value) return;
@@ -571,7 +587,7 @@ export function createBackgroundJobTerminalGate(options: {
       latest.state === 'running'
     )
       return { kind: 'stale' };
-    if (value.timer) clearTimeout(value.timer);
+    if (value.timer) clearTimer(value.timer);
     value.timer = undefined;
     value.candidate = undefined;
     options.onTerminal?.(record);
@@ -654,7 +670,7 @@ export function createBackgroundJobTerminalGate(options: {
       // Ambiguous busy/retry is live activity: drop held candidates.
       value.candidate = undefined;
       value.idleCandidate = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       return deferred(token);
     }
@@ -674,7 +690,7 @@ export function createBackgroundJobTerminalGate(options: {
       value.retries = 0;
       value.candidate = undefined;
       value.idleCandidate = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       value.runtime = runtime;
       const record = board.markRunningFromLiveSession(
@@ -708,7 +724,7 @@ export function createBackgroundJobTerminalGate(options: {
       // Unknown invalidates open evidence, but never replenishes retries.
       // inspect accounts for the failed attempt, including missing APIs.
       value.quiescentSince = undefined;
-      if (value.timer) clearTimeout(value.timer);
+      if (value.timer) clearTimer(value.timer);
       value.timer = undefined;
       return deferred(
         token,
@@ -794,7 +810,10 @@ export function createBackgroundJobTerminalGate(options: {
     }
     return {
       kind: 'ready',
-      value: await raceEvidenceDeadline(entry.underlying, timeoutMs),
+      value: await raceEvidenceDeadline(entry.underlying, timeoutMs, {
+        setTimeout: setTimer,
+        clearTimeout: clearTimer,
+      }),
     };
   }
 
@@ -1342,7 +1361,7 @@ export function createBackgroundJobTerminalGate(options: {
       disposed = true;
       authorizedByGate.delete(gate);
       for (const value of observations.values())
-        if (value.timer) clearTimeout(value.timer);
+        if (value.timer) clearTimer(value.timer);
       observations.clear();
       inFlight.clear();
     },

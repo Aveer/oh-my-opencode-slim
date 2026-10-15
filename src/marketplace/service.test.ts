@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fsModule from 'node:fs';
 import {
   existsSync,
@@ -21,6 +21,23 @@ import {
 import type { MarketplaceRegistryDownload } from './registry-client.js';
 import type { MarketplacePackageBundle } from './schemas.js';
 import { MarketplaceService } from './service.js';
+
+const tempDirs: string[] = [];
+const originalConfigHome = process.env.XDG_CONFIG_HOME;
+
+afterEach(() => {
+  if (originalConfigHome === undefined) {
+    delete process.env.XDG_CONFIG_HOME;
+  } else {
+    process.env.XDG_CONFIG_HOME = originalConfigHome;
+  }
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 function bundle(
   version = '1.0.0',
@@ -55,7 +72,9 @@ function bundle(
 }
 
 function tempRoot(): string {
-  return mkdtempSync(join(tmpdir(), 'marketplace-service-'));
+  const dir = mkdtempSync(join(tmpdir(), 'marketplace-service-'));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function deferred<T>() {

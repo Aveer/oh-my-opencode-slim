@@ -70,21 +70,21 @@ describe('providers', () => {
     expect((config.presets as any).openai).toBeDefined();
     const agents = (config.presets as any)['opencode-go'];
     expect(agents).toBeDefined();
-    expect(agents.orchestrator.model).toBe('opencode-go/minimax-m3');
-    expect(agents.orchestrator.variant).toBe('thinking');
-    expect(agents.oracle.model).toBe('opencode-go/qwen3.7-max');
-    expect(agents.oracle.variant).toBe('max');
+    expect(agents).toMatchObject({
+      orchestrator: { model: 'opencode-go/minimax-m3', variant: 'thinking' },
+      oracle: { model: 'opencode-go/qwen3.7-max', variant: 'max' },
+      librarian: {
+        model: 'opencode-go/deepseek-v4-flash',
+        variant: 'high',
+        mcps: ['context7', 'gh_grep'],
+      },
+      explorer: { model: 'opencode-go/deepseek-v4-flash', variant: 'high' },
+      designer: { model: 'opencode-go/kimi-k2.7-code' },
+      fixer: { model: 'opencode-go/deepseek-v4-flash', variant: 'high' },
+      observer: { model: 'opencode-go/mimo-v2.5' },
+    });
     expect(agents.council).toBeUndefined();
-    expect(agents.librarian.model).toBe('opencode-go/deepseek-v4-flash');
-    expect(agents.librarian.variant).toBe('high');
-    expect(agents.librarian.mcps).toEqual(['context7', 'gh_grep']);
-    expect(agents.explorer.model).toBe('opencode-go/deepseek-v4-flash');
-    expect(agents.explorer.variant).toBe('high');
-    expect(agents.designer.model).toBe('opencode-go/kimi-k2.7-code');
     expect(agents.designer.variant).toBeUndefined();
-    expect(agents.fixer.model).toBe('opencode-go/deepseek-v4-flash');
-    expect(agents.fixer.variant).toBe('high');
-    expect(agents.observer.model).toBe('opencode-go/mimo-v2.5');
     expect(agents.observer.variant).toBeUndefined();
   });
 

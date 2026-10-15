@@ -350,59 +350,31 @@ describe('marketplace contract routing export', () => {
     });
     const invalidVersion = 'not-semver';
 
-    expect(() =>
-      MarketplaceRegistryIndexSchema.safeParse({
-        schemaVersion: 3,
-        entries: [
-          {
-            ...v2Entry,
-            version: invalidVersion,
-            artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
-            summary: { ...v2Entry.summary, version: invalidVersion },
-          },
-        ],
-      }),
-    ).not.toThrow();
-    expect(
-      MarketplaceRegistryIndexSchema.safeParse({
-        schemaVersion: 3,
-        entries: [
-          {
-            ...v2Entry,
-            version: invalidVersion,
-            artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
-            summary: { ...v2Entry.summary, version: invalidVersion },
-          },
-        ],
-      }).success,
-    ).toBe(false);
+    const v2Result = MarketplaceRegistryIndexSchema.safeParse({
+      schemaVersion: 3,
+      entries: [
+        {
+          ...v2Entry,
+          version: invalidVersion,
+          artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
+          summary: { ...v2Entry.summary, version: invalidVersion },
+        },
+      ],
+    });
+    expect(v2Result.success).toBe(false);
 
-    expect(() =>
-      MarketplaceRegistryIndexV3Schema.safeParse({
-        schemaVersion: 3,
-        entries: [
-          {
-            ...v3Entry,
-            version: invalidVersion,
-            artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
-            summary: { ...v3Entry.summary, version: invalidVersion },
-          },
-        ],
-      }),
-    ).not.toThrow();
-    expect(
-      MarketplaceRegistryIndexV3Schema.safeParse({
-        schemaVersion: 3,
-        entries: [
-          {
-            ...v3Entry,
-            version: invalidVersion,
-            artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
-            summary: { ...v3Entry.summary, version: invalidVersion },
-          },
-        ],
-      }).success,
-    ).toBe(false);
+    const v3Result = MarketplaceRegistryIndexV3Schema.safeParse({
+      schemaVersion: 3,
+      entries: [
+        {
+          ...v3Entry,
+          version: invalidVersion,
+          artifactPath: `artifacts/community/contract-agent/${invalidVersion}.json`,
+          summary: { ...v3Entry.summary, version: invalidVersion },
+        },
+      ],
+    });
+    expect(v3Result.success).toBe(false);
   });
 
   test('entry validators reject malformed digests and inconsistent identities', () => {

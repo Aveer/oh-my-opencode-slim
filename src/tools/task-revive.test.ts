@@ -496,7 +496,7 @@ describe('task_revive tool', () => {
       const timeout = [...timers.values()].find(
         (timer) => timer.delay === 10_000,
       );
-      expect(timeout).toBeDefined();
+      expect(timeout?.delay).toBe(10_000);
       timeout?.callback();
       await flush();
       try {
@@ -566,7 +566,7 @@ describe('task_revive tool', () => {
       state: 'running',
     });
     const lease = board.acquireRelaunchLease('ses_1', 2);
-    expect(lease).toBeDefined();
+    expect(lease?.kind).toBe('relaunch');
     if (lease) board.releaseLease(lease);
   });
 
@@ -747,7 +747,7 @@ describe('task_revive tool', () => {
         taskRevive.execute({ task_id: 'ses_1', prompt: 'continue' }, context),
       ).rejects.toThrow(/baseline.*deadline/i);
       const replacement = board.acquireRelaunchLease('ses_1', 1);
-      expect(replacement).toBeDefined();
+      expect(replacement?.kind).toBe('relaunch');
       if (!replacement) throw new Error('missing replacement lease');
       if (settlement === 'resolve') baseline.resolve('late-baseline');
       else baseline.reject(new Error('late read failure'));
@@ -825,7 +825,7 @@ describe('task_revive tool', () => {
         'ses_1',
         board.get('ses_1')?.generation ?? -1,
       );
-      expect(reLease).toBeDefined();
+      expect(reLease?.kind).toBe('relaunch');
       if (reLease) board.releaseLease(reLease);
     },
   );
@@ -849,7 +849,7 @@ describe('task_revive tool', () => {
       generation: 1,
     });
     const reLease = board.acquireRelaunchLease('ses_1', 1);
-    expect(reLease).toBeDefined();
+    expect(reLease?.kind).toBe('relaunch');
     if (reLease) board.releaseLease(reLease);
   });
 
@@ -945,7 +945,7 @@ describe('task_revive tool', () => {
       ).rejects.toThrow(`revive failed: ${error.message}`);
       expect(promptAsync).toHaveBeenCalledTimes(1);
       const lease = board.acquireRelaunchLease('ses_1', 1);
-      expect(lease).toBeDefined();
+      expect(lease?.kind).toBe('relaunch');
       if (lease) board.releaseLease(lease);
       expect(board.get('ses_1')).toMatchObject({
         generation: 1,
@@ -1187,7 +1187,7 @@ describe('task_revive tool', () => {
         state: 'running',
       });
       const lease = board.acquireRelaunchLease('ses_1', 2);
-      expect(lease).toBeDefined();
+      expect(lease?.kind).toBe('relaunch');
       if (lease) board.releaseLease(lease);
       expect(log).not.toHaveBeenCalled();
     },
@@ -1325,7 +1325,7 @@ describe('task_revive tool', () => {
       'ses_1',
       board.get('ses_1')?.generation ?? -1,
     );
-    expect(available).toBeDefined();
+    expect(available?.kind).toBe('relaunch');
     if (available) board.releaseLease(available);
   });
 
@@ -1364,7 +1364,7 @@ describe('task_revive tool', () => {
       }
       await probing.promise;
       const lease = board.acquireRelaunchLease('ses_1', 2);
-      expect(lease).toBeDefined();
+      expect(lease?.kind).toBe('relaunch');
       if (lease) board.releaseLease(lease);
       if (timing === 'superseded') {
         const replacement = String(

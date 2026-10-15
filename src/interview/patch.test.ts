@@ -277,25 +277,52 @@ describe('document status updates', () => {
     const body = '\n# Custom body\n\nDo not rewrite this.\n';
     await fs.writeFile(record.markdownPath, frontmatter + body, 'utf8');
 
+    const expectedComplete =
+      [
+        '---',
+        'title: Custom title',
+        'owner: custom-owner',
+        'tags: [one, two]',
+        'date_created: 2026-10-07',
+        'status: complete',
+        'custom: preserved',
+        '---',
+      ].join('\n') + body;
+
     const complete = await markInterviewDocumentComplete(record);
-    expect(complete).toBe(
-      frontmatter.replace('status: active', 'status: complete') + body,
-    );
+    expect(complete).toBe(expectedComplete);
+
+    const expectedIncomplete =
+      [
+        '---',
+        'title: Custom title',
+        'owner: custom-owner',
+        'tags: [one, two]',
+        'date_created: 2026-10-07',
+        'custom: preserved',
+        '---',
+      ].join('\n') + body;
+
     const incomplete = await markInterviewDocumentIncomplete(record);
-    expect(incomplete).toBe(frontmatter.replace('status: active\n', '') + body);
+    expect(incomplete).toBe(expectedIncomplete);
     expect(incomplete).not.toContain('status:');
 
-    await fs.writeFile(
-      record.markdownPath,
-      frontmatter.replace('status: active\n', '') + body,
-      'utf8',
-    );
+    await fs.writeFile(record.markdownPath, expectedIncomplete, 'utf8');
+
+    const expectedAdded =
+      [
+        '---',
+        'title: Custom title',
+        'owner: custom-owner',
+        'tags: [one, two]',
+        'date_created: 2026-10-07',
+        'custom: preserved',
+        'status: complete',
+        '---',
+      ].join('\n') + body;
+
     const added = await markInterviewDocumentComplete(record);
-    expect(added).toBe(
-      frontmatter
-        .replace('status: active\n', '')
-        .replace('\n---', '\nstatus: complete\n---') + body,
-    );
+    expect(added).toBe(expectedAdded);
     await fs.rm(directory, { recursive: true, force: true });
   });
 });

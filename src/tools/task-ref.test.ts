@@ -97,9 +97,9 @@ describe('task-ref', () => {
     const toJSONSchema = (
       z as unknown as { toJSONSchema?: (schema: unknown) => unknown }
     ).toJSONSchema;
-    if (typeof toJSONSchema !== 'function') return;
+    expect(typeof toJSONSchema).toBe('function');
     for (const { def } of v2ControlTools()) {
-      const json = toJSONSchema(hostShape(def)) as { required?: string[] };
+      const json = toJSONSchema?.(hostShape(def)) as { required?: string[] };
       expect(json.required ?? []).not.toContain('sessionID');
     }
   });
@@ -118,10 +118,9 @@ describe('task-ref', () => {
       const toJSONSchema = (
         z as unknown as { toJSONSchema?: (s: unknown) => unknown }
       ).toJSONSchema;
-      if (typeof toJSONSchema === 'function') {
-        const json = toJSONSchema(schema) as { required?: string[] };
-        expect(json.required ?? []).toContain('task_id');
-      }
+      expect(typeof toJSONSchema).toBe('function');
+      const json = toJSONSchema?.(schema) as { required?: string[] };
+      expect(json.required ?? []).toContain('task_id');
     }
   });
 

@@ -114,8 +114,12 @@ describe('task_status with a waiting child', () => {
           },
         });
       }
-      expect(getChildInputWait('ses_child1', 'per_1356')).toBeDefined();
-      expect(getChildInputWait('ses_child1', 'per_other')).toBeDefined();
+      expect(getChildInputWait('ses_child1', 'per_1356')?.requestID).toBe(
+        'per_1356',
+      );
+      expect(getChildInputWait('ses_child1', 'per_other')?.requestID).toBe(
+        'per_other',
+      );
 
       // Exact native V2 wire shape; the event pump dispatches raw plus every
       // synthesized event, just as routeMappedV2Event does here.
@@ -128,7 +132,9 @@ describe('task_status with a waiting child', () => {
         },
       });
 
-      expect(getChildInputWait('ses_child1', 'per_other')).toBeDefined();
+      expect(getChildInputWait('ses_child1', 'per_other')?.requestID).toBe(
+        'per_other',
+      );
       expect(getChildInputWait('ses_child1', 'per_1356')).toBeUndefined();
     } finally {
       resetChildInputWaitForTests();
@@ -152,8 +158,12 @@ describe('task_status with a waiting child', () => {
           },
         });
       }
-      expect(getChildInputWait('ses_child1', 'per_1375')).toBeDefined();
-      expect(getChildInputWait('ses_child1', 'per_other')).toBeDefined();
+      expect(getChildInputWait('ses_child1', 'per_1375')?.requestID).toBe(
+        'per_1375',
+      );
+      expect(getChildInputWait('ses_child1', 'per_other')?.requestID).toBe(
+        'per_other',
+      );
 
       // Same resolution payload as #1356 but with a bare `properties`
       // envelope alongside `data` — previously suppressed synthesis, so
@@ -168,7 +178,9 @@ describe('task_status with a waiting child', () => {
         properties: {},
       });
 
-      expect(getChildInputWait('ses_child1', 'per_other')).toBeDefined();
+      expect(getChildInputWait('ses_child1', 'per_other')?.requestID).toBe(
+        'per_other',
+      );
       expect(getChildInputWait('ses_child1', 'per_1375')).toBeUndefined();
     } finally {
       resetChildInputWaitForTests();
@@ -509,8 +521,8 @@ describe('task_reply', () => {
       ),
     ).rejects.toThrow(refusal);
     expect(reply).not.toHaveBeenCalled();
-    expect(getChildInputWait('ses_child1', 'que_3')).toBeDefined();
-    expect(getChildInputWait('ses_child1', 'que_4')).toBeDefined();
+    expect(getChildInputWait('ses_child1', 'que_3')?.requestID).toBe('que_3');
+    expect(getChildInputWait('ses_child1', 'que_4')?.requestID).toBe('que_4');
   });
 
   test('omitted answers rejects the open question', async () => {
@@ -959,7 +971,9 @@ describe('task_reply', () => {
     expect(output).toContain('no longer pending');
     expect(output).toContain('Nothing was replied');
     expect(getChildInputWait('ses_child1', 'per_gone')).toBeUndefined();
-    expect(getChildInputWait('ses_child1', 'per_open')).toBeDefined();
+    expect(getChildInputWait('ses_child1', 'per_open')?.requestID).toBe(
+      'per_open',
+    );
   });
 
   test('a timed-out question reject keeps the wait for retry', async () => {
@@ -1037,7 +1051,7 @@ describe('task_reply', () => {
     // host UI can still answer the form.
     expect(reply).not.toHaveBeenCalled();
     expect(reject).not.toHaveBeenCalled();
-    expect(getChildInputWait('ses_child1', 'que_1')).toBeDefined();
+    expect(getChildInputWait('ses_child1', 'que_1')?.requestID).toBe('que_1');
     expect(listChildInputWaits('ses_child1')).toHaveLength(1);
   });
 
