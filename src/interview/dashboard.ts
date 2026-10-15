@@ -14,6 +14,7 @@ import type { PluginInput } from '@opencode-ai/plugin';
 import { loadPluginConfig } from '../config/loader';
 import { log } from '../utils';
 import {
+  DEFAULT_OUTPUT_FOLDER,
   extractSummarySection,
   extractTitle,
   parseFrontmatter,
@@ -158,6 +159,7 @@ export const DEFAULT_DASHBOARD_PORT = 43211;
 export interface DashboardConfig {
   port: number;
   outputFolder: string;
+  hostFlavor?: string;
   sessionClient?: Pick<PluginInput['client']['session'], 'list'>;
   /** Already-listening server to adopt instead of binding `port`. */
   server?: Server;
@@ -438,8 +440,10 @@ export function createDashboardServer(config: DashboardConfig): {
 
   function outputFolderFor(dir: string): string {
     return (
-      loadPluginConfig(dir, { silent: true }).interview?.outputFolder ??
-      config.outputFolder
+      loadPluginConfig(dir, {
+        silent: true,
+        hostFlavor: config.hostFlavor,
+      }).interview?.outputFolder ?? DEFAULT_OUTPUT_FOLDER
     );
   }
 

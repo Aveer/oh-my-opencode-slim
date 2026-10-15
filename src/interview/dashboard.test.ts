@@ -165,6 +165,115 @@ describe('dashboard server', () => {
     }
   });
 
+  test('falls back to the default folder for projects without interview config', async () => {
+    const originalEnv = { ...process.env };
+    const tempDir = await fs.mkdtemp(
+      path.join(tmpdir(), 'dashboard-projects-'),
+    );
+    const userConfigDir = await fs.mkdtemp(
+      path.join(tmpdir(), 'dashboard-user-config-'),
+    );
+    try {
+      delete process.env.OPENCODE_CONFIG_DIR;
+      process.env.XDG_CONFIG_HOME = userConfigDir;
+      const ownerDir = path.join(tempDir, 'owner');
+      const secondDir = path.join(tempDir, 'second');
+      await fs.mkdir(path.join(ownerDir, '.opencode'), { recursive: true });
+      await fs.writeFile(
+        path.join(ownerDir, '.opencode', 'oh-my-opencode-slim.json'),
+        JSON.stringify({ interview: { outputFolder: 'specs' } }),
+      );
+      await fs.mkdir(path.join(ownerDir, 'specs'), { recursive: true });
+      await fs.mkdir(path.join(secondDir, 'interview'), { recursive: true });
+      await fs.writeFile(
+        path.join(secondDir, 'interview', 'x.md'),
+        '# X\n\n## Summary\nA spec',
+      );
+
+      const { port, server } = await bindFreePort();
+      const dashboard = createDashboardServer({
+        port,
+        outputFolder: 'specs',
+        server,
+      });
+      dashboard.addManualFolder(ownerDir);
+      dashboard.addManualFolder(secondDir);
+      try {
+        const baseUrl = await dashboard.start();
+        const response = await fetch(
+          `${baseUrl}/api/files?token=${dashboard.authToken}`,
+        );
+        expect(await response.json()).toMatchObject({
+          files: expect.arrayContaining([
+            expect.objectContaining({ fileName: 'x.md', directory: secondDir }),
+          ]),
+        });
+      } finally {
+        dashboard.close();
+      }
+    } finally {
+      process.env = originalEnv;
+      await fs.rm(tempDir, { recursive: true, force: true });
+      await fs.rm(userConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  test('uses v2 ancestor project config for manual folders', async () => {
+    const originalEnv = { ...process.env };
+    const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'dashboard-v2-'));
+    const userConfigDir = await fs.mkdtemp(
+      path.join(tmpdir(), 'dashboard-user-config-'),
+    );
+    try {
+      delete process.env.OPENCODE_CONFIG_DIR;
+      process.env.XDG_CONFIG_HOME = userConfigDir;
+      const ancestorDir = path.join(tempDir, 'workspace');
+      const repoDir = path.join(ancestorDir, 'repo');
+      await fs.mkdir(path.join(ancestorDir, '.opencode'), { recursive: true });
+      await fs.writeFile(
+        path.join(ancestorDir, '.opencode', 'oh-my-opencode-slim.json'),
+        JSON.stringify({ interview: { outputFolder: 'specs' } }),
+      );
+      await fs.mkdir(path.join(repoDir, '.git'), { recursive: true });
+      await fs.mkdir(path.join(repoDir, '.opencode'), { recursive: true });
+      await fs.writeFile(
+        path.join(repoDir, '.opencode', 'oh-my-opencode-slim.json'),
+        JSON.stringify({ interview: { dashboard: true } }),
+      );
+      await fs.mkdir(path.join(repoDir, 'specs'));
+      await fs.writeFile(
+        path.join(repoDir, 'specs', 'x.md'),
+        '# X\n\n## Summary\nA spec',
+      );
+
+      const { port, server } = await bindFreePort();
+      const dashboard = createDashboardServer({
+        port,
+        outputFolder: 'interview',
+        hostFlavor: 'v2',
+        server,
+      });
+      dashboard.addManualFolder(repoDir);
+      try {
+        const baseUrl = await dashboard.start();
+        const response = await fetch(
+          `${baseUrl}/api/files?token=${dashboard.authToken}`,
+        );
+        expect(await response.json()).toMatchObject({
+          files: expect.arrayContaining([
+            expect.objectContaining({ fileName: 'x.md', directory: repoDir }),
+          ]),
+        });
+      } finally {
+        dashboard.close();
+      }
+    } finally {
+      process.env = originalEnv;
+      await fs.rm(tempDir, { recursive: true, force: true });
+      await fs.rm(userConfigDir, { recursive: true, force: true });
+    }
+  });
+
   describe('server lifecycle', () => {
     test('close is safe before start and repeated', () => {
       const dashboard = createDashboardServer({

@@ -62,6 +62,9 @@ export function createInterviewManager(
     config,
     dashboardPort,
     outputFolder,
-    options,
+    {
+      ...options,
+      hostFlavor: (ctx as PluginInput & { hostFlavor?: string }).hostFlavor,
+    },
   );
 }

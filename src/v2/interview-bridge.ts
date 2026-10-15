@@ -176,6 +176,7 @@ export function createV2InterviewBridge(
             list: createSessionListShim(methods),
           } as never,
           server: options.server,
+          hostFlavor: 'v2',
         },
       )
     : null;
