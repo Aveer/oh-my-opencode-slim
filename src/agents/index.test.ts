@@ -1190,6 +1190,9 @@ describe('tool permissions', () => {
     expect(permission.ast_grep_replace).toBe('deny');
     expect(permission.task).toBe('deny');
     expect(permission.question).toBe('deny');
+    expect(permission.task_result).toBe('deny');
+    // Drift guard: the source map has no allow entries at all.
+    expect(Object.values(permission)).not.toContain('allow');
   });
 
   test('councillor remains read-only after default permissions are applied', () => {
