@@ -26,7 +26,7 @@ Suggest config changes only for recurring behavior, not one-offs.
 - Agent names: `orchestrator|oracle|librarian|explorer|designer|fixer|observer|council`.
 
 Lookup: with an active preset, check `{preset}/` first, then the base dir.
-Both files present → replacement loads first, append second; else built-in prompt.
+Load `{agent}.md` if present; if `{agent}_append.md` also exists, append it. Otherwise, use the built-in prompt.
 
 Common customizations:
 
