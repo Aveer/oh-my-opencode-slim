@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { bindFreePort } from '../interview/test-port';
 import {
   applyInterviewCommandParts,
@@ -182,6 +184,34 @@ describe('v2 interview bridge', () => {
       recursive: true,
       force: true,
     });
+  });
+
+  test('uses the v2 project directory for interview files', async () => {
+    const projectDir = await fs.mkdtemp(
+      path.join(tmpdir(), 'v2-interview-project-'),
+    );
+    try {
+      const outputFolder = 'specs';
+      await fs.mkdir(path.join(projectDir, outputFolder));
+      await fs.writeFile(
+        path.join(projectDir, outputFolder, 'feature.md'),
+        '# Feature\n\n## Summary\nA feature',
+      );
+
+      const bridge = createV2InterviewBridge(
+        { ...createContext(), location: { directory: projectDir } },
+        { outputFolder } as never,
+      );
+      try {
+        await expect(bridge.service.listInterviewFiles()).resolves.toEqual([
+          expect.objectContaining({ fileName: 'feature.md' }),
+        ]);
+      } finally {
+        bridge.dispose();
+      }
+    } finally {
+      await fs.rm(projectDir, { recursive: true, force: true });
+    }
   });
 
   test('intercepts markers when the command is enabled', async () => {
