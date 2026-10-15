@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ContextFile } from '../../utils';
+import { log } from '../../utils/logger';
 
 interface PendingContextFile {
   path: string;
@@ -59,6 +61,47 @@ export function createTaskContextTracker() {
       }));
     },
   };
+}
+
+/**
+ * Drop read-context entries that no longer match the file on disk
+ * (missing/unreadable, or truncated since the read). Sync so the
+ * board commit call sites stay trivial.
+ */
+export function filterStaleContextFiles(
+  directory: string,
+  files: ContextFile[],
+): ContextFile[] {
+  return files.filter((file) => {
+    const resolved = path.isAbsolute(file.path)
+      ? file.path
+      : path.join(directory, file.path);
+    let content: string;
+    try {
+      content = readFileSync(resolved, 'utf8');
+    } catch {
+      log('[task-session-manager] dropped stale read context', {
+        path: file.path,
+        reason: 'unreadable',
+      });
+      return false;
+    }
+    const onDiskLines = content === '' ? 0 : content.split('\n').length;
+    const maxLine =
+      file.lineNumbers && file.lineNumbers.length > 0
+        ? Math.max(...file.lineNumbers)
+        : file.lineCount;
+    if (onDiskLines < file.lineCount || maxLine > onDiskLines) {
+      log('[task-session-manager] dropped stale read context', {
+        path: file.path,
+        reason: 'truncated',
+        lineCount: file.lineCount,
+        onDiskLines,
+      });
+      return false;
+    }
+    return true;
+  });
 }
 
 export function extractReadFiles(
