@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { DEFAULT_MAX_RETAINED_SNAPSHOTS } from '../../config/constants';
 import { SessionLifecycle } from '../../hooks/session-lifecycle';
 import { createTaskReviveTool } from '../../tools/task-revive';
@@ -6724,6 +6725,15 @@ describe('task-session-manager hook', () => {
       readContextMaxFiles: 1,
       idleReconcileDelayMs: 0,
     });
+    // Context entries are disk-validated before board commit: create the
+    // files the simulated reads claim to inspect.
+    mkdirSync('/tmp/src', { recursive: true });
+    for (const name of ['small.ts', 'large.ts', 'medium.ts']) {
+      writeFileSync(
+        `/tmp/src/${name}`,
+        Array.from({ length: 20 }, (_, index) => `line ${index}`).join('\n'),
+      );
+    }
     await hook.event({
       event: {
         type: 'session.created',
