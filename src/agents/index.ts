@@ -1066,13 +1066,15 @@ export function createAgents(
     orchestratorModel,
     undefined,
     undefined,
-    disabled,
-    councillorAgents.length > 0 ? ['council'] : undefined,
-    !runtime.disabledTools.includes('wait_for_user'),
-    runtime.backgroundJobs.orchestratorWake.enabled,
-    options?.hostFlavor,
-    runtime.backgroundJobs.boardInjection,
-    runtime.routingBlock,
+    {
+      disabledAgents: disabled,
+      excludeDescriptions:
+        councillorAgents.length > 0 ? ['council'] : undefined,
+      waitForUser: !runtime.disabledTools.includes('wait_for_user'),
+      wakeScheduler: runtime.backgroundJobs.orchestratorWake.enabled,
+      hostFlavor: options?.hostFlavor,
+      routingBlock: runtime.routingBlock,
+    },
   );
 
   const inlineOrchestratorPrompt = orchestratorOverride?.prompt;

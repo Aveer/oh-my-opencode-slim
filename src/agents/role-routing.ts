@@ -1,6 +1,6 @@
 /**
- * @deprecated as a prompt-rendering source. Neither orchestrator builder
- * reads this anymore (v1 and v2 both render `ROLE_ROUTING_SLIM_LINES`);
+ * @deprecated as a prompt-rendering source. The orchestrator prompt
+ * renders `ROLE_ROUTING_SLIM_LINES` instead;
  * `roleHasWriteCapability` now reads a hand-written table, not this
  * object's prose. The sole remaining consumer is marketplace inheritance
  * (`src/marketplace/routing.ts`), which copies a `routingBlock` string
@@ -98,13 +98,10 @@ export function renderRoleRoutingBlock(
 }
 
 /**
- * v2 slim one-line routing verdicts (council-final §1), keyed by the same
- * agent ids as ROLE_ROUTING_BLOCKS: the slim <Agents> block keeps the
- * routing criteria, while the agents' `description` fields (consumed by
- * the native dynamic subagent list) stay non-duplicating one-liners. Not a
- * new name list — keys mirror the routing data, and the renderer iterates
- * ROLE_ROUTING_BLOCKS so a role added there is filtered identically and
- * only skipped from the slim block until its line lands here.
+ * One-line routing verdicts for the orchestrator's <Agents> block, keyed by
+ * the same agent ids as ROLE_ROUTING_BLOCKS. The agents' `description`
+ * fields (shown in the host's subagent list) stay short and don't repeat
+ * these criteria.
  */
 export const ROLE_ROUTING_SLIM_LINES: Readonly<Record<string, string>> =
   Object.freeze({
@@ -116,3 +113,15 @@ export const ROLE_ROUTING_SLIM_LINES: Readonly<Record<string, string>> =
     council: `@council — multi-model consensus for high-stakes decisions. Send the full question plus context; preserve its structured report. Don't: routine work or single-specialist tasks; @council is never the only lane on a task.`,
     observer: `@observer — analyzes images/PDFs/diagrams, keeping media bytes out of your context. Always pass the full file path. Don't: plain-text files.`,
   });
+
+/** Routing lines for every agent not disabled or excluded, blank-line separated. */
+export function renderRoutingLines(
+  disabledAgents?: ReadonlySet<string>,
+  excludeDescriptions?: readonly string[],
+): string {
+  return Object.entries(ROLE_ROUTING_SLIM_LINES)
+    .filter(([name]) => !disabledAgents?.has(name))
+    .filter(([name]) => !excludeDescriptions?.includes(name))
+    .map(([, line]) => line)
+    .join('\n\n');
+}
