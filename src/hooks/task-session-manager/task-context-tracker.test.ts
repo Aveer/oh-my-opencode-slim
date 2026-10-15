@@ -9,7 +9,7 @@ describe('filterStaleContextFiles', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ctx-keep-'));
     writeFileSync(path.join(dir, 'a.ts'), '1\n2\n3\n4\n5');
     const kept = filterStaleContextFiles(dir, [
-      { path: 'a.ts', lineCount: 3, lineNumbers: [1, 2, 3], lastReadAt: 1 },
+      { path: 'a.ts', lineCount: 3, lastReadAt: 1 },
     ]);
     expect(kept).toHaveLength(1);
   });
@@ -26,12 +26,7 @@ describe('filterStaleContextFiles', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ctx-trunc-'));
     writeFileSync(path.join(dir, 'b.ts'), '1\n2');
     const kept = filterStaleContextFiles(dir, [
-      {
-        path: 'b.ts',
-        lineCount: 10,
-        lineNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        lastReadAt: 1,
-      },
+      { path: 'b.ts', lineCount: 10, lastReadAt: 1 },
     ]);
     expect(kept).toHaveLength(0);
   });

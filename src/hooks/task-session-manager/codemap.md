@@ -70,7 +70,7 @@ All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.
    - Extracts read files from `read` tool outputs using `extractReadFiles`
    - Stores context per task ID in the task context tracker
    - Prunes stale context during lifecycle events and status transitions
-   - Both board commit sites in `tool-execute-hooks.ts` validate via `filterStaleContextFiles` before `board.addContext`
+   - Both tool-execute-hooks commit sites validate via `filterStaleContextFiles` before `board.addContext` (revived/index paths still unvalidated)
 
 4. **Message Injection (`experimental.chat.messages.transform`)**
     - Injects a `<system-reminder>` part containing the `### Background Job Board` section into user messages for managed sessions, including Build/custom primary parents; latest and checkpoint modes gate by managed-session ownership rather than the parent agent name

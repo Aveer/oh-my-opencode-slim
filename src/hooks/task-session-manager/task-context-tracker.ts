@@ -65,9 +65,11 @@ export function createTaskContextTracker() {
 
 /**
  * Drop read-context entries that no longer match the file on disk
- * (missing/unreadable, or truncated since the read). Sync so the
- * board commit call sites stay trivial.
+ * (missing/unreadable, or on-disk lines below the claimed count).
+ * Coarse count-only check: misses rewrites that keep the line count.
+ * Sync so the board commit call sites stay trivial.
  */
+// shortcut: count-only check, upgrade to max-line when callers pass lineNumbers
 export function filterStaleContextFiles(
   directory: string,
   files: ContextFile[],
@@ -87,11 +89,7 @@ export function filterStaleContextFiles(
       return false;
     }
     const onDiskLines = content === '' ? 0 : content.split('\n').length;
-    const maxLine =
-      file.lineNumbers && file.lineNumbers.length > 0
-        ? Math.max(...file.lineNumbers)
-        : file.lineCount;
-    if (onDiskLines < file.lineCount || maxLine > onDiskLines) {
+    if (onDiskLines < file.lineCount) {
       log('[task-session-manager] dropped stale read context', {
         path: file.path,
         reason: 'truncated',
