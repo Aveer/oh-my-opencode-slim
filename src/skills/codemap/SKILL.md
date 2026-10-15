@@ -127,9 +127,10 @@ Example skeleton:
 <data in → key calls → data out>
 ## Integration
 <consumers / dependencies>
+```
+
+For root atlas, aggregate the same headings plus a Directory Map table:
+
 | Directory | Responsibility | Link |
 |-----------|----------------|------|
 | `src/<dir>/` | <one-line summary> | [View Map](src/<dir>/codemap.md) |
-```
-
-For root atlas, aggregate the same headings plus a Directory Map table (Directory | Responsibility | Link).

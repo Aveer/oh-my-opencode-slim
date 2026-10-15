@@ -41,7 +41,7 @@ archaeology across all repos to find repeated patterns and friction.
    bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT 50').all())"
    ```
    Adjust `LIMIT 50` to `--last N` if specified.
-2. **Load session messages** per session ID:
+2. **Load session messages** per session ID (`data` is JSON — role, agent, model, summary, etc.):
    ```bash
    bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT data FROM message WHERE session_id = ?').all('<session_id>'))"
    ```
