@@ -90,6 +90,9 @@ At the end of each pass:
    pass from what you see rather than from the original plan. Review the code
    organization too — if files grew huge or module boundaries blurred, make
    reorganization part of the next pass before it becomes unmaintainable.
+   Likewise, if slow tests or builds noticeably dragged this pass, make
+   speeding them up part of the next pass — without dropping essential
+   state, security, or real-service evidence.
 
 ## State
 
