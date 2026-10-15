@@ -228,7 +228,10 @@ describe('v2 interview bridge', () => {
     const trailing = {
       id: 'tail-enabled',
       role: 'user',
-      content: [{ type: 'text', text: markerText('enabled idea') }],
+      content: [
+        { type: 'text', text: markerText('enabled idea') },
+        { type: 'text', text: '[chair] guard', synthetic: true },
+      ],
     };
 
     await bridge.handleContext({
@@ -242,6 +245,11 @@ describe('v2 interview bridge', () => {
 
     expect(handler).toHaveBeenCalled();
     expect(trailing.content[0]?.text).not.toBe(markerText('enabled idea'));
+    expect(trailing.content[1]).toEqual({
+      type: 'text',
+      text: '[chair] guard',
+      synthetic: true,
+    });
     bridge.dispose();
     await fs.rm(`${process.cwd()}/${directory}`, {
       recursive: true,
