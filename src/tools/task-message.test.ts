@@ -252,11 +252,11 @@ describe('task_message', () => {
     expect(prompt).not.toHaveBeenCalled();
 
     const job = board.get('ses_child1');
-    expect(job).toBeDefined();
+    expect(job?.state).toBe('running');
     if (!job) throw new Error('missing running job');
     expect(
-      board.acquireCancellationLease(job.taskID, job.generation),
-    ).toBeDefined();
+      board.acquireCancellationLease(job.taskID, job.generation)?.kind,
+    ).toBe('cancellation');
   });
 
   test('bounds a hanging identity lookup and releases the lease', async () => {
@@ -276,15 +276,14 @@ describe('task_message', () => {
         { sessionID: 'parent-1' } as any,
       ),
     ).rejects.toThrow('model lookup timed out');
-    expect(lookupSignal).toBeDefined();
     expect(lookupSignal?.aborted).toBe(true);
     expect(prompt).not.toHaveBeenCalled();
 
     const job = board.get('ses_child1');
-    expect(job).toBeDefined();
+    expect(job?.state).toBe('running');
     if (!job) throw new Error('missing running job');
     const lease = board.acquireCancellationLease(job.taskID, job.generation);
-    expect(lease).toBeDefined();
+    expect(lease?.kind).toBe('cancellation');
     if (lease) board.releaseLease(lease);
   });
 
@@ -317,13 +316,13 @@ describe('task_message', () => {
     expect(prompt).not.toHaveBeenCalled();
 
     const job = board.get('ses_child1');
-    expect(job).toBeDefined();
+    expect(job?.state).toBe('completed');
     if (!job) throw new Error('missing completed job');
     const terminalLease = board.acquireTerminalNotificationLease(
       job.taskID,
       job.generation,
     );
-    expect(terminalLease).toBeDefined();
+    expect(terminalLease?.kind).toBe('terminal-notification');
     if (terminalLease) board.releaseLease(terminalLease);
   });
 
@@ -346,7 +345,7 @@ describe('task_message', () => {
     await Bun.sleep(0);
 
     const job = board.get('ses_child1');
-    expect(job).toBeDefined();
+    expect(job?.state).toBe('running');
     if (!job) throw new Error('missing running job');
     expect(
       board.acquireCancellationLease(job.taskID, job.generation),
@@ -365,8 +364,8 @@ describe('task_message', () => {
     releasePrompt();
     await expect(pending).resolves.toContain('queued');
     expect(
-      board.acquireCancellationLease(job.taskID, job.generation),
-    ).toBeDefined();
+      board.acquireCancellationLease(job.taskID, job.generation)?.kind,
+    ).toBe('cancellation');
   });
 
   test('rejects API failures and releases the message lease', async () => {
@@ -383,11 +382,11 @@ describe('task_message', () => {
     ).rejects.toThrow('HTTP 409');
 
     const job = board.get('ses_child1');
-    expect(job).toBeDefined();
+    expect(job?.state).toBe('running');
     if (!job) throw new Error('missing running job');
     expect(
-      board.acquireCancellationLease(job.taskID, job.generation),
-    ).toBeDefined();
+      board.acquireCancellationLease(job.taskID, job.generation)?.kind,
+    ).toBe('cancellation');
   });
 
   test.each(['resolve', 'reject', 'complete then resolve'])(
@@ -476,7 +475,9 @@ describe('task_message', () => {
       const replacement = completed
         ? board.acquireTerminalNotificationLease(lease.taskID, lease.generation)
         : board.acquireMessageLease(lease.taskID, lease.generation);
-      expect(replacement).toBeDefined();
+      expect(replacement?.kind).toBe(
+        completed ? 'terminal-notification' : 'message',
+      );
       if (!replacement) throw new Error('settled write retained exclusion');
       // The settled write's lease is stale: releasing it is a rejected no-op
       // and must not retire the replacement token. This call intentionally
@@ -842,7 +843,7 @@ describe('task_message', () => {
       job.taskID,
       job.generation,
     );
-    expect(terminalLease).toBeDefined();
+    expect(terminalLease?.kind).toBe('terminal-notification');
     if (terminalLease) board.releaseLease(terminalLease);
   });
 });

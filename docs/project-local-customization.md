@@ -189,18 +189,19 @@ Inline prompt precedence and the composition rules below are unchanged.
 ## Prompt Composition Rules
 
 For any agent, the final system prompt is computed dynamically. Precedence
-is **inline > file > built-in default**:
+is **inline > file > agent default**:
 
 1. **Resolve the effective base prompt:**
    ```
-   effectiveBase = inlinePrompt ?? filePrompt ?? defaultBuiltInPrompt
+   effectiveBase = inlinePrompt ?? filePrompt ?? defaultAgentPrompt
    ```
    - `inlinePrompt` is the `prompt` string set directly in
      `agents.<agent>.prompt` (config or preset).
    - `filePrompt` is the content of the resolved `<agent>.md` replacement
      file (located according to the Prompt Lookup Precedence).
-   - `defaultBuiltInPrompt` is the agent's factory template (built-in
-     agents) or `"You are the <name> specialist."` (custom agents).
+   - `defaultAgentPrompt` is the agent's supplied default prompt
+     (bundled or packaged), or `"You are the <name> specialist."`
+     for custom agents.
 
    An explicit inline `prompt` always wins over a prompt file. The file
    acts as a shared default — useful for the "shared prompt, per-preset

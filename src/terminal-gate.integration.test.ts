@@ -1,6 +1,7 @@
 import { afterEach, expect, jest, mock, spyOn, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import * as hookFactories from './hooks';
 import { isVolatileTaggedMessage } from './hooks/cache-safe-injection';
@@ -79,7 +80,9 @@ async function assembly(
   } = {},
 ) {
   const env = { ...process.env };
-  const directory = await mkdtemp('/tmp/slim-terminal-assembly-');
+  const directory = await mkdtemp(
+    path.join(tmpdir(), 'slim-terminal-assembly-'),
+  );
   process.env.OPENCODE_CONFIG_DIR = directory;
   process.env.XDG_CONFIG_HOME = directory;
   process.env.XDG_DATA_HOME = directory;
@@ -207,7 +210,10 @@ async function assembly(
     hookSpy.mockRestore();
     gateSpy.mockRestore();
     runtimeSpy.mockRestore();
-    process.env = env;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in env)) delete process.env[key];
+    }
+    Object.assign(process.env, env);
     await rm(directory, { recursive: true, force: true });
   });
   const hooks = await plugin({
@@ -413,18 +419,28 @@ test('task_cancel during fallback resend backoff prevents a second replay', asyn
 
 test('a timed-out fallback replay retains its owner without aborting or resending', async () => {
   const h = await fallbackAssembly();
-  h.promptAsync.mockImplementation(async () => new Promise(() => {}));
-  await h.fail();
-  await h.idle();
-  for (let i = 0; i < 38; i++) await h.advance(1000);
-  expect(h.abort).not.toHaveBeenCalled();
-  expect(h.promptAsync).toHaveBeenCalledTimes(1);
-  expect(
-    h.revivedTracker?.isTracked('child', h.board.get('child')?.generation ?? 0),
-  ).toBe(true);
-  expect(h.board.get('child')?.state).toBe('running');
-  for (let i = 0; i < 12; i++) await h.advance(1000);
-  expect(h.board.get('child')?.state).toBe('stopped');
+  const hung = Promise.withResolvers<Record<string, never>>();
+  h.promptAsync.mockImplementation(async () => hung.promise);
+  try {
+    await h.fail();
+    await h.idle();
+    for (let i = 0; i < 38; i++) await h.advance(1000);
+    expect(h.abort).not.toHaveBeenCalled();
+    expect(h.promptAsync).toHaveBeenCalledTimes(1);
+    expect(
+      h.revivedTracker?.isTracked(
+        'child',
+        h.board.get('child')?.generation ?? 0,
+      ),
+    ).toBe(true);
+    expect(h.board.get('child')?.state).toBe('running');
+    for (let i = 0; i < 12; i++) await h.advance(1000);
+    expect(h.board.get('child')?.state).toBe('stopped');
+  } finally {
+    // Release the hung prompt so plugin disposal can settle during cleanup;
+    // leaving it pending leaked a timed-out afterEach into the next test.
+    hung.resolve({});
+  }
 });
 
 test('terminal failover during a retry-armed delay waits for replay, notice and one result', async () => {

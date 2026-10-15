@@ -527,11 +527,13 @@ describe('live TUI activity rendering', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omos-status-live-'));
     const projectDir = path.join(root, 'project');
     const originalDataHome = process.env.XDG_DATA_HOME;
+    const prevRefreshMs = process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS;
     const disposers: Array<() => void> = [];
     let slotPlugin: { slots: { sidebar_content: () => unknown } } | undefined;
     let setup: Awaited<ReturnType<typeof testRender>> | undefined;
 
     try {
+      process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS = '25';
       fs.mkdirSync(projectDir, { recursive: true });
       process.env.XDG_DATA_HOME = path.join(root, 'data');
       recordTuiAgentModels(
@@ -600,7 +602,7 @@ describe('live TUI activity rendering', () => {
         },
         projectDir,
       );
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
       await setup.renderOnce();
 
       const activeFrame = setup.captureCharFrame().split('\n');
@@ -638,7 +640,7 @@ describe('live TUI activity rendering', () => {
         { sessionID: 'explorer-session', active: false },
         projectDir,
       );
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
       await setup.renderOnce();
 
       const idleFrame = setup.captureCharFrame().split('\n');
@@ -661,6 +663,11 @@ describe('live TUI activity rendering', () => {
         delete process.env.XDG_DATA_HOME;
       } else {
         process.env.XDG_DATA_HOME = originalDataHome;
+      }
+      if (prevRefreshMs === undefined) {
+        delete process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS;
+      } else {
+        process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS = prevRefreshMs;
       }
     }
   });
@@ -1856,7 +1863,9 @@ describe('clickable sidebar sessions', () => {
     const navigated: unknown[] = [];
     let setup: Awaited<ReturnType<typeof testRender>> | undefined;
     let mounted: Awaited<ReturnType<typeof mountClickableSidebar>> | undefined;
+    const prevRefreshMs = process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS;
     try {
+      process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS = '25';
       recordTuiAgentModels(
         { agentModels: { oracle: 'openai/gpt-6' } },
         projectDir,
@@ -1917,7 +1926,7 @@ describe('clickable sidebar sessions', () => {
         { sessionID: 'ses_live', active: false },
         projectDir,
       );
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
       await setup.renderOnce();
       expect(oracleLine()).toMatch(ACTIVITY_FRAME_PATTERN);
       expect(oracleLine()).toMatch(/oracle ▾2/);
@@ -1945,7 +1954,7 @@ describe('clickable sidebar sessions', () => {
         state: 'completed' as never,
         now: 200,
       });
-      await Bun.sleep(1_100);
+      await Bun.sleep(60);
       await setup.renderOnce();
       expect(oracleLine()).toContain('✦');
       expect(oracleLine()).not.toMatch(ACTIVITY_FRAME_PATTERN);
@@ -1955,6 +1964,11 @@ describe('clickable sidebar sessions', () => {
       projection.dispose();
       restoreDataHome();
       fs.rmSync(root, { recursive: true, force: true });
+      if (prevRefreshMs === undefined) {
+        delete process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS;
+      } else {
+        process.env.OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS = prevRefreshMs;
+      }
     }
   }, 10_000);
 

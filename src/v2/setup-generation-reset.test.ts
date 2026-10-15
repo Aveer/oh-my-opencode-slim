@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import {
   hasLiveInstances,
@@ -72,22 +73,22 @@ describe('v2 generation warning latches', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    fixtureRoot = await mkdtemp('/tmp/omo-v2-gen-reset-');
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'omo-v2-gen-reset-'));
     logDir = path.join(fixtureRoot, 'logs');
-    process.env = {
-      ...originalEnv,
-      OPENCODE_CONFIG_DIR: path.join(fixtureRoot, 'config'),
-      XDG_CONFIG_HOME: path.join(fixtureRoot, 'xdg-config'),
-      XDG_DATA_HOME: path.join(fixtureRoot, 'xdg-data'),
-      XDG_CACHE_HOME: path.join(fixtureRoot, 'xdg-cache'),
-      OPENCODE_LOG_DIR: logDir,
-    };
+    process.env.OPENCODE_CONFIG_DIR = path.join(fixtureRoot, 'config');
+    process.env.XDG_CONFIG_HOME = path.join(fixtureRoot, 'xdg-config');
+    process.env.XDG_DATA_HOME = path.join(fixtureRoot, 'xdg-data');
+    process.env.XDG_CACHE_HOME = path.join(fixtureRoot, 'xdg-cache');
+    process.env.OPENCODE_LOG_DIR = logDir;
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
     initLogger();
   });
 
   afterEach(async () => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     await rm(fixtureRoot, { recursive: true, force: true });
   });
 
@@ -193,21 +194,21 @@ describe('v2 setup directory claim', () => {
 
   beforeEach(async () => {
     originalEnv = { ...process.env };
-    fixtureRoot = await mkdtemp('/tmp/omo-v2-claim-');
-    process.env = {
-      ...originalEnv,
-      OPENCODE_CONFIG_DIR: path.join(fixtureRoot, 'config'),
-      XDG_CONFIG_HOME: path.join(fixtureRoot, 'xdg-config'),
-      XDG_DATA_HOME: path.join(fixtureRoot, 'xdg-data'),
-      XDG_CACHE_HOME: path.join(fixtureRoot, 'xdg-cache'),
-      OPENCODE_LOG_DIR: path.join(fixtureRoot, 'logs'),
-    };
+    fixtureRoot = await mkdtemp(path.join(tmpdir(), 'omo-v2-claim-'));
+    process.env.OPENCODE_CONFIG_DIR = path.join(fixtureRoot, 'config');
+    process.env.XDG_CONFIG_HOME = path.join(fixtureRoot, 'xdg-config');
+    process.env.XDG_DATA_HOME = path.join(fixtureRoot, 'xdg-data');
+    process.env.XDG_CACHE_HOME = path.join(fixtureRoot, 'xdg-cache');
+    process.env.OPENCODE_LOG_DIR = path.join(fixtureRoot, 'logs');
     delete process.env.OH_MY_OPENCODE_SLIM_DISABLE;
     resetLiveDirectoriesForTests();
   });
 
   afterEach(async () => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     resetLiveDirectoriesForTests();
     await rm(fixtureRoot, { recursive: true, force: true });
   });

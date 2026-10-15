@@ -92,3 +92,53 @@ layered presets. Their default project scope creates a project override; pass
 `--user` only to change shared user activation. See
 [Marketplace package contract](marketplace-contract.md) for bundle and registry
 schemas and [Configuration](configuration.md) for config locations.
+
+## Customize an installed agent
+
+Marketplace packages provide the starting configuration. Once a package is
+selected in a preset, customize its agent using the same `agents.<name>`
+configuration as a built-in or custom OMOS agent. Use the manifest's runtime
+`agentName` (for example, `chronicler`), not the package ID.
+
+```jsonc
+{
+  "agents": {
+    "chronicler": {
+      "skills_add": ["writing-auditor", "pretty-mermaid"],
+      "mcps": ["context7", "gh_grep", "serena"]
+    }
+  }
+}
+```
+
+Without an override, marketplace skills and MCPs retain the package's defaults.
+An explicit `skills` or `mcps` list replaces that dimension's defaults;
+`[]` denies all. `skills_add`, `skills_remove`, and
+`skills_include_local` adjust the package's skill defaults without copying
+them into user configuration. Skill grants use native OpenCode skill IDs;
+`["*", "!name"]` grants all skills except `name`. MCP selections similarly
+accept `*` and `!name`, but only enabled, available MCP servers are selected.
+Unknown skills cannot be loaded until the host registers them. A missing
+optional user-selected capability does not make package activation fail.
+Manifest-declared dependencies still undergo the existing activation checks.
+
+Local skill and MCP selections do **not** expand the marketplace package's
+core-tool permissions. Effective native rules can further restrict grants,
+and ambiguous MCP namespaces are rejected.
+
+To customize the agent prompt, use the same global or project-local Markdown
+files as other OMOS agents:
+
+```text
+.opencode/oh-my-opencode-slim/
+├── chronicler.md          # replaces the marketplace prompt
+└── chronicler_append.md   # appends after the selected base prompt
+```
+
+The prompt precedence is inline `agents.chronicler.prompt`, then
+`chronicler.md`, then the assembled marketplace package prompt.
+`chronicler_append.md` appends to whichever base wins. Preset-specific files,
+ancestor lookup and global fallback follow
+[project-local customization](project-local-customization.md#prompt-lookup-precedence).
+Prompts and capability policies are captured per plugin generation; restart
+OpenCode to apply changes to new sessions.

@@ -2272,7 +2272,9 @@ describe('BackgroundJobBoard', () => {
     });
 
     test('running job with bloated context survives trimReusable', () => {
-      const board = new BackgroundJobBoard();
+      const board = new BackgroundJobBoard({
+        maxContextLines: 100,
+      });
       board.registerLaunch({
         taskID: 'running',
         parentSessionID: 'p',
@@ -2287,7 +2289,9 @@ describe('BackgroundJobBoard', () => {
         agent: 'explorer',
       });
       board.updateStatus({ taskID: 'completed', state: 'completed' });
+      board.markReconciled('completed');
       expect(board.get('running')).toBeDefined();
+      expect(board.get('running')?.state).toBe('running');
     });
 
     test('multi-agent isolation: bloated explorer does not evict fixer', () => {

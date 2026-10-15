@@ -71,9 +71,9 @@ describe('specialist role definitions', () => {
       expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES[role]);
     }
     expect(prompt).toContain(ROLE_ROUTING_SLIM_LINES.council);
-    expect(buildOrchestratorPrompt(new Set(['explorer']))).not.toContain(
-      ROLE_ROUTING_SLIM_LINES.explorer,
-    );
+    expect(
+      buildOrchestratorPrompt({ disabledAgents: new Set(['explorer']) }),
+    ).not.toContain(ROLE_ROUTING_SLIM_LINES.explorer);
   });
   test('keeps behavioral steering while fixing local prompt inconsistencies', () => {
     const designerPrompt = ROLE_DEFINITIONS.designer.prompt;
