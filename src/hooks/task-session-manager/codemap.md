@@ -32,7 +32,7 @@ The directory follows a **Facade + Strategy** pattern where `index.ts` acts as t
   converting same-provider `background: true` task requests (including v2
   omitted-`background` calls, defaulted to true before this check) to the foreground
   path for shared single-runtime backends; fail-open on unknown model/provider.
-- **task-context-tracker.ts**: Manages read context from child sessions with line-count and file caps. Stores context per task ID and provides pruning to prevent unbounded growth.
+- **task-context-tracker.ts**: Manages read context from child sessions with line-count and file caps. Stores context per task ID, provides pruning to prevent unbounded growth, and exposes `filterStaleContextFiles(directory, files)` for sync disk re-check (drops missing/unreadable/truncated, logs).
 
 All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.ts` as the single source of truth for active jobs, terminal unreconciled jobs, reusable completed sessions, aliases, read context, and LRU caps.
 
@@ -70,6 +70,7 @@ All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.
    - Extracts read files from `read` tool outputs using `extractReadFiles`
    - Stores context per task ID in the task context tracker
    - Prunes stale context during lifecycle events and status transitions
+   - Both board commit sites in `tool-execute-hooks.ts` validate via `filterStaleContextFiles` before `board.addContext`
 
 4. **Message Injection (`experimental.chat.messages.transform`)**
     - Injects a `<system-reminder>` part containing the `### Background Job Board` section into user messages for managed sessions, including Build/custom primary parents; latest and checkpoint modes gate by managed-session ownership rather than the parent agent name
