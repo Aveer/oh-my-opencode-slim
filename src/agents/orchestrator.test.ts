@@ -13,18 +13,18 @@ describe('orchestrator prompt: host vocabulary', () => {
   test('v2 uses subagent and soft-steered task_message', () => {
     const prompt = v2();
 
-    expect(prompt).toContain('multiple `subagent` calls in one message');
+    expect(prompt).toContain('`subagent` calls in one message');
     expect(prompt).toContain('`subagent(agent, sessionID, prompt)`');
     expect(prompt).toContain('`delivery: "queue"` waits for idle');
-    expect(prompt).toContain('`"steer"` lands at the next step boundary');
-    expect(prompt).toContain('look up IDs with the models tool first');
+    expect(prompt).toContain('`"steer"` lands at the next step');
+    expect(prompt).toContain('look up IDs with the models tool');
     expect(prompt).not.toContain('task_id');
   });
 
   test('v1 uses task, task_revive, and queue-only task_message', () => {
     const prompt = v1();
 
-    expect(prompt).toContain('multiple `task` calls in one message');
+    expect(prompt).toContain('`task` calls in one message');
     expect(prompt).toContain('`task_revive(task_id, prompt)`');
     expect(prompt).toContain('`task_message` queues a bounded note');
     expect(prompt).not.toContain('delivery:');
@@ -39,11 +39,11 @@ describe('orchestrator prompt: host vocabulary', () => {
 
   test('shared guidance is identical across hosts', () => {
     for (const prompt of [v1(), v2()]) {
-      expect(prompt).toContain('You are a workflow manager for coding work');
+      expect(prompt).toContain('You are Orchestrator, a workflow manager');
       expect(prompt).toContain('Value productivity');
       expect(prompt).toContain('Build in passes');
       expect(prompt).toContain('Subagent summaries are claims, not evidence');
-      expect(prompt).toContain('**File Operations Rules**');
+      expect(prompt).toContain('## File operations');
     }
   });
 });
@@ -52,17 +52,15 @@ describe('orchestrator prompt: blocking on the user', () => {
   test('v1 with wait_for_user enabled ends manual steps with wait_for_user', () => {
     const prompt = v1();
 
-    expect(prompt).toContain('call `wait_for_user` as your final tool action');
-    expect(prompt).toContain('Never use it to wait for background tasks');
+    expect(prompt).toContain('then call `wait_for_user`');
+    expect(prompt).toContain('Never use it to wait for');
   });
 
   test('v1 with wait_for_user disabled falls back to question', () => {
     const prompt = v1({ waitForUser: false });
 
     expect(prompt).not.toContain('wait_for_user');
-    expect(prompt).toContain(
-      'use the `question` tool as the blocking boundary',
-    );
+    expect(prompt).toContain('then ask with `question`');
   });
 
   test('v2 never mentions wait_for_user, whatever the flag', () => {

@@ -2314,9 +2314,7 @@ describe('createAgents with malformed disabled_tools', () => {
     expect(orchestrator).toBeDefined();
     // When disabled_tools is malformed (treated as empty array), wait_for_user
     // should be enabled, which is reflected in the prompt text
-    expect(orchestrator?.config.prompt).toContain(
-      'call `wait_for_user` as your final tool action',
-    );
+    expect(orchestrator?.config.prompt).toContain('then call `wait_for_user`');
     expect(orchestrator?.config.prompt).not.toContain(
       '`wait_for_user` is disabled',
     );

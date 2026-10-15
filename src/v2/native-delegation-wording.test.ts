@@ -88,7 +88,7 @@ describe('buildOrchestratorPrompt delegation vocabulary', () => {
     expect(prompt).toContain('`subagent(agent, sessionID, prompt)`');
     expect(prompt).not.toContain('Prefer `subagent(..., background: true)`');
     expect(prompt).toContain('After dispatching, do non-overlapping work');
-    expect(prompt).toContain('multiple `subagent` calls in one message');
+    expect(prompt).toContain('`subagent` calls in one message');
     expect(prompt).not.toContain('subagent_type');
     expect(prompt).not.toContain('task(');
     expect(prompt).not.toContain('task_id');
@@ -97,7 +97,7 @@ describe('buildOrchestratorPrompt delegation vocabulary', () => {
   test('v1 (no hostFlavor) emits task / task_revive wording', () => {
     const prompt = buildOrchestratorPrompt();
 
-    expect(prompt).toContain('multiple `task` calls in one message');
+    expect(prompt).toContain('`task` calls in one message');
     expect(prompt).toContain('`task_revive(task_id, prompt)`');
     expect(prompt).not.toContain('subagent(');
     expect(prompt).not.toContain('Prefer `task(..., background: true)`');
@@ -113,7 +113,7 @@ const MODEL_PARAM_SENTENCE = ` The subagent tool also accepts an optional \`mode
 /** Slim v2 model-param guidance (buildOrchestratorPrompt on v2): the optional
  * `model` parameter note compressed to one routing line. */
 const SLIM_MODEL_PARAM_SENTENCE =
-  'Set `model` only when the user asks; look up IDs with the models tool first.';
+  'Set `model` only when the user asks; look up IDs with the models tool';
 
 describe('createAgents council seat pointer vocabulary', () => {
   test('v2 hostFlavor emits a roster-only seat pointer, not the full procedure', () => {
@@ -178,11 +178,13 @@ describe('createAgents council seat pointer vocabulary', () => {
     const v2 = orchestratorPromptFor('v2');
 
     expect(v2).toContain(
-      '`task_status` is read-only inspection; `task_result` reads a finished result; neither launches, resumes, or instructs a child.',
+      '`task_status` is read-only inspection; `task_result` reads a finished',
     );
+    expect(v2).toContain('Neither launches, resumes, or instructs a child.');
     expect(v2).toContain(
-      'Continue a completed session with `subagent(agent, sessionID, prompt)` by exact id even when unlisted; cancelled/errored/stopped sessions use `task_revive`.',
+      'Continue a completed session with `subagent(agent, sessionID, prompt)` by',
     );
+    expect(v2).toContain('cancelled/errored/stopped sessions use');
     expect(v2).not.toContain(
       'Only sessions listed under Reusable Sessions may be resumed with `subagent()`.',
     );
