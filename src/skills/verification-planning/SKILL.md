@@ -1,6 +1,6 @@
 ---
 name: verification-planning
-description: Use before implementing a feature, bug fix, or refactor to plan a credible project-specific verification path.
+description: Use before implementing a feature, bug fix, refactor, or cross-system change to plan a credible project-specific verification path.
 ---
 
 # Verification Planning

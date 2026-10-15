@@ -25,7 +25,7 @@ exports[`specialist role definitions matches golden factory prompts and descript
   {
     "description": "Fast implementation specialist.",
     "name": "fixer",
-    "promptSha256": "1a7c5a208b7770027a6ba2116271e8ea3a1d1c19ffb9086c12f399aa8c9065db",
+    "promptSha256": "741d308228a16adafc94e352747870241d508dc47de036664c6350642e8af199",
   },
   {
     "description": "Visual analysis specialist; requires a vision-capable model.",
