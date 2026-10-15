@@ -5,43 +5,7 @@ import { BackgroundJobCoordinator } from './background-job-coordinator';
 import { boardFixture } from './background-job-fixture';
 import { BackgroundJobSupervisor } from './background-job-supervisor';
 import { createBackgroundJobTerminalGate } from './background-job-terminal-gate';
-
-type TimerCallback = () => void;
-
-function createTimerHarness() {
-  let now = 0;
-  let nextID = 0;
-  const timers = new Map<number, { at: number; callback: TimerCallback }>();
-
-  const setTimeout = (callback: TimerCallback, delay: number) => {
-    const id = ++nextID;
-    timers.set(id, { at: now + delay, callback });
-    return id;
-  };
-  const clearTimeout = (id: number) => {
-    timers.delete(id);
-  };
-  const advanceTo = async (target: number) => {
-    now = target;
-    while (true) {
-      const due = [...timers.entries()]
-        .filter(([, timer]) => timer.at <= now)
-        .sort(([, a], [, b]) => a.at - b.at)[0];
-      if (!due) break;
-      timers.delete(due[0]);
-      due[1].callback();
-      await Promise.resolve();
-    }
-  };
-
-  return {
-    now: () => now,
-    setTimeout,
-    clearTimeout,
-    advanceTo,
-    pending: () => timers.size,
-  };
-}
+import { createTimerHarness } from './test-timers';
 
 function createSupervisor(
   overrides: {

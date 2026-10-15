@@ -11,26 +11,10 @@ function emittedDecision(
   action: string,
   resource: string,
 ): V2PermissionRule['effect'] {
-  const match = rules.findLast(
-    (rule) => matches(action, rule.action) && matches(resource, rule.resource),
-  );
-  return match?.effect ?? 'ask';
-}
-
-function matches(value: string, pattern: string): boolean {
-  const normalizedPattern = pattern.replaceAll('\\', '/');
-  const normalizedValue = value.replaceAll('\\', '/');
-  const variants =
-    normalizedPattern.endsWith(' *') && !normalizedPattern.endsWith(' **')
-      ? [normalizedPattern.slice(0, -2), normalizedPattern]
-      : [normalizedPattern];
-  return variants.some((variant) => {
-    const expression = variant
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.');
-    return new RegExp(`^${expression}$`, 's').test(normalizedValue);
-  });
+  return compilePermissionPolicy({
+    baselineRules: rules,
+    hostRules: [],
+  }).decide(action, resource);
 }
 
 describe('compilePermissionPolicy', () => {
@@ -173,22 +157,23 @@ describe('compilePermissionPolicy', () => {
       },
     });
 
-    for (const [action, resource] of [
-      ['ctx_search', 'anything'],
-      ['ctx_private_lookup', 'anything'],
-      ['ctx_public', 'anything'],
-      ['read', 'anything'],
-      ['read', 'private/key'],
-      ['unadmitted', 'anything'],
-    ]) {
-      expect(emittedDecision(policy.rules, action, resource)).toBe(
-        policy.decide(action, resource),
-      );
-    }
+    // Pin absolute decisions for the emitted rules: the recompiled policy
+    // runs ceiling-free, so these pins catch a ceiling dropped during
+    // emission instead of comparing the same calculation with itself.
     expect(emittedDecision(policy.rules, 'ctx_search', 'anything')).toBe(
       'deny',
     );
+    expect(
+      emittedDecision(policy.rules, 'ctx_private_lookup', 'anything'),
+    ).toBe('deny');
+    expect(emittedDecision(policy.rules, 'ctx_public', 'anything')).toBe(
+      'allow',
+    );
     expect(emittedDecision(policy.rules, 'read', 'anything')).toBe('deny');
+    expect(emittedDecision(policy.rules, 'read', 'private/key')).toBe('deny');
+    expect(emittedDecision(policy.rules, 'unadmitted', 'anything')).toBe(
+      'deny',
+    );
   });
 
   test('resource ask ceilings preserve baseline denies', () => {
@@ -262,11 +247,12 @@ describe('compilePermissionPolicy', () => {
             },
           },
         });
-        for (const action of ['ctx_private_lookup', 'ctx_public']) {
-          expect(emittedDecision(policy.rules, action, '*')).toBe(
-            policy.decide(action, '*'),
-          );
-        }
+        // Absolute pins: emitted rules stay order-independent regardless of
+        // namespace and host-rule input order.
+        expect(emittedDecision(policy.rules, 'ctx_private_lookup', '*')).toBe(
+          'deny',
+        );
+        expect(emittedDecision(policy.rules, 'ctx_public', '*')).toBe('allow');
       }
     }
   });

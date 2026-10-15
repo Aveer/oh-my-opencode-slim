@@ -1,5 +1,15 @@
-import { describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
+
+const originalTuiConfig = process.env.OPENCODE_TUI_CONFIG;
+
+afterEach(() => {
+  if (originalTuiConfig === undefined) {
+    delete process.env.OPENCODE_TUI_CONFIG;
+  } else {
+    process.env.OPENCODE_TUI_CONFIG = originalTuiConfig;
+  }
+});
 
 // Mock logger to avoid noise
 mock.module('../../utils/logger', () => ({

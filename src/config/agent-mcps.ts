@@ -19,7 +19,10 @@ export const DEFAULT_AGENT_MCPS: Record<AgentName, string[]> = {
 /**
  * Parse a list with wildcard and exclusion syntax.
  */
-export function parseList(items: string[], allAvailable: string[]): string[] {
+export function parseList(
+  items: readonly string[],
+  allAvailable: readonly string[],
+): string[] {
   if (!items || items.length === 0) {
     return [];
   }

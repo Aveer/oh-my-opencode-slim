@@ -66,6 +66,11 @@ features. This is a temporary escape hatch:
 OH_MY_OPENCODE_SLIM_DISABLE=1 opencode
 ```
 
+Set `OH_MY_OPENCODE_SLIM_TUI_REFRESH_MS` to override the sidebar's 1-second
+config re-read interval, in milliseconds. Non-numeric values and values below
+10 fall back to the default. This knob exists mainly to speed up the test
+suite; leave it unset for normal use.
+
 If OmO-slim detects an invalid plugin config for the current project, the TUI sidebar shows a warning. Run `oh-my-opencode-slim doctor` from your project root for full diagnostics.
 
 Marketplace agent packages are selected through the active preset's
@@ -133,7 +138,7 @@ them via `agents.<name>.description`). When writing a custom
 your agent section — identity lines duplicate the native roster and go stale
 when agents are disabled (`disabled_agents` removes them from the roster
 automatically, but not from your file). `routingBlock: false` applies the
-same trim to the built-in v2 prompt by removing the stock `<Agents>` block
+same trim to the built-in prompt by removing the stock `<Agents>` block
 entirely, which also removes stock routing claims that drift against
 `agents.<name>.prompt` customizations (see the option reference).
 
@@ -189,7 +194,7 @@ All config files support **JSONC** (JSON with Comments):
 | `preset` | string | - | Active preset name (e.g. `"openai"`, `"best"`) |
 | `setDefaultAgent` | boolean | `true` | When `true`, sets OpenCode's `default_agent` to the orchestrator if unset or pointing at a subagent; `false` leaves it untouched |
 | `stripOrchestratorModel` | boolean | `false` | Preserve a runtime `/model` selection for the orchestrator after subagent dispatch by omitting its configured model from the SDK config. A selected preset's explicit `orchestrator.model` is retained. Without a runtime selection, this opt-in delegates the initial orchestrator choice to OpenCode's session default. |
-| `routingBlock` | boolean | `true` | When false, removes the `<Agents>` routing block from the v2 orchestrator prompt. The host's native delegation-tool roster still lists every enabled agent with its one-line description, but it carries no Delegate/Don't routing criteria — the block's routing guidance (~300 tokens) has no roster equivalent, so `false` trades routing quality for tokens, or drops stock routing claims that drift against custom agent prompts (`agents.<name>.prompt`). v2 hosts only: on v1 the flag is ignored with a warning (the v1 orchestrator prompt renders the same slim routing lines as v2 (frozen wording elsewhere in the template) — use an orchestrator.md override to change routing there). No effect when an orchestrator.md override already replaces the whole prompt. |
+| `routingBlock` | boolean | `true` | When false, removes the `<Agents>` routing block from the built-in orchestrator prompt. The host's native delegation-tool roster still lists every enabled agent with its one-line description, but it carries no Delegate/Don't routing criteria — the block's routing guidance (~300 tokens) has no roster equivalent, so `false` trades routing quality for tokens, or drops stock routing claims that drift against custom agent prompts (`agents.<name>.prompt`). Applies on v1 and v2 hosts. No effect when an orchestrator.md override already replaces the whole prompt. |
 | `presets` | object | - | Named preset configurations. New preset names are limited to letters, digits, `-`, and `_`; `__omo_*` and JavaScript reserved property names (`__proto__`, `constructor`, `prototype`) are rejected for new presets (pre-existing entries with other names stay visible and applicable) |
 | `presets.<name>.extends` | string | - | Optional single parent preset. The parent is resolved before the child; multiple parents are not supported |
 | `presets.<name>.<agent>.model` | string \| array | - | Model ID in `provider/model` format, or a non-empty ordered fallback chain (array of IDs or `{ id, variant }`) |
@@ -556,10 +561,8 @@ injection, the `<Agents>` block is not duplicated by a native channel: the
 roster carries agent identity only (~20 tokens of the block overlap with it),
 while the block's Delegate/Don't routing criteria have no native equivalent.
 A derived `false` would be a silent routing downgrade dressed up as
-deduplication, so the trade-off stays behind an explicit opt-in. As of this
-prompt refresh, v1 and v2 render identical `<Agents>` routing lines; the
-switch itself still only takes effect on v2 — v1's non-`<Agents>` wording
-remains the frozen template.
+deduplication, so the trade-off stays behind an explicit opt-in. v1 and v2
+share one orchestrator prompt template, so the switch applies on both.
 
 Board-off behavioral notes: the consumption bookkeeping that retires
 completed/error/cancelled jobs registers on orchestrator turns driven by a
@@ -1129,7 +1132,7 @@ Disable built-in hooks via `disabled_hooks`:
 
 Available hooks:
 
-- **Prompt injection**: `phase-reminder` (per-turn scheduler-workflow reminder on orchestrator messages), `deepwork-goal` (post-compaction goal pointer), `council-inject` (keyword-triggered Council Mode procedure, injected once per session at the first trigger).
+- **Prompt injection**: `phase-reminder` (per-turn scheduler-workflow reminder on orchestrator messages), `deepwork-goal` (post-compaction goal pointer, delivered once per compaction epoch), `council-inject` (keyword-triggered Council Mode procedure, injected once per session at the first trigger).
 - **Council**: `council-assembly` — switches the injected Council Mode block to paste mode: the orchestrator pastes each seat response itself (pre-assembly behavior) and the harness attaches nothing. A mid-session toggle does not rewrite blocks already injected; in that window the council may receive bare seat IDs — paste the seat responses (or start a new conversation).
 - **Model failover**: `foreground-fallback` — same effect as `fallback.enabled = false`.
 - **Tool guards**: `json-error-recovery`, `tool-loop-guard`, `search-path-guard`, `absolute-path-rescue`, `apply-patch` — each stops intercepting tool calls entirely, so malformed output, repeated identical calls, and invalid or guessed paths surface raw to the model.

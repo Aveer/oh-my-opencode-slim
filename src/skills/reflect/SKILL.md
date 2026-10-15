@@ -32,23 +32,65 @@ architecture review, or speculative agent creation without workflow evidence.
 ## Session Mode [branch: --sessions]
 
 When the user includes `--sessions` in their reflect command, shift to session
-archaeology across all repos to find repeated patterns and friction.
+archaeology: analyze historical OpenCode sessions across all repos to find
+repeated patterns, friction, and improvement opportunities.
 
 ### Session Discovery
 
-1. **Load recent sessions:**
-   ```bash
-   bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT id, directory, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT 50').all())"
+1. **Detect the schema, then load recent sessions.** OpenCode v2 keeps live
+   data in `session_v2` + `session_message`; legacy v1 databases keep `session`
+   + `message` (on v2 hosts those may still exist but are empty leftovers).
+   Detect by probing `session_v2` in `sqlite_master` and select the pair
+   together — never per-table: `session_message` can exist on v1 hosts holding
+   only metadata rows.
+
+   Write the probe below to a temp file (for example `/tmp/reflect-sessions.mjs`)
+   and run `bun /tmp/reflect-sessions.mjs`. Do not inline it with `bun -e "…"`:
+   nested quotes get mangled by PowerShell on Windows; a temp script sidesteps
+   shell quoting entirely.
+
+   ```js
+   import Database from 'bun:sqlite';
+   import { homedir } from 'os';
+   const db = new Database(`${homedir()}/.local/share/opencode/opencode.db`, { readonly: true });
+   const isV2 = !!db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_v2'").get();
+   const LIMIT = 50; // set to the --last N value when specified
+   const sessions = isV2
+     ? db.query(
+         `SELECT s.id, p.worktree AS project, s.title, s.agent, s.model, s.time_created, s.cost, s.tokens_input, s.tokens_output, s.time_archived FROM session_v2 s LEFT JOIN project p ON p.id = s.project_id ORDER BY s.time_created DESC LIMIT ${LIMIT}`
+       ).all()
+     : db.query(
+         `SELECT id, directory AS project, title, agent, model, time_created, cost, tokens_input, tokens_output FROM session ORDER BY time_created DESC LIMIT ${LIMIT}`
+       ).all();
+   console.log(sessions);
    ```
-   Adjust `LIMIT 50` to `--last N` if specified.
-2. **Load session messages** per session ID (`data` is JSON — role, agent, model, summary, etc.):
-   ```bash
-   bun -e "import Database from 'bun:sqlite'; const db = new Database(process.env.HOME + '/.local/share/opencode/opencode.db'); console.log(db.query('SELECT data FROM message WHERE session_id = ?').all('<session_id>'))"
+
+   Both branches emit a `project` path for the Per-Session Analysis. Timestamps
+   are epoch **milliseconds**. On v2, a non-null `time_archived` means the
+   session was archived inside OpenCode.
+
+2. **Load session messages** - for each session ID, query the matching message
+   table and parse `data`:
+
+   ```js
+   const rows = isV2
+     ? db.prepare('SELECT type, seq, data FROM session_message WHERE session_id = ? ORDER BY seq').all('<session_id>')
+     : db.prepare('SELECT data FROM message WHERE session_id = ?').all('<session_id>');
    ```
+
+   v2 rows carry a `type` column — parse `data` JSON by it:
+   - `user` → `data.text`
+   - `assistant` → join `data.content[]` entries where `entry.type === 'text'` (use `.text`)
+   - `summary` → `data.summary` (compaction summaries; useful for reconstructing goals)
+   - tool types → keep the tool name for `tools_used` (plus any error/failure
+     signal), skip the output payload; reasoning types → skip entirely
+
+   v1 rows have no `type` column — `data` is JSON with `role`, `agent`,
+   `model`, `summary`, etc.
 
 ### Per-Session Analysis
 
-For each session, produce a structured summary:
+For each session, analyze and produce a structured summary:
 
 ```json
 {
@@ -72,18 +114,36 @@ For each session, produce a structured summary:
 }
 ```
 
-**Confidence:** 0.9-1.0 clear patterns; 0.7-0.9 inferred from tool usage; 0.5-0.7 uncertain; <0.5 skip.
+**Confidence scoring:**
+- 0.9-1.0: Clear success/failure, obvious patterns
+- 0.7-0.9: Likely outcome, patterns inferred from tool usage
+- 0.5-0.7: Uncertain outcome, limited evidence
+- <0.5: Skip or mark as "needs more evidence"
 
 ### Storage and Caching
 
-Store summaries in `~/.config/opencode/oh-my-opencode-slim/reflections/sessions/`.
-Reuse `<session-id>.json` if present; else analyze and save, then aggregate.
+Store session summaries in `~/.config/opencode/oh-my-opencode-slim/reflections/sessions/`.
+
+**Cache logic:**
+1. Check if `<session-id>.json` exists in reflections directory
+2. If yes, load it (saves tokens)
+3. If no, analyze session and save summary
+4. Aggregate across all summaries for final report
 
 ### Aggregation
 
-1. Group by theme, count frequency ("42/50 sessions had repeated grep"), rank by impact.
-2. Filter noise (skip one-offs); cross-reference by model, agent, or repo.
-3. Scope: **global** (>50% of repos) | **cross-repo** (listed repos) | **project-specific** (one repo).
+After analyzing all sessions, aggregate findings:
+
+1. **Group by theme** - sessions with similar frictions cluster together
+2. **Count frequency** - "42/50 sessions had repeated grep before editing"
+3. **Rank by impact** - prioritize recommendations that appear most often
+4. **Filter noise** - skip one-off issues, focus on repeated patterns
+5. **Cross-reference** - see if patterns correlate with specific models, agents, or repos
+
+**Scope categories:**
+- **Global** - applies to all repos (pattern seen in >50% of repos)
+- **Cross-repo** - applies to specific repos where pattern appears
+- **Project-specific** - only relevant to one repo
 
 ### Output Format
 
@@ -122,10 +182,18 @@ Needs more evidence
 
 ### Error Handling
 
-- No log or empty log → report "no sessions to analyze" and stop.
-- Unloadable session or no messages → skip with warning, continue.
-- Log failures and continue with remaining sessions.
-- Report skip count at end: "3 sessions skipped due to load errors".
+**Log file issues:**
+- Log doesn't exist → "No OpenCode log found at <path>. Run OpenCode in at least one repo first."
+- Log is empty → "OpenCode log is empty. No sessions to analyze."
+
+**Session loading issues:**
+- Session ID not loadable → Skip with warning: "Session <id> could not be loaded, skipping."
+- Session has no messages → Skip: "Session <id> has no messages."
+
+**Recovery pattern:**
+- Log the failure
+- Continue with remaining sessions
+- Report failures at end: "3 sessions skipped due to load errors"
 
 ## Core Contract
 
@@ -139,7 +207,7 @@ Required behavior:
 - treat "create nothing" as a successful result when evidence is weak;
 - ask before changing prompts, skills, commands, agents, MCP access, or config;
 - avoid duplicating existing assets;
-- explain restart requirements for config, prompt, agent, skill, MCP, or
+- explain restart requirements for OpenCode config, prompt, agent, skill, MCP, or
   plugin changes.
 
 ## Evidence Sources
@@ -147,13 +215,18 @@ Required behavior:
 Use available evidence in this order:
 
 1. Current conversation and explicit user instructions.
-2. Project-local guidance and memories (`AGENTS.md`, `.opencode/`, `.slim/`, notes, checkpoints, codemaps).
-3. Existing skills, commands, agents, prompt overrides, MCP permissions, and oh-my-opencode-slim configuration.
-4. Recent logs or session artifacts if available and safe to inspect.
-5. External docs only when a proposed workflow depends on third-party behavior needing confirmation.
+2. Project-local guidance and memories, such as `AGENTS.md`, `.opencode/`,
+   `.slim/`, notes, checkpoints, task progress files, and codemaps.
+3. Existing skills, commands, agents, prompt overrides, MCP permissions, and
+   oh-my-opencode-slim configuration.
+4. Recent OpenCode logs or session artifacts if they are available and safe to
+   inspect.
+5. External docs only when a proposed workflow depends on a third-party tool or
+   library whose behavior needs confirmation.
 
 Respect privacy and safety boundaries. Do not inspect unrelated personal files,
-credentials, or private messages unless the user explicitly asks and the workflow requires it.
+credentials, private messages, or external accounts unless the user explicitly
+asks and the workflow requires it.
 
 ## Workflow
 
@@ -166,32 +239,38 @@ Reflect can be triggered directly:
 /reflect --sessions --last 100
 ```
 
-With no arguments, review recent work broadly. With arguments, focus on that area.
+With no arguments, review recent work broadly. With arguments, focus the review
+on that workflow area while still checking whether existing assets already cover
+it.
 
 ### 1. Inventory Existing Assets
 
-Inventory what already exists:
+Before proposing anything, identify what already exists:
 
 - bundled and user-installed skills;
 - custom agents and their `orchestratorPrompt` guidance;
 - custom commands;
 - prompt overrides and append files;
-- active preset, model routing, skills, and MCP permissions;
+- active oh-my-opencode-slim preset, model routing, skills, and MCP permissions;
 - project playbooks, docs, codemaps, and local workflow notes.
 
-Extend covering assets; do not near-duplicate.
+If an existing asset already covers the candidate, recommend extending or using
+that asset instead of creating a near-duplicate.
 
 ### 2. Find Repeated Workflow Patterns
 
 Look for repeated signals such as:
 
-- the same command sequence, review/setup/release/debug process, or research
-  steps keep recurring;
-- the same routing decision or project-specific rule is repeatedly re-explained;
+- the same command sequence appears across sessions;
+- the user repeatedly asks for the same review, setup, release, or debugging
+  process;
+- the same manual research or context-gathering steps keep recurring;
+- the same specialist routing decision is repeatedly needed;
+- the same project-specific rule is repeatedly re-explained;
 - repeated failures happen because an agent lacks a stable instruction, tool, or
   permission boundary.
 
-Strong candidates have at least two occurrences, stable inputs, a clear
+Strong candidates usually have at least two occurrences, stable inputs, a clear
 output, and a clear stopping condition.
 
 ### 3. Score Candidates
@@ -199,30 +278,35 @@ output, and a clear stopping condition.
 For each candidate, decide:
 
 - **Frequency:** How often has it happened?
-- **Cost:** Time, context, money, or attention wasted?
-- **Risk:** Bugs, regressions, bad decisions, or unsafe changes?
-- **Stability:** Predictable inputs and output?
-- **Coverage:** An existing asset already handles it?
+- **Cost:** Does it waste meaningful time, context, money, or attention?
+- **Risk:** Does inconsistent execution cause bugs, regressions, bad decisions,
+  or unsafe changes?
+- **Stability:** Are the inputs and desired output predictable?
+- **Coverage:** Is there already an asset that handles it well?
 
 Only recommend creating or changing assets when confidence is high.
 
 ### 4. Choose the Smallest Useful Form
 
-Pick the least powerful form:
+Pick the least powerful form that solves the repeated problem:
 
 - **Prompt/config rule:** a small behavior change to an existing agent.
 - **Skill:** reusable workflow guidance for a task shape.
 - **Command:** a repeatable manual trigger with stable inputs.
 - **Custom agent:** a distinct specialist lane with clear delegation rules.
 - **MCP/tool permission change:** a safe access adjustment for an existing agent.
-- **Project playbook/doc:** human-readable guidance when automation is too heavy.
+- **Project playbook/doc:** human-readable process guidance when automation is too
+  heavy.
 - **Skip:** weak, one-off, ambiguous, sensitive, or already-covered work.
 
-Prefer weaker forms: rule over agent, skill over agent, playbook over skill; skip when benefit is unclear.
+Avoid creating custom agents when a prompt rule or skill is enough. Avoid skills
+when a short project playbook is enough. Avoid config changes when the benefit is
+unclear.
 
 ### 5. Propose Before Changing
 
-Propose before writing files or changing config (unless the user requested a specific edit):
+Unless the user explicitly requested a specific edit, present a concise proposal
+before writing files or changing config:
 
 ```text
 Found 2 strong repeated workflows and 1 weak candidate.
@@ -267,11 +351,14 @@ yet.
 
 ## Guardrails
 
-- Do not manufacture assets to justify the workflow; do not create overlapping skills or agents.
+- Do not manufacture assets to justify the workflow.
+- Do not create overlapping skills or agents.
 - Do not silently change global config, prompts, or permissions.
 - Do not add broad instructions that make agents more eager, expensive, or
   invasive without a clear benefit.
-- Do not overfit to a single session unless the user explicitly asks for that workflow.
+- Do not overfit to a single session unless the user explicitly asks for that
+  exact reusable workflow.
 - Do not use private or sensitive material as examples in generated assets.
-- On config, prompt, agent, skill, MCP, or plugin changes, state: "Applies on
-  the next OpenCode run; restart OpenCode if you need it immediately."
+- When config, prompt, agent, skill, MCP, or plugin files change, tell the user:
+  "This should apply on the next OpenCode run; restart OpenCode if you need it
+  immediately."

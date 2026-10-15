@@ -1235,6 +1235,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "capyBearista",
+      "name": "Arjun Pramanik",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20227532?v=4",
+      "profile": "https://github.com/capyBearista",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "commitConvention": "angular"
