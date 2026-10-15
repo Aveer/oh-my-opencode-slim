@@ -362,6 +362,26 @@ describe('applyCommandMarkerToContext', () => {
     expect(trailing.content).toEqual([{ type: 'text', text: 'standup notes' }]);
   });
 
+  test('ignores synthetic text when detecting markers and preserves it', async () => {
+    const trailing = {
+      id: 'm1',
+      role: 'user',
+      content: [
+        { type: 'text', text: wrapCommandMarker('reflect', 'standup notes') },
+        { type: 'text', text: '[chair] guard', synthetic: true },
+      ],
+    };
+    const event = makeEvent([trailing]);
+    const commandBefore: V1CommandBeforeHook = async () => {};
+
+    await applyCommandMarkerToContext(event, commandBefore);
+
+    expect(trailing.content).toEqual([
+      { type: 'text', text: 'standup notes' },
+      { type: 'text', text: '[chair] guard', synthetic: true },
+    ]);
+  });
+
   test('no-ops for assistant trailing messages and marker-less text', async () => {
     const calls: unknown[] = [];
     const commandBefore: V1CommandBeforeHook = async (input) => {
