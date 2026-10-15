@@ -25,7 +25,8 @@ Suggest config changes only for recurring behavior, not one-offs.
 - Skill shadow: `~/.config/opencode/skills/<skill-name>/SKILL.md` shadows the bundled skill.
 - Agent names: `orchestrator|oracle|librarian|explorer|designer|fixer|observer|council`.
 
-Lookup: with an active preset, check `{preset}/` first, then the base dir.\n`{agent}.md` replaces the built-in prompt; `{agent}_append.md` appends to it. Each works alone; neither present → unchanged built-in prompt.
+Lookup: with an active preset, check `{preset}/` first, then the base dir.
+`{agent}.md` replaces the built-in prompt; `{agent}_append.md` appends to it. Each works alone; neither present → unchanged built-in prompt.
 
 Common customizations:
 
