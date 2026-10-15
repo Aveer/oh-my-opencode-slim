@@ -42,10 +42,11 @@
  * the board key makes the pointer a first-class resident of that zone —
  * the board strips and re-anchors around it, the v2 breakpoint skips it,
  * and the cache-safety fingerprints exclude it — with zero board-module
- * changes. The pointer transform runs LAST (after the board) so the strip
- * order in a re-entered transform stays deterministic: a matching claim
- * skips without stripping, so a pointer appended by an earlier pass on the
- * same array survives re-entry untouched.
+ * changes. The pointer transform runs LAST (after the board) so a
+ * re-entered transform chain stays ordered: the board's trailing-zone
+ * strip removes the dual-tagged pointer mid-chain, and a matching claim
+ * restores it by array identity (a fresh array is a new request the epoch
+ * already served and stays suppressed).
  *
  * Switch: list "deepwork-goal" in disabled_hooks (disabled = never
  * injected).
@@ -166,6 +167,11 @@ function epochOf(messages: unknown[]): string | undefined {
 export function createDeepworkGoalHook(options: DeepworkGoalOptions) {
   // Once-per-epoch claim: sessionID → epoch whose pointer was delivered.
   const claimedEpochs = new Map<string, string>();
+  // Arrays this hook already delivered into: a matching claim on the same
+  // array means a re-entered transform chain (the board's trailing-zone
+  // strip removes the dual-tagged pointer), so the pass restores it. A
+  // fresh array means a new request the epoch already served.
+  const deliveredArrays = new WeakSet<object>();
 
   const claim = (sessionID: string, epoch: string) => {
     // Re-set even on an existing claim so the LRU order tracks the hot
@@ -211,13 +217,30 @@ export function createDeepworkGoalHook(options: DeepworkGoalOptions) {
         }
       }
 
-      // Already delivered in this epoch: skip without stripping, so a
-      // pointer appended by an earlier pass on the same array (re-entered
-      // transform) survives; a fresh request's array carries none. An
-      // external strip of the pointer mid-epoch (compaction rebuilds the
-      // window in src/index.ts) also changes the epoch token, so the skip
-      // never outlives the pointer it delivered.
+      // Already delivered in this epoch. A fresh array stays suppressed —
+      // the host renders one per request, and the pointer was delivered
+      // once. The same array re-entering the chain means the board's
+      // trailing-zone strip removed the dual-tagged pointer mid-chain:
+      // strip + re-append restores exactly one pointer for this payload.
       if (epoch !== undefined && claimedEpochs.get(sessionID) === epoch) {
+        if (!deliveredArrays.has(messages)) return;
+        const text = pointerText(sessionID);
+        if (!text) return;
+        stripTaggedContent(messages, GOAL_POINTER_METADATA_KEY);
+        appendTrailingVolatileMessage(
+          messages,
+          {
+            role: 'user',
+            agent: 'orchestrator',
+            sessionID,
+            id: `deepwork-goal-${sessionID}`,
+          },
+          {
+            text,
+            metadataKey: GOAL_POINTER_METADATA_KEY,
+            extraMetadata: { [BACKGROUND_JOB_BOARD_METADATA_KEY]: true },
+          },
+        );
         return;
       }
 
@@ -238,7 +261,10 @@ export function createDeepworkGoalHook(options: DeepworkGoalOptions) {
           extraMetadata: { [BACKGROUND_JOB_BOARD_METADATA_KEY]: true },
         },
       );
-      if (epoch !== undefined) claim(sessionID, epoch);
+      if (epoch !== undefined) {
+        claim(sessionID, epoch);
+        deliveredArrays.add(messages);
+      }
     },
   };
 }

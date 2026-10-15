@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { routerHeadAnnouncement } from '../deepwork';
+import { stripTaggedContent } from '../cache-safe-injection';
 import { BACKGROUND_JOB_BOARD_METADATA_KEY } from '../task-session-manager/board-injection';
 import type { MessageWithParts } from '../types';
 import {
@@ -354,6 +355,48 @@ describe('createDeepworkGoalHook', () => {
     expect(output.messages[output.messages.length - 1]).toBe(
       goalMessages(output.messages)[0],
     );
+  });
+
+  test('full-chain re-entry: the board strip removes the pointer, the goal pass restores it', async () => {
+    const transform = createHook();
+    const output = {
+      messages: [userTurn('u1', 'start'), assistantTurn('a1', 'working')],
+    };
+
+    await transform({}, output);
+    expect(goalMessages(output.messages)).toHaveLength(1);
+
+    // Second pass of the composed chain on the same array: the board's
+    // trailing-zone strip removes the dual-tagged pointer.
+    stripTaggedContent(output.messages, BACKGROUND_JOB_BOARD_METADATA_KEY);
+    expect(goalMessages(output.messages)).toHaveLength(0);
+
+    // The goal pass restores it for this payload instead of treating the
+    // request as already served — otherwise the pointer would be lost for
+    // the rest of the epoch.
+    await transform({}, output);
+    expect(goalMessages(output.messages)).toHaveLength(1);
+    expect(output.messages[output.messages.length - 1]).toBe(
+      goalMessages(output.messages)[0],
+    );
+  });
+
+  test('the same epoch on a fresh array stays suppressed after a chain re-entry', async () => {
+    const transform = createHook();
+    const chain = {
+      messages: [userTurn('u1', 'start'), assistantTurn('a1', 'working')],
+    };
+    await transform({}, chain);
+    stripTaggedContent(chain.messages, BACKGROUND_JOB_BOARD_METADATA_KEY);
+    await transform({}, chain);
+    expect(goalMessages(chain.messages)).toHaveLength(1);
+
+    // A different array is a new request the epoch already served.
+    const nextRequest = {
+      messages: [...chain.messages.filter((m) => !goalMessages([m]).length), userTurn('u2', 'continue')],
+    };
+    await transform({}, nextRequest);
+    expect(goalMessages(nextRequest.messages)).toHaveLength(0);
   });
 
   test('multi-session claims stay isolated', async () => {
