@@ -6,8 +6,8 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { routerHeadAnnouncement } from '../deepwork';
 import { stripTaggedContent } from '../cache-safe-injection';
+import { routerHeadAnnouncement } from '../deepwork';
 import { BACKGROUND_JOB_BOARD_METADATA_KEY } from '../task-session-manager/board-injection';
 import type { MessageWithParts } from '../types';
 import {
@@ -393,7 +393,10 @@ describe('createDeepworkGoalHook', () => {
 
     // A different array is a new request the epoch already served.
     const nextRequest = {
-      messages: [...chain.messages.filter((m) => !goalMessages([m]).length), userTurn('u2', 'continue')],
+      messages: [
+        ...chain.messages.filter((m) => !goalMessages([m]).length),
+        userTurn('u2', 'continue'),
+      ],
     };
     await transform({}, nextRequest);
     expect(goalMessages(nextRequest.messages)).toHaveLength(0);
