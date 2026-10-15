@@ -55,9 +55,10 @@ context. Value productivity: a working whole picture beats a perfect corner.
   them — only as firmly as this pass needs; expect them to move later.
 - Plan @designer and @fixer as separate lanes from the start: @designer owns
   visuals; @fixer owns wiring, types, and tests.
-- Before code that touches persistent state, money, concurrency, crash
-  recovery, or destructive operations, get a short @oracle design review of
-  that lane. Design flaws are cheap to fix before implementation.
+- If the pass has lanes that touch persistent state, money, concurrency,
+  crash recovery, or destructive operations, get one short @oracle design
+  review of the pass plan covering all of them before dispatch. Design flaws
+  are cheap to fix before implementation.
 - Record the pass plan in the progress file; give the user a compact version.
 
 ## Running a Pass

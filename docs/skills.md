@@ -119,9 +119,9 @@ Start it directly with:
    **detail** (hardening, crash recovery, edge cases, polish). Security and
    money/data correctness are never deferred.
 2. Each pass has a one-line goal and a few lanes with disjoint write scopes.
-   @designer and @fixer are separate lanes from the start; risky lanes (state,
-   money, concurrency, crash recovery, destructive operations) get a short
-   @oracle design review before code.
+   @designer and @fixer are separate lanes from the start; if any lanes are
+   risky (state, money, concurrency, crash recovery, destructive operations),
+   one short @oracle design review of the pass plan covers them before code.
 3. Lanes report changed files, exact commands with exit codes, and what is
    unverified; the orchestrator accepts after checking one decisive artifact.
    Lanes run focused checks; the broad suite runs once per pass.

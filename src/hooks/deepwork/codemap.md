@@ -57,7 +57,7 @@ The hook follows the OpenCode plugin hook pattern, exposing a factory function `
 1. Agent receives the full workflow instructions (SKILL.md body) with the pinned router-head path and task
 2. Agent creates its `.slim/deepwork/<session-id>.md` router head (`status:` + `slug:`) and the task directory it points to
 3. Agent works in passes over the whole product (sketch → structure → detail), each with a one-line goal and a few disjoint lanes
-4. Risky lanes get an `@oracle` design review before code; lanes report files, commands, and exit codes
+4. One `@oracle` design review of the pass plan covers risky lanes before code; lanes report files, commands, and exit codes
 5. Each pass ends with broad validation, one `@oracle` gate scoped to that pass, a commit, and a step back (re-plan, reorganize code if needed)
 6. Runs autonomously to the end; asks only when truly blocked
 7. Completion rewrites the progress file into a `status: completed` tombstone listing remaining known issues
