@@ -414,7 +414,7 @@ Continue an existing session with task_revive even when it is not listed here. t
         "synthetic": true,
         "text": 
 "<system-reminder>
-Deepwork: this session's router head is \`.slim/deepwork/ses_cache_safety_fixture.md\` — read it before acting; the file is authoritative.
+Deepwork router head: \`.slim/deepwork/ses_cache_safety_fixture.md\`.
 </system-reminder>"
 ,
         "type": "text",
