@@ -8,7 +8,7 @@ import { createInterviewService } from '../interview/service';
 import type { InterviewMessage } from '../interview/types';
 import { isRecord } from '../utils/guards';
 import { log } from '../utils/logger';
-import { createSessionListShim } from './client-shim';
+import { createSessionListShim, resolveV2Directory } from './client-shim';
 import { createSessionSubmit, textFromContent } from './session-submit';
 import type {
   V2CommandDraft,
@@ -160,7 +160,7 @@ export function createV2InterviewBridge(
 
   const { dashboardEnabled, outputFolder, dashboardPort } =
     computeInterviewMode(config);
-  const pluginContext = { directory: process.cwd() } as never;
+  const pluginContext = { directory: resolveV2Directory(ctx) } as never;
   const dashboardManager = dashboardEnabled
     ? createDashboardManager(
         pluginContext,

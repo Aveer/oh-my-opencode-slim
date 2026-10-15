@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { URL } from 'node:url';
 import type { PluginInput } from '@opencode-ai/plugin';
+import { loadPluginConfig } from '../config/loader';
 import { log } from '../utils';
 import {
   extractSummarySection,
@@ -435,6 +436,13 @@ export function createDashboardServer(config: DashboardConfig): {
     return dirs;
   }
 
+  function outputFolderFor(dir: string): string {
+    return (
+      loadPluginConfig(dir, { silent: true }).interview?.outputFolder ??
+      config.outputFolder
+    );
+  }
+
   async function discoverSessionDirectories(): Promise<void> {
     if (!config.sessionClient) return;
     try {
@@ -470,7 +478,7 @@ export function createDashboardServer(config: DashboardConfig): {
     const items: InterviewFileItem[] = [];
 
     for (const dir of directories) {
-      const interviewDir = path.join(dir, config.outputFolder);
+      const interviewDir = path.join(dir, outputFolderFor(dir));
       let entries: string[];
       try {
         entries = await fs.readdir(interviewDir);
@@ -518,7 +526,7 @@ export function createDashboardServer(config: DashboardConfig): {
     let rebuilt = 0;
 
     for (const dir of directories) {
-      const interviewDir = path.join(dir, config.outputFolder);
+      const interviewDir = path.join(dir, outputFolderFor(dir));
       let entries: string[];
       try {
         entries = await fs.readdir(interviewDir);
@@ -1026,7 +1034,7 @@ export function createDashboardServer(config: DashboardConfig): {
         const dirs = getKnownDirectories();
         for (const dir of dirs) {
           const slug = extractResumeSlug(interviewId);
-          const candidate = path.join(dir, config.outputFolder, `${slug}.md`);
+          const candidate = path.join(dir, outputFolderFor(dir), `${slug}.md`);
           try {
             document = await fs.readFile(candidate, 'utf8');
             markdownPath = candidate;

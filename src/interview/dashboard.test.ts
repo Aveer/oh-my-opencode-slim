@@ -115,6 +115,56 @@ async function openSseConnection(
 }
 
 describe('dashboard server', () => {
+  test('uses each manual folder project outputFolder', async () => {
+    const originalEnv = { ...process.env };
+    const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'dashboard-project-'));
+    const userConfigDir = await fs.mkdtemp(
+      path.join(tmpdir(), 'dashboard-user-config-'),
+    );
+    try {
+      delete process.env.OPENCODE_CONFIG_DIR;
+      process.env.XDG_CONFIG_HOME = userConfigDir;
+
+      const configDir = path.join(tempDir, '.opencode');
+      await fs.mkdir(configDir, { recursive: true });
+      await fs.writeFile(
+        path.join(configDir, 'oh-my-opencode-slim.json'),
+        JSON.stringify({ interview: { outputFolder: 'specs' } }),
+      );
+      await fs.mkdir(path.join(tempDir, 'specs'));
+      await fs.writeFile(
+        path.join(tempDir, 'specs', 'foo.md'),
+        '# Foo\n\n## Summary\nA spec',
+      );
+
+      const { port, server } = await bindFreePort();
+      const dashboard = createDashboardServer({
+        port,
+        outputFolder: 'interview',
+        server,
+      });
+      dashboard.addManualFolder(tempDir);
+      try {
+        const baseUrl = await dashboard.start();
+        const response = await fetch(
+          `${baseUrl}/api/files?token=${dashboard.authToken}`,
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+          files: expect.arrayContaining([
+            expect.objectContaining({ fileName: 'foo.md' }),
+          ]),
+        });
+      } finally {
+        dashboard.close();
+      }
+    } finally {
+      process.env = originalEnv;
+      await fs.rm(tempDir, { recursive: true, force: true });
+      await fs.rm(userConfigDir, { recursive: true, force: true });
+    }
+  });
+
   describe('server lifecycle', () => {
     test('close is safe before start and repeated', () => {
       const dashboard = createDashboardServer({
