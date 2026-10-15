@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,8 +9,24 @@ import {
 } from './status.js';
 import type { MarketplaceStoreInspection } from './store.js';
 
+const originalPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  if (originalPreset === undefined) {
+    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  } else {
+    process.env.OH_MY_OPENCODE_SLIM_PRESET = originalPreset;
+  }
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function setup(config: object, inspection: MarketplaceStoreInspection) {
   const directory = mkdtempSync(join(tmpdir(), 'marketplace-status-'));
+  tempDirs.push(directory);
   const configDirectory = join(directory, '.opencode');
   mkdirSync(configDirectory, { recursive: true });
   writeFileSync(

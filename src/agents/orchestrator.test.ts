@@ -112,10 +112,20 @@ describe('orchestrator prompt: options', () => {
 
 describe('orchestrator prompt: cache safety', () => {
   test('renders byte-identical output for identical options', () => {
-    expect(v1()).toBe(v1());
-    expect(v2()).toBe(v2());
+    // No time, randomness, or per-request state may reach the template.
+    for (const render of [v1, v2]) {
+      const first = render();
+      const second = render();
+      expect(first).toContain('You are Orchestrator, a workflow manager');
+      expect(first).toBe(second);
+    }
+
     const opts = { disabledAgents: new Set(['explorer']), waitForUser: false };
-    expect(v2(opts)).toBe(v2(opts));
+    const scoped1 = v2(opts);
+    const scoped2 = v2(opts);
+    expect(scoped1).not.toContain('@explorer');
+    expect(scoped1).toContain('@librarian');
+    expect(scoped1).toBe(scoped2);
   });
 
   test('v1 render is snapshot-pinned', () => {

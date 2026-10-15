@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +22,15 @@ import { MarketplaceStore } from './store';
 
 const PACKAGE_A = 'community/docs-researcher';
 const PACKAGE_B = 'community/other';
+
+const activeFixtures: Array<{ cleanup: () => void }> = [];
+
+afterEach(() => {
+  while (activeFixtures.length > 0) {
+    const fixture = activeFixtures.pop();
+    fixture?.cleanup();
+  }
+});
 
 function bundle(id: string, agentName: string) {
   return {
@@ -69,13 +78,16 @@ function setup() {
     pluginVersion: '3.2.0',
   });
 
-  return {
+  let cleaned = false;
+  const handle = {
     root,
     project,
     userConfig,
     projectConfig,
     store,
     cleanup() {
+      if (cleaned) return;
+      cleaned = true;
       if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = previousConfigHome;
       if (previousPreset === undefined)
@@ -84,6 +96,8 @@ function setup() {
       rmSync(root, { recursive: true, force: true });
     },
   };
+  activeFixtures.push(handle);
+  return handle;
 }
 
 function resolveStoredPreset(
@@ -997,6 +1011,9 @@ writeFileSync(donePath, 'done');`,
         }
         await Bun.sleep(10);
       }
+      // EXCEPTION (ts-no-test-timers): bounded negative window — a
+      // cross-process worker effect has no event to await; the sleep IS
+      // the assertion's "long enough for it to have happened" bound.
       await Bun.sleep(100);
       expect(existsSync(join(fixture.root, 'docs-researcher.done'))).toBe(
         false,
@@ -1080,6 +1097,8 @@ try {
         }
         await Bun.sleep(10);
       }
+      // EXCEPTION (ts-no-test-timers): bounded negative window for a
+      // cross-process worker effect (see the earlier note).
       await Bun.sleep(100);
       expect(existsSync(showPath)).toBe(false);
 

@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import { get } from 'node:http';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { createDashboardServer } from './dashboard';
 import { bindFreePort } from './test-port';
@@ -35,7 +36,7 @@ async function startDashboard() {
 
 // Helper to create a temp directory with interview files
 async function createTempInterviewDir() {
-  const tempDir = await fs.mkdtemp('/tmp/dashboard-test-');
+  const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'dashboard-test-'));
   const interviewDir = path.join(tempDir, 'interview');
   await fs.mkdir(interviewDir, { recursive: true });
   return tempDir;
@@ -689,10 +690,9 @@ describe('dashboard server', () => {
         const data = (await response.json()) as { document: string };
         expect(data.document).toContain('# Test Document');
         expect(data.document).toContain('Content here.');
-
-        await fs.rm(tempDir, { recursive: true, force: true });
       } finally {
         cleanup();
+        await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
 
@@ -1717,12 +1717,11 @@ describe('dashboard server', () => {
         // os.homedir() is always scanned, so other files may appear.
         // Assert our file is present rather than asserting exact count.
         const ourFile = data.files.find((f) => f.fileName === 'test-file.md');
-        expect(ourFile).toBeDefined();
+        expect(ourFile?.fileName).toBe('test-file.md');
         expect(ourFile?.title).toBe('Test File');
-
-        await fs.rm(tempDir, { recursive: true, force: true });
       } finally {
         cleanup();
+        await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
 
