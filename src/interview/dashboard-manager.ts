@@ -288,6 +288,7 @@ export function createDashboardManager(
           dashboard?.registerSession({
             sessionID: interviewOwnerSessionID(interview),
             directory: ctx.directory,
+            outputFolder,
             pid: process.pid,
             registeredAt: Date.now(),
           });
@@ -302,6 +303,7 @@ export function createDashboardManager(
         dashboard.registerSession({
           sessionID: `dashboard-self-${process.pid}`,
           directory: ctx.directory,
+          outputFolder,
           pid: process.pid,
           registeredAt: Date.now(),
         });
@@ -608,6 +610,7 @@ export function createDashboardManager(
           body: JSON.stringify({
             sessionID,
             directory: ctx.directory,
+            outputFolder,
             pid: process.pid,
           }),
           signal: AbortSignal.timeout(3000),

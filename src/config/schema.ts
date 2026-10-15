@@ -427,7 +427,7 @@ export type PresetInput = z.infer<typeof PresetSchema>;
 export const McpNameSchema = z.enum(['context7', 'gh_grep']);
 export type McpName = z.infer<typeof McpNameSchema>;
 
-const InterviewOutputFolderSchema = z
+export const InterviewOutputFolderSchema = z
   .string()
   .trim()
   .min(1)

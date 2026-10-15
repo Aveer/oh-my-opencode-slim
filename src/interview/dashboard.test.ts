@@ -487,6 +487,98 @@ describe('dashboard server', () => {
       }
     });
 
+    test('uses a registered session output folder for its directory', async () => {
+      const originalEnv = { ...process.env };
+      const tempDir = await fs.mkdtemp(
+        path.join(tmpdir(), 'dashboard-register-'),
+      );
+      const userConfigDir = await fs.mkdtemp(
+        path.join(tmpdir(), 'dashboard-user-config-'),
+      );
+      delete process.env.OPENCODE_CONFIG_DIR;
+      process.env.XDG_CONFIG_HOME = userConfigDir;
+      await fs.mkdir(path.join(tempDir, 'specs'));
+      await fs.writeFile(
+        path.join(tempDir, 'specs', 'x.md'),
+        '# X\n\n## Summary\nA spec',
+      );
+      const { baseUrl, authToken, dashboard, cleanup } = await startDashboard();
+      dashboard.addManualFolder(tempDir);
+      try {
+        const response = await fetch(
+          `${baseUrl}/api/register?token=${authToken}`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              sessionID: 'session-registered-folder',
+              directory: tempDir,
+              outputFolder: 'specs',
+            }),
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+        expect(response.status).toBe(200);
+        expect(
+          await (await fetch(`${baseUrl}/api/files?token=${authToken}`)).json(),
+        ).toMatchObject({
+          files: expect.arrayContaining([
+            expect.objectContaining({ fileName: 'x.md', directory: tempDir }),
+          ]),
+        });
+      } finally {
+        cleanup();
+        process.env = originalEnv;
+        await fs.rm(tempDir, { recursive: true, force: true });
+        await fs.rm(userConfigDir, { recursive: true, force: true });
+      }
+    });
+
+    test('ignores invalid registered output folders', async () => {
+      const originalEnv = { ...process.env };
+      const tempDir = await fs.mkdtemp(
+        path.join(tmpdir(), 'dashboard-invalid-'),
+      );
+      const userConfigDir = await fs.mkdtemp(
+        path.join(tmpdir(), 'dashboard-user-config-'),
+      );
+      delete process.env.OPENCODE_CONFIG_DIR;
+      process.env.XDG_CONFIG_HOME = userConfigDir;
+      await fs.mkdir(path.join(tempDir, 'interview'));
+      await fs.writeFile(
+        path.join(tempDir, 'interview', 'x.md'),
+        '# X\n\n## Summary\nA spec',
+      );
+      const { baseUrl, authToken, dashboard, cleanup } = await startDashboard();
+      dashboard.addManualFolder(tempDir);
+      try {
+        const response = await fetch(
+          `${baseUrl}/api/register?token=${authToken}`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              sessionID: 'session-invalid-folder',
+              directory: tempDir,
+              outputFolder: '../evil',
+            }),
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+        expect(response.status).toBe(200);
+        expect(
+          await (await fetch(`${baseUrl}/api/files?token=${authToken}`)).json(),
+        ).toMatchObject({
+          files: expect.arrayContaining([
+            expect.objectContaining({ fileName: 'x.md', directory: tempDir }),
+          ]),
+        });
+      } finally {
+        cleanup();
+        process.env = originalEnv;
+        await fs.rm(tempDir, { recursive: true, force: true });
+        await fs.rm(userConfigDir, { recursive: true, force: true });
+      }
+    });
+
     test('rejects missing sessionID', async () => {
       const { baseUrl, authToken, cleanup } = await startDashboard();
       try {

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import type { PluginInput } from '@opencode-ai/plugin';
 import { loadPluginConfig } from '../config/loader';
+import { InterviewOutputFolderSchema } from '../config/schema';
 import { log } from '../utils';
 import {
   DEFAULT_OUTPUT_FOLDER,
@@ -141,6 +142,7 @@ function hasLiveForSlug(
 interface RegisteredSession {
   sessionID: string;
   directory: string;
+  outputFolder?: string;
   pid: number;
   registeredAt: number;
 }
@@ -439,6 +441,10 @@ export function createDashboardServer(config: DashboardConfig): {
   }
 
   function outputFolderFor(dir: string): string {
+    const registered = [...sessions.values()]
+      .filter((session) => session.directory === dir && session.outputFolder)
+      .sort((a, b) => b.registeredAt - a.registeredAt)[0];
+    if (registered?.outputFolder) return registered.outputFolder;
     return (
       loadPluginConfig(dir, {
         silent: true,
@@ -788,10 +794,11 @@ export function createDashboardServer(config: DashboardConfig): {
         return;
       }
 
-      const { sessionID, directory, pid } = body as {
+      const { sessionID, directory, outputFolder, pid } = body as {
         sessionID?: string;
         directory?: string;
         pid?: number;
+        outputFolder?: unknown;
       };
       if (!sessionID || !directory || !isValidId(sessionID)) {
         sendJson(response, 400, {
@@ -803,6 +810,7 @@ export function createDashboardServer(config: DashboardConfig): {
       sessions.set(sessionID, {
         sessionID,
         directory,
+        outputFolder: InterviewOutputFolderSchema.safeParse(outputFolder).data,
         pid: pid ?? 0,
         registeredAt: Date.now(),
       });
