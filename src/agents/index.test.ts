@@ -1673,9 +1673,9 @@ describe('council compaction exception', () => {
     expect(prompt).toContain(
       'if the host asks you to produce a session checkpoint or compaction summary in a specific template',
     );
-    // The override keeps the format marker, so the assembly layer appends
-    // the lean pointer (not the fallback) on top of it.
-    expect(prompt).toContain('You MUST follow the Synthesis Process');
+    // The override keeps the format marker, so single-track reinforcement
+    // appends nothing (no pointer, no fallback) on top of it.
+    expect(prompt).not.toContain('You MUST follow the Synthesis Process');
     expect(prompt).not.toContain('You MUST produce: ## Council Response');
   });
 

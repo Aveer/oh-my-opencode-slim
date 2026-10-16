@@ -883,8 +883,8 @@ export function createAgents(
       if (name === 'council') {
         // resolvePrompt above may have replaced the generated prompt with
         // an inline or council.md override; re-apply the idempotent
-        // dual-track reinforcement so the required report structure and
-        // the compaction exception survive the override.
+        // fallback reinforcement so the required report structure and the
+        // compaction exception survive the override.
         agent.config.prompt = ensureCouncilCompactionException(
           ensureCouncilSynthesisReinforcement(agent.config.prompt ?? ''),
         );
