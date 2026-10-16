@@ -84,6 +84,11 @@ export interface CouncilWording {
    * `sessionID`, v1 `task_id`) — step 4 names it so the model knows
    * exactly which value to list on the Seats line. */
   resumeParam: string;
+  /** The delegation tool's model-override parameter, where the host's tool
+   * has one (v2 `model`; absent on v1 — `task` has no model param). Step 2
+   * names it only when present, so v1 never hears about a parameter its
+   * schema lacks. */
+  modelParam?: string;
 }
 
 /**
@@ -120,7 +125,7 @@ export function buildCouncilModeBlock(
     '',
     'When the conversation calls for multi-model consensus, run this procedure:',
     '1. Embed a brief summary of needed context into each seat prompt (seats receive only their prompt).',
-    `2. Dispatch the question to every council seat in parallel via ${wording.tool}() — one call per seat.`,
+    `2. Dispatch the question to every seat in the ## Council roster in parallel via ${wording.tool}() — one call per seat, by exact name even though the tool roster omits them; never substitute another agent${wording.modelParam ? ` or set ${wording.modelParam} (seats carry preset models)` : ''}.`,
     '3. Collect all responses; retry an empty seat once; mark failed seats; do not wait on stragglers.',
     synthesize,
   ].join('\n');

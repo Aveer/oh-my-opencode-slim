@@ -1305,6 +1305,16 @@ test('council pointer wording tracks the council-inject hook state', () => {
   expect(disabledPrompt).not.toContain('council-inject hook');
 });
 
+test('pointer stays roster-only — the block dispatch clause never leaks into the static prompt', () => {
+  const agents = createAgents(runtimeFor({ council: councilConfig() }));
+  const prompt = agents.find((a) => a.name === 'orchestrator')?.config
+    .prompt as string;
+  // The dispatch-authority clause is injected with the block (first-hit) and
+  // must never be mirrored into the static pointer, which is read every turn.
+  expect(prompt).not.toContain('never substitute another agent');
+  expect(prompt).not.toContain('tool roster omits');
+});
+
 test('routingBlock: false strips <Agents> from the v2 orchestrator prompt', () => {
   const agents = createAgents(runtimeFor({ routingBlock: false }), {
     hostFlavor: 'v2',

@@ -134,6 +134,10 @@ export interface DelegationVocabulary {
    * v1. Resuming a child session requires this exact parameter; the wrong
    * name silently spawns a new session instead. */
   resumeParam: string;
+  /** Name of the delegation tool's model-override parameter, where the host
+   * has one: `model` on v2. Absent on v1 — `task` has no model param, and
+   * naming a schema-absent parameter would prime hallucination. */
+  modelParam?: string;
 }
 
 export function delegationVocabulary(
@@ -144,6 +148,7 @@ export function delegationVocabulary(
         tool: 'subagent',
         agentParam: 'agent',
         resumeParam: controlParamName(hostFlavor),
+        modelParam: 'model',
       }
     : {
         tool: 'task',

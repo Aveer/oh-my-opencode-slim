@@ -1200,6 +1200,11 @@ export function createAgents(
   // hidden filter (as of opencode 1.18.35, `agents.list()` and the task
   // tool's describeTask carry no hidden check), so hidden councillors do
   // surface in the v1 task roster — a host-side gap outside omos's control.
+  // v2 compounds this with agent-param guidance ('name not in available
+  // subagents → pass through model parameter', subagent.ts:31-33) that
+  // actively steers away from exact-name dispatch; a roster-visible-but-@-hidden
+  // agent flag upstream would let the Council Mode block's dispatch clause be
+  // retired by observation.
   // The dispatch procedure is NOT mirrored here (it reads every turn): the
   // council-inject hook carries it, injected on the FIRST council keyword
   // and then standing in history. The disabled variant keeps a one-line
