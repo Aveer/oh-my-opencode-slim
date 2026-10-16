@@ -1,6 +1,6 @@
 ---
 name: loop-engineering
-description: Loop engineering runtime Grill + Monitor
+description: Use to retry a task until tests, builds, or lint pass via Grill interview plus loop Monitor.
 ---
 
 # Loop Engineering Skill
