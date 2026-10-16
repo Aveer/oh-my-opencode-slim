@@ -1,12 +1,13 @@
 // Agent names
 export const AGENT_ALIASES: Record<string, string> = {
   explore: 'explorer',
+  // librarian merged into explorer; legacy config keys/prompts keep working.
+  librarian: 'explorer',
   'frontend-ui-ux-engineer': 'designer',
 };
 
 export const SUBAGENT_NAMES = [
   'explorer',
-  'librarian',
   'oracle',
   'designer',
   'fixer',
@@ -41,7 +42,6 @@ export const PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 export const DEFAULT_MODELS: Record<AgentName, string | undefined> = {
   orchestrator: undefined,
   oracle: undefined,
-  librarian: undefined,
   explorer: undefined,
   designer: undefined,
   fixer: undefined,
@@ -90,6 +90,12 @@ export const DEFAULT_MAX_CONTEXT_LINES = 50_000;
 export const DEFAULT_READ_CONTEXT_MIN_LINES = 10;
 export const DEFAULT_READ_CONTEXT_MAX_FILES = 8;
 export const DEFAULT_MAX_RETAINED_SNAPSHOTS = 20;
+
+/** Shipped child-input wake kinds (#1504): permission off, question on. */
+export const DEFAULT_CHILD_INPUT_WAKE_KINDS = {
+  permission: false,
+  question: true,
+} as const;
 
 /**
  * Maximum session metadata entries retained per plugin instance.

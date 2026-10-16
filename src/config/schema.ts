@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MarketplacePackageIdSchema } from '../marketplace/schemas';
 import {
   AGENT_THEME_COLORS,
+  DEFAULT_CHILD_INPUT_WAKE_KINDS,
   DEFAULT_MAX_RETAINED_SNAPSHOTS,
   STRING_ONLY_PERMISSION_KEYS,
 } from './constants';
@@ -427,7 +428,7 @@ export type PresetInput = z.infer<typeof PresetSchema>;
 export const McpNameSchema = z.enum(['context7', 'gh_grep']);
 export type McpName = z.infer<typeof McpNameSchema>;
 
-const InterviewOutputFolderSchema = z
+export const InterviewOutputFolderSchema = z
   .string()
   .trim()
   .min(1)
@@ -618,6 +619,15 @@ export const BackgroundJobsConfigStrictSchema = z.object({
     .default(true)
     .describe(
       'When true, a background child ask wakes its parent with the ask content. Default enabled.',
+    ),
+  childInputWakeKinds: z
+    .object({
+      permission: z.boolean().default(false).catch(false),
+      question: z.boolean().default(true).catch(true),
+    })
+    .catch({ ...DEFAULT_CHILD_INPUT_WAKE_KINDS })
+    .describe(
+      'Which background child ask kinds may wake the parent. Permission asks default off (#1504): their replies carry no host wake and are resolved by the UI or an external responder, so a parent turn is wasted. Question asks default on.',
     ),
   pruneEvictedSessions: z
     .boolean()
@@ -852,7 +862,7 @@ export const WebfetchConfigSchema = z
     model: AgentOverrideConfigSchema.shape.model.describe(
       'Dedicated model(s) for smartfetch secondary-model summarization. ' +
         'Same shape as agent model config (string, array of strings/objects with id+variant). ' +
-        'Takes priority over small_model, agents.explorer.model, and agents.librarian.model.',
+        'Takes priority over small_model and agents.explorer.model.',
     ),
   })
   .strict();

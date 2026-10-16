@@ -674,6 +674,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         detail: formatChildInputWaitDetail(wait, hostFlavor),
       }),
       `${record.taskID}:${wait.requestID}`,
+      wait.kind,
     );
   }
 
@@ -874,7 +875,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       imageRouting: () => runtime.imageRouting,
       webfetchModels,
       explorerModel: pickAgentModelRef(runtime.agent('explorer')?.model),
-      librarianModel: pickAgentModelRef(runtime.agent('librarian')?.model),
       smallModelRef: () => runtime.smallModel(),
     });
     backgroundJobBoard = new BackgroundJobBoard({
@@ -1208,7 +1208,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       coordinator: sessionLifecycle,
       revivedRunTracker,
       onChildInputWait: (notification) => {
-        if (runtime.backgroundJobs.childInputWake === false) return;
         const record = backgroundJobCoordinator.get(notification.taskID);
         if (record?.state !== 'running') {
           return;
@@ -1229,6 +1228,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     orchestratorWakeScheduler = createOrchestratorWakeScheduler(ctx, {
       config: runtime.backgroundJobs.orchestratorWake,
       boardInjectionEnabled: runtime.backgroundJobs.boardInjection,
+      childInputWakeKinds: runtime.backgroundJobs.childInputWakeKinds,
       shouldManageSession: (sessionID) =>
         sessionMetadata.getAgent(sessionID) === 'orchestrator',
       hasInputWait: (sessionID) =>

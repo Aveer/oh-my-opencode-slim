@@ -37,7 +37,10 @@ import {
   unrecognizedTaskReferenceMessage,
 } from './session-recovery';
 import { normalizeLateCancelledTaskOutput } from './status-utils';
-import { extractReadFiles } from './task-context-tracker';
+import {
+  extractReadFiles,
+  filterStaleContextFiles,
+} from './task-context-tracker';
 
 interface TaskArgs {
   description?: unknown;
@@ -855,7 +858,10 @@ export async function handleToolExecuteAfter(
       deps.taskContextTracker.pendingManagedTaskIds.add(launch.taskID);
       deps.backgroundJobBoard.addContext(
         launch.taskID,
-        deps.taskContextTracker.contextFilesForPrompt(launch.taskID),
+        filterStaleContextFiles(deps.directory, [
+          ...(deps.backgroundJobBoard.get(launch.taskID)?.contextFiles ?? []),
+          ...deps.taskContextTracker.contextFilesForPrompt(launch.taskID),
+        ]),
       );
       return;
     }
@@ -975,7 +981,10 @@ export async function handleToolExecuteAfter(
     }
     deps.backgroundJobBoard.addContext(
       taskId,
-      deps.taskContextTracker.contextFilesForPrompt(taskId),
+      filterStaleContextFiles(deps.directory, [
+        ...(deps.backgroundJobBoard.get(taskId)?.contextFiles ?? []),
+        ...deps.taskContextTracker.contextFilesForPrompt(taskId),
+      ]),
     );
     deps.taskContextTracker.prune(deps.backgroundJobBoard);
   } finally {

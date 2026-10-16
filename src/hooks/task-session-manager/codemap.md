@@ -32,7 +32,7 @@ The directory follows a **Facade + Strategy** pattern where `index.ts` acts as t
   converting same-provider `background: true` task requests (including v2
   omitted-`background` calls, defaulted to true before this check) to the foreground
   path for shared single-runtime backends; fail-open on unknown model/provider.
-- **task-context-tracker.ts**: Manages read context from child sessions with line-count and file caps. Stores context per task ID and provides pruning to prevent unbounded growth.
+- **task-context-tracker.ts**: Manages read context from child sessions with line-count and file caps. Stores context per task ID, provides pruning to prevent unbounded growth, and exposes `filterStaleContextFiles(directory, files)` for a bounded sync disk re-check (drops missing/unreadable/oversized/truncated, logs; per-file size cap + per-commit byte budget so validation cannot stall the session).
 
 All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.ts` as the single source of truth for active jobs, terminal unreconciled jobs, reusable completed sessions, aliases, read context, and LRU caps.
 
@@ -63,13 +63,14 @@ All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.
 2. **Task Launch (`tool.execute.after`)**
    - Registers task launches in the job board with task ID, parent session ID, agent type, and description
    - Parses task output to extract task ID, status, or launch information
-   - Adds read context to the job board for completed or terminal unreconciled tasks
+   - Adds validated read context to the job board for completed or terminal unreconciled tasks
    - Handles late-cancelled tasks by normalizing output and updating state accordingly
 
 3. **Context Tracking**
    - Extracts read files from `read` tool outputs using `extractReadFiles`
    - Stores context per task ID in the task context tracker
    - Prunes stale context during lifecycle events and status transitions
+   - Both tool-execute-hooks commit sites validate the stored board contextFiles plus fresh tracker context via `filterStaleContextFiles` before `board.addContext`, so stale entries leave the board on the next commit (revived/index paths still unvalidated)
 
 4. **Message Injection (`experimental.chat.messages.transform`)**
     - Injects a `<system-reminder>` part containing the `### Background Job Board` section into user messages for managed sessions, including Build/custom primary parents; latest and checkpoint modes gate by managed-session ownership rather than the parent agent name
@@ -103,7 +104,7 @@ All modules depend on `BackgroundJobBoard` from `src/utils/background-job-board.
 
 ```
 User task call → tool.execute.before → PendingTaskCall created → task ID resolved/reused
-→ tool.execute.after → BackgroundJobBoard.registerLaunch() → context extracted/added
+→ tool.execute.after → BackgroundJobBoard.registerLaunch() → context validated/added
 → Message transform → BackgroundJobBoard.formatForPrompt() injected as a system-reminder message part
 → session.idle → reconcileInjectedTerminalJobs() → BackgroundJobBoard.markReconciled()
 → opt-in continuation evaluator (same idle cycle, existing guards)
@@ -143,3 +144,4 @@ The original monolithic module was split to improve:
 - **Scalability**: Capped data structures prevent unbounded memory growth.
 
 Each submodule adheres to the **Single Responsibility Principle** while collaborating through the facade to provide a cohesive user experience.
+

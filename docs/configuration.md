@@ -255,7 +255,8 @@ All config files support **JSONC** (JSON with Comments):
 | `backgroundJobs.concurrency.providerConcurrency` | object | `{}` | Per-provider caps keyed by provider ID. Each value must be `0`–`1000`, where `0` means unlimited for that provider. The most specific configured cap wins: model > provider > default See [Background Job Management](#background-job-management). |
 | `backgroundJobs.concurrency.modelConcurrency` | object | `{}` | Per-model caps keyed by `provider/model` ID. Each value must be `0`–`1000`, where `0` means unlimited for that model. The most specific configured cap wins: model > provider > default See [Background Job Management](#background-job-management). |
 | `backgroundJobs.sameProviderPolicy` | object | `{}` | Opt-in per-provider policy keyed by provider ID; the only value is `"foreground"`. When the parent session's current model and the child agent's resolved model both resolve to a configured provider, an explicit background call (`task(..., background: true)` on v1, `subagent(..., background: true)` on v2) is converted to the existing foreground execution path. On v2 hosts, when the background-default flip is active, calls that omit `background` are first defaulted to background, so they are converted too. Unconfigured, different, or undeterminable providers keep background behavior. See [Background Job Management](#background-job-management). |
-| `backgroundJobs.childInputWake` | boolean | `true` | When true, a background child's question or permission request wakes its parent with the ask content. See [Background Job Management](#background-job-management). |
+| `backgroundJobs.childInputWake` | boolean | `true` | Master switch for child-input wakes: when true, each ask kind wakes its parent only if enabled in `backgroundJobs.childInputWakeKinds` (default: questions wake, permissions do not). When false, no child ask wakes the parent. |
+| `backgroundJobs.childInputWakeKinds` | object | `{ permission: false, question: true }` | Which child ask kinds may wake the parent. Permission asks default off (#1504) because their replies carry no host wake and are resolved by the UI or an external responder. Invalid or partial values fall back to per-field defaults silently. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.waitForUserGuard` | boolean | `true` | v1 only (`wait_for_user` is not registered on v2). When true, intercepts `wait_for_user` calls while background tasks are still running and the orchestrator wake scheduler is enabled, returning guidance to end the turn instead of blocking on manual input. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.boardInjection` | boolean | `true` | When false, the Background Job Board reminder is never injected into prompts. Background task tracking, wake, and task_status all keep working; the orchestrator simply no longer passively sees the board. On v2 hosts the derived default is `false` when neither config layer sets the key — the native background notifier delivers each run's first terminal publication (with its full result) to the parent, so the board's passive injection duplicates that channel there. Explicit `true` restores it. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.pruneEvictedSessions` | boolean | `false` | When true, removes the host child session when a retention trim (per-agent count cap or context budget, reusable or retained-stopped) evicts its terminal or retained-stopped background job record. Only background children this plugin launched itself through a tracked `task(..., background: true)` call are eligible: foreground task children, unattributed placeholder sessions, and adopted, restored, or rehydrated sessions are never deleted. Bounded host reads must also confirm the session's `parentID` still matches the record's parent and that the session is idle; a session the board tracks again (revived, re-registered, or leased) or with a parked child-input wait is never removed, and the delete itself has a deadline; parent deletion (`session.deleted`) and explicit drops never remove host sessions. v1 hosts only for now: v2 has no live session-status map, so every prune is skipped there. See [Background Job Management](#background-job-management). |
@@ -687,6 +688,11 @@ OpenCode's provider retry policy. A value of `0` allows no host retry events
 before foreground failover; it does not prevent OpenCode from retrying a
 provider request in a child session.
 
+With a configured chain, a host-announced retry wait longer than 30 minutes
+bypasses this budget and starts fallback. Waits up to 30 minutes, or retries
+without timing metadata, still use the configured retry count. The configured
+fallback delays still apply; sessions without a chain keep their existing behavior.
+
 Both fallback paths scan the chain from its head, skipping models already tried
 and providers abandoned by this session or its parent. Starting on a later entry
 does not skip the untried entries before it. A provider is excluded only after a
@@ -771,16 +777,33 @@ Notes:
 - Display names must be unique
 - Display names cannot conflict with internal agent names like `oracle` or `explorer`
 
+> **Rename continuity:** `librarian` was merged into `explorer`. Existing
+> `agents.librarian` config (model, variant, mcps, skills, prompt,
+> `inheritModelFrom`) keeps working: it is applied to `explorer`, the merged
+> research agent. An explicit `agents.explorer` field wins over the legacy
+> `librarian` field. `disabled_agents: ['librarian']` now disables `explorer`.
+> A `librarian.md` / `librarian_append.md` prompt override still applies —
+> rename it to `explorer.md` when convenient (a one-time notice reminds you).
+> Marketplace packages extending `builtin: 'librarian'` now extend
+> `builtin: 'explorer'` (same one-time notice). `librarian` remains a reserved
+> legacy name: it cannot be reused as a custom, ACP, or display name. New
+> configs should use `explorer` directly.
+>
+> Still true: an explicit `explorer.mcps` list (including `[]`) overrides the
+> runtime defaults — old generated presets pinned `mcps: []`; remove that
+> override or set it to `["context7", "gh_grep"]`. Newly generated configs
+> omit `mcps` so defaults always apply.
+
 ### Independent agent model inheritance
 
-By default, the `fixer` agent inherits the `librarian` model when no fixer
+By default, the `fixer` agent inherits the `explorer` model when no fixer
 model is configured. To decouple agents, set `inheritModelFrom` on the agent
 that should follow the current session or the configured orchestrator model:
 
 ```jsonc
 {
   "agents": {
-    "librarian": {
+    "explorer": {
       "model": "ollama/qwen3.8:27B"
     },
     "fixer": {
@@ -846,8 +869,8 @@ Model selection follows these rules:
   agent follows the session/orchestrator model, and the array serves as the
   fallback chain tried when that model fails. See
   [Following the session model with a fallback chain](#following-the-session-model-with-a-fallback-chain).
-- If neither field is present, the existing model precedence and the historical
-  fixer-to-librarian fallback remain unchanged.
+- If neither field is present, the existing model precedence and the
+  fixer-to-explorer fallback remain unchanged.
 
 The setting works in both root `agents` overrides and preset agent overrides.
 
@@ -916,7 +939,7 @@ the configured `council` color unless `agents.councillor.color` overrides it.
 ### Per-preset agent configuration
 
 To get per-preset behavior for any agent, built-in (`council`, `oracle`,
-`explorer`, `librarian`, `fixer`, `designer`, `observer`) or custom, define
+`explorer`, `fixer`, `designer`, `observer`) or custom, define
 the agent override inside each preset block, not in root `agents`.
 
 ```jsonc
