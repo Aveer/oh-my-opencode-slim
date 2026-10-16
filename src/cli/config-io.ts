@@ -21,7 +21,6 @@ import {
   parseTree,
   SyntaxKind,
 } from 'jsonc-parser';
-import { BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE } from '../config/constants';
 import { MarketplaceLockOwnershipError } from '../marketplace/errors';
 import { acquireMarketplaceLease, writeAtomic } from '../marketplace/lease';
 import { getMarketplacePaths } from '../marketplace/paths';
@@ -1007,38 +1006,6 @@ export function writeLiteConfig(
       success: false,
       configPath,
       error: `Failed to write lite config: ${err}`,
-    };
-  }
-}
-
-export function disableDefaultAgents(): ConfigMergeResult {
-  const configPath = getExistingConfigPath();
-
-  try {
-    ensureOpenCodeConfigDir();
-    mutateJsonFile(configPath, (current) => {
-      const config = current as OpenCodeConfig;
-      const agent = (config.agent ?? {}) as Record<string, unknown>;
-      for (const agentName of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
-        const existing = agent[agentName];
-        agent[agentName] = {
-          ...(existing &&
-          typeof existing === 'object' &&
-          !Array.isArray(existing)
-            ? existing
-            : {}),
-          disable: true,
-        };
-      }
-      config.agent = agent;
-      return config;
-    });
-    return { success: true, configPath };
-  } catch (err) {
-    return {
-      success: false,
-      configPath,
-      error: `Failed to disable default agents: ${err}`,
     };
   }
 }

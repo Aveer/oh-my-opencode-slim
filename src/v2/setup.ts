@@ -908,6 +908,42 @@ export function resolveDeclaredBuiltinAgents(
   );
 }
 
+/**
+ * #1582: drop host built-in subagents so slim agents are the only
+ * delegation targets. Declared names are recomputed per pass (rebuilds
+ * follow host config edits); exact names only, so removal replays
+ * idempotently and never touches the plugin's `explorer`.
+ */
+export function removeHostBuiltinSubagents(
+  draft: V2AgentDraft,
+  directory: string,
+): void {
+  let declared: ReadonlySet<string>;
+  try {
+    declared = resolveDeclaredBuiltinAgents(
+      loadMergedOpenCodeConfig(directory),
+    );
+  } catch (error) {
+    // Fail-safe: if the host config can't be read, keep the built-ins.
+    // Note: a malformed config FILE is skipped silently by the reader
+    // (parse errors yield no entry), so declarations in a broken file
+    // don't protect the built-in until the file is fixed.
+    declared = new Set(BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE);
+    log(
+      '[v2] host config unreadable; keeping built-in subagents',
+      String(error),
+    );
+  }
+  for (const name of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
+    if (declared.has(name)) continue;
+    try {
+      draft.remove(name);
+    } catch (error) {
+      log(`[v2] failed to disable built-in agent '${name}'`, String(error));
+    }
+  }
+}
+
 /** Deps for the per-session permission rules bridge. */
 export interface V2PermissionRulesOptions {
   /** Task-policy lookup: the permission rules governing a child agent. May
@@ -2294,37 +2330,8 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
           return;
         }
         // #1582: drop host built-in subagents so slim agents are the only
-        // delegation targets. Recomputed per pass — rebuilds follow host
-        // config edits. Exact names only; removal replays idempotently.
-        let declaredBuiltinAgentNames: ReadonlySet<string>;
-        try {
-          declaredBuiltinAgentNames = resolveDeclaredBuiltinAgents(
-            loadMergedOpenCodeConfig(directory),
-          );
-        } catch (error) {
-          // Fail-safe: if the host config can't be read, keep the built-ins.
-          // Note: a malformed config FILE is skipped silently by the reader
-          // (parse errors yield no entry), so declarations in a broken file
-          // don't protect the built-in until the file is fixed.
-          declaredBuiltinAgentNames = new Set(
-            BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE,
-          );
-          log(
-            '[v2] host config unreadable; keeping built-in subagents',
-            String(error),
-          );
-        }
-        for (const name of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
-          if (declaredBuiltinAgentNames.has(name)) continue;
-          try {
-            draft.remove(name);
-          } catch (error) {
-            log(
-              `[v2] failed to disable built-in agent '${name}'`,
-              String(error),
-            );
-          }
-        }
+        // delegation targets (replay-idempotent; declared names re-read).
+        removeHostBuiltinSubagents(draft, directory);
         pendingAgentDraft = draft;
         try {
           if (nativeAgentSnapshot === undefined) {
