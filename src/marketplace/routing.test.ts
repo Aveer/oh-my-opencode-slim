@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ROLE_ROUTING_BLOCKS } from '../agents/role-routing';
+import { ROLE_ROUTING_SLIM_LINES } from '../agents/role-routing';
 import { SUPPORTED_SPECIALIST_ROLES } from '../config/agent-roles';
 import { renderMarketplaceAutoDelegationBlock } from './routing';
 import type {
@@ -38,7 +38,7 @@ describe('marketplace routing renderer', () => {
         extends: { builtin, promptMode: 'append' },
       } as MarketplacePackageManifest;
       expect(renderMarketplaceAutoDelegationBlock(extended)).toBe(
-        `${ROLE_ROUTING_BLOCKS[builtin].replaceAll(`@${builtin}`, '@routing-agent')}\n\n- Lane: Package routing description.\n- **Delegate when:** The task matches this package.`,
+        `${ROLE_ROUTING_SLIM_LINES[builtin].replaceAll(`@${builtin}`, '@routing-agent')}\n\n- Lane: Package routing description.\n- **Delegate when:** The task matches this package.`,
       );
     }
   });
@@ -81,7 +81,7 @@ describe('marketplace routing renderer', () => {
       mcps: ['server-a'],
       extends: { builtin: 'explorer', promptMode: 'append' },
     };
-    const roleBlock = ROLE_ROUTING_BLOCKS.explorer.replaceAll(
+    const roleBlock = ROLE_ROUTING_SLIM_LINES.explorer.replaceAll(
       '@explorer',
       '@routing-agent',
     );
@@ -103,7 +103,7 @@ describe('marketplace routing renderer', () => {
       },
       extends: { builtin: 'explorer', promptMode: 'append' },
     };
-    const roleBlock = ROLE_ROUTING_BLOCKS.explorer.replaceAll(
+    const roleBlock = ROLE_ROUTING_SLIM_LINES.explorer.replaceAll(
       '@explorer',
       '@routing-agent',
     );

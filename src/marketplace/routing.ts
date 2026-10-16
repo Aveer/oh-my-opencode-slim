@@ -1,5 +1,5 @@
 import {
-  ROLE_ROUTING_BLOCKS,
+  ROLE_ROUTING_SLIM_LINES,
   renderRoleRoutingBlock,
 } from '../agents/role-routing.js';
 import type {
@@ -76,7 +76,11 @@ export function renderMarketplaceAutoDelegationBlock(
   if (manifest.schemaVersion === 2) {
     const roleId = manifest.extends?.builtin;
     const base = roleId
-      ? renderRoleRoutingBlock(ROLE_ROUTING_BLOCKS[roleId], roleId, runtimeName)
+      ? renderRoleRoutingBlock(
+          ROLE_ROUTING_SLIM_LINES[roleId],
+          roleId,
+          runtimeName,
+        )
       : [
           `@${runtimeName}`,
           `- Lane: ${standaloneLaneDescription ?? manifest.description}`,
@@ -87,7 +91,11 @@ export function renderMarketplaceAutoDelegationBlock(
 
   const roleId = manifest.extends?.builtin;
   const base = roleId
-    ? renderRoleRoutingBlock(ROLE_ROUTING_BLOCKS[roleId], roleId, runtimeName)
+    ? renderRoleRoutingBlock(
+        ROLE_ROUTING_SLIM_LINES[roleId],
+        roleId,
+        runtimeName,
+      )
     : [
         `@${runtimeName}`,
         `- Lane: ${standaloneLaneDescription ?? manifest.routing.lane}`,
