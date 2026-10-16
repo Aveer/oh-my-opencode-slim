@@ -687,6 +687,11 @@ OpenCode's provider retry policy. A value of `0` allows no host retry events
 before foreground failover; it does not prevent OpenCode from retrying a
 provider request in a child session.
 
+With a configured chain, a host-announced retry wait longer than 30 minutes
+bypasses this budget and starts fallback. Waits up to 30 minutes, or retries
+without timing metadata, still use the configured retry count. The configured
+fallback delays still apply; sessions without a chain keep their existing behavior.
+
 Both fallback paths scan the chain from its head, skipping models already tried
 and providers abandoned by this session or its parent. Starting on a later entry
 does not skip the untried entries before it. A provider is excluded only after a
