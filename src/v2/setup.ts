@@ -20,6 +20,7 @@ import {
   buildBundledSkillInfos,
   removeLegacySkillSyncState,
 } from '../cli/custom-skills';
+import { BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE } from '../config/constants';
 import { loadPluginConfig } from '../config/loader';
 import { InterviewConfigSchema } from '../config/schema';
 import { getBuildInfo } from '../generated/build-info';
@@ -41,6 +42,7 @@ import type { ForegroundFallbackManager } from '../hooks/foreground-fallback';
 import { PHASE_REMINDER_METADATA_KEY } from '../hooks/phase-reminder';
 import { BACKGROUND_JOB_BOARD_METADATA_KEY } from '../hooks/task-session-manager/board-injection';
 import { OhMyOpenCodeLite } from '../index';
+import { loadMergedOpenCodeConfig } from '../marketplace/preflight';
 import type { McpConfig } from '../mcp/types';
 import {
   configureBackgroundJobPersistence,
@@ -880,6 +882,30 @@ export function resetV2GenerationWarnings(): void {
   permissionRulesUnavailableWarned = false;
   permissionIdentityUnavailableWarned = false;
   resetClientShimGenerationWarnings();
+}
+
+/**
+ * #1582: built-in agent names whose host config entry is a non-disable
+ * directive. An entry counts as the user's when it holds an object that does
+ * not itself request disabling (`disable`/`disabled` true) — such entries own
+ * the key and are never removed. Both the v2 `agents` key and the legacy
+ * `agent` key are honored.
+ */
+export function resolveDeclaredBuiltinAgents(
+  merged: Record<string, unknown>,
+): Set<string> {
+  const declares = (entry: unknown): boolean => {
+    if (!isRecord(entry)) return false;
+    if (entry.disable === true || entry.disabled === true) return false;
+    return true;
+  };
+  const agents = merged.agents as Record<string, unknown> | undefined;
+  const legacy = merged.agent as Record<string, unknown> | undefined;
+  return new Set(
+    BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE.filter(
+      (name) => declares(agents?.[name]) || declares(legacy?.[name]),
+    ),
+  );
 }
 
 /** Deps for the per-session permission rules bridge. */
@@ -2266,6 +2292,38 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
             );
           }
           return;
+        }
+        // #1582: drop host built-in subagents so slim agents are the only
+        // delegation targets. Recomputed per pass — rebuilds follow host
+        // config edits. Exact names only; removal replays idempotently.
+        let declaredBuiltinAgentNames: ReadonlySet<string>;
+        try {
+          declaredBuiltinAgentNames = resolveDeclaredBuiltinAgents(
+            loadMergedOpenCodeConfig(directory),
+          );
+        } catch (error) {
+          // Fail-safe: if the host config can't be read, keep the built-ins.
+          // Note: a malformed config FILE is skipped silently by the reader
+          // (parse errors yield no entry), so declarations in a broken file
+          // don't protect the built-in until the file is fixed.
+          declaredBuiltinAgentNames = new Set(
+            BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE,
+          );
+          log(
+            '[v2] host config unreadable; keeping built-in subagents',
+            String(error),
+          );
+        }
+        for (const name of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
+          if (declaredBuiltinAgentNames.has(name)) continue;
+          try {
+            draft.remove(name);
+          } catch (error) {
+            log(
+              `[v2] failed to disable built-in agent '${name}'`,
+              String(error),
+            );
+          }
         }
         pendingAgentDraft = draft;
         try {

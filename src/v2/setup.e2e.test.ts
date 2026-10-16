@@ -43,6 +43,7 @@ type CapturedTool = {
 
 interface MockCalls {
   agentUpdates: Array<{ id: string }>;
+  agentRemoves: string[];
   agentDefault: string | undefined;
   agentTransformCount: number;
   toolAdds: CapturedTool[];
@@ -137,6 +138,7 @@ function makeMockV2Context(
   const skillCallbacks = new Set<(draft: unknown) => void>();
   const calls: MockCalls = {
     agentUpdates: [],
+    agentRemoves: [],
     agentDefault: undefined,
     agentTransformCount: 0,
     toolAdds: [],
@@ -199,7 +201,9 @@ function makeMockV2Context(
             calls.agentUpdates.push({ id });
             fn({});
           },
-          remove: () => {},
+          remove: (id: string) => {
+            calls.agentRemoves.push(id);
+          },
         });
         return reg(`agent:${calls.agentTransformCount}`);
       },
@@ -1303,6 +1307,73 @@ describe('createV2Setup e2e', () => {
           hostRules: [],
         }).decide('external_directory', '/approved/report.txt'),
       ).toBe('allow');
+    } finally {
+      await cleanup();
+    }
+  }, 20_000);
+
+  test('#1582 removes host built-in subagents so slim agents own delegation', async () => {
+    const { ctx, calls } = makeMockV2Context(projectDir);
+    const cleanup = await createV2Setup()(ctx);
+    try {
+      expect(calls.agentRemoves).toEqual(['general', 'explore']);
+      expect(calls.agentRemoves).not.toContain('explorer');
+    } finally {
+      await cleanup();
+    }
+  }, 20_000);
+
+  test('#1582 removal replays across rebuild passes', async () => {
+    // Host rebuild semantics re-run the registered transform per pass; the
+    // removal must stay idempotent and never drift to non-targets.
+    let pluginAgentTransform: ((draft: unknown) => void) | undefined;
+    const { ctx, calls } = makeMockV2Context(projectDir);
+    const originalTransform = ctx.agent.transform;
+    ctx.agent.transform = async (cb) => {
+      pluginAgentTransform = cb;
+      return originalTransform(cb);
+    };
+    const cleanup = await createV2Setup()(ctx);
+    try {
+      pluginAgentTransform?.({
+        list: () => [],
+        get: () => undefined,
+        default: () => {},
+        update: () => {},
+        remove: (id: string) => calls.agentRemoves.push(id),
+      });
+      pluginAgentTransform?.({
+        list: () => [],
+        get: () => undefined,
+        default: () => {},
+        update: () => {},
+        remove: (id: string) => calls.agentRemoves.push(id),
+      });
+      // Setup pass + two manual replay passes, each removing both targets.
+      expect(calls.agentRemoves).toEqual([
+        'general',
+        'explore',
+        'general',
+        'explore',
+        'general',
+        'explore',
+      ]);
+    } finally {
+      await cleanup();
+    }
+  }, 20_000);
+
+  test('#1582 keeps a host-declared built-in agent and removes the rest', async () => {
+    // A host declaration owns the key: general survives, explore is still
+    // removed. An installer-style self-disabling entry would not protect.
+    await Bun.write(
+      path.join(projectDir, '.opencode', 'opencode.json'),
+      JSON.stringify({ agents: { general: { model: 'x/y' } } }),
+    );
+    const { ctx, calls } = makeMockV2Context(projectDir);
+    const cleanup = await createV2Setup()(ctx);
+    try {
+      expect(calls.agentRemoves).toEqual(['explore']);
     } finally {
       await cleanup();
     }

@@ -21,6 +21,7 @@ import {
   parseTree,
   SyntaxKind,
 } from 'jsonc-parser';
+import { BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE } from '../config/constants';
 import { MarketplaceLockOwnershipError } from '../marketplace/errors';
 import { acquireMarketplaceLease, writeAtomic } from '../marketplace/lease';
 import { getMarketplacePaths } from '../marketplace/paths';
@@ -47,7 +48,6 @@ import type {
 } from './types';
 
 const PACKAGE_NAME = 'oh-my-opencode-slim';
-const DEFAULT_OPENCODE_AGENTS_TO_DISABLE = ['explore', 'general'] as const;
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
@@ -1019,7 +1019,7 @@ export function disableDefaultAgents(): ConfigMergeResult {
     mutateJsonFile(configPath, (current) => {
       const config = current as OpenCodeConfig;
       const agent = (config.agent ?? {}) as Record<string, unknown>;
-      for (const agentName of DEFAULT_OPENCODE_AGENTS_TO_DISABLE) {
+      for (const agentName of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
         const existing = agent[agentName];
         agent[agentName] = {
           ...(existing &&
