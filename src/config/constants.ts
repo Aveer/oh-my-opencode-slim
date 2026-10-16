@@ -6,7 +6,6 @@ export const AGENT_ALIASES: Record<string, string> = {
 
 export const SUBAGENT_NAMES = [
   'explorer',
-  'librarian',
   'oracle',
   'designer',
   'fixer',
@@ -41,7 +40,6 @@ export const PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 export const DEFAULT_MODELS: Record<AgentName, string | undefined> = {
   orchestrator: undefined,
   oracle: undefined,
-  librarian: undefined,
   explorer: undefined,
   designer: undefined,
   fixer: undefined,

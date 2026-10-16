@@ -852,7 +852,7 @@ export const WebfetchConfigSchema = z
     model: AgentOverrideConfigSchema.shape.model.describe(
       'Dedicated model(s) for smartfetch secondary-model summarization. ' +
         'Same shape as agent model config (string, array of strings/objects with id+variant). ' +
-        'Takes priority over small_model, agents.explorer.model, and agents.librarian.model.',
+        'Takes priority over small_model and agents.explorer.model.',
     ),
   })
   .strict();

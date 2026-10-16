@@ -325,13 +325,9 @@ reconciled, and supported by final-state evidence.
 
 ### Explorer
 
-Read-only reconnaissance and codebase mapping. Usually the first background task
-for unfamiliar work.
-
-### Librarian
-
-External docs, version-specific API behavior, and real-world examples. Runs in
-parallel with Explorer when implementation depends on current library behavior.
+Read-only reconnaissance, codebase mapping, and external research (docs,
+version-specific API behavior, real-world examples). Usually the first
+background task for unfamiliar work.
 
 ### Fixer
 

@@ -771,16 +771,22 @@ Notes:
 - Display names must be unique
 - Display names cannot conflict with internal agent names like `oracle` or `explorer`
 
+> **Breaking:** `librarian` is no longer a built-in agent. An existing
+> `agents.librarian` entry is treated as an unknown custom agent and is
+> skipped with a warning unless it defines a `model` (or `inheritModelFrom`).
+> Marketplace packages extending `builtin: 'librarian'` fail validation —
+> switch to `builtin: 'explorer'` (it inherits `context7` and `gh_grep`).
+
 ### Independent agent model inheritance
 
-By default, the `fixer` agent inherits the `librarian` model when no fixer
+By default, the `fixer` agent inherits the `explorer` model when no fixer
 model is configured. To decouple agents, set `inheritModelFrom` on the agent
 that should follow the current session or the configured orchestrator model:
 
 ```jsonc
 {
   "agents": {
-    "librarian": {
+    "explorer": {
       "model": "ollama/qwen3.8:27B"
     },
     "fixer": {
@@ -846,8 +852,8 @@ Model selection follows these rules:
   agent follows the session/orchestrator model, and the array serves as the
   fallback chain tried when that model fails. See
   [Following the session model with a fallback chain](#following-the-session-model-with-a-fallback-chain).
-- If neither field is present, the existing model precedence and the historical
-  fixer-to-librarian fallback remain unchanged.
+- If neither field is present, the existing model precedence and the
+  fixer-to-explorer fallback remain unchanged.
 
 The setting works in both root `agents` overrides and preset agent overrides.
 
@@ -916,7 +922,7 @@ the configured `council` color unless `agents.councillor.color` overrides it.
 ### Per-preset agent configuration
 
 To get per-preset behavior for any agent, built-in (`council`, `oracle`,
-`explorer`, `librarian`, `fixer`, `designer`, `observer`) or custom, define
+`explorer`, `fixer`, `designer`, `observer`) or custom, define
 the agent override inside each preset block, not in root `agents`.
 
 ```jsonc

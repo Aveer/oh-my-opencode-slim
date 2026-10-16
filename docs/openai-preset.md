@@ -33,7 +33,6 @@ The generated `openai` preset assigns each specialist an OpenAI model:
 |-------|-------|
 | Orchestrator | `openai/gpt-6-sol` (`high`) |
 | Oracle | `openai/gpt-6-astra` (`high`) |
-| Librarian | `openai/gpt-6-luna` (`low`) |
 | Explorer | `openai/gpt-6-luna` (`low`) |
 | Designer | `openai/gpt-6-luna` (`medium`) |
 | Fixer | `openai/gpt-6-luna` (`high`) |
@@ -60,17 +59,11 @@ setting the top-level `preset` field:
         "skills": ["simplify"],
         "mcps": []
       },
-      "librarian": {
-        "model": "openai/gpt-6-luna",
-        "variant": "low",
-        "skills": [],
-        "mcps": ["context7", "gh_grep"]
-      },
       "explorer": {
         "model": "openai/gpt-6-luna",
         "variant": "low",
         "skills": [],
-        "mcps": []
+        "mcps": ["context7", "gh_grep"]
       },
       "designer": {
         "model": "openai/gpt-6-luna",

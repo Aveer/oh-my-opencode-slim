@@ -429,7 +429,7 @@ describe('Project-local customization - 15 core cases', () => {
             },
           },
           orchestrator: {
-            librarian: { model: 'user/librarian' },
+            oracle: { model: 'user/oracle' },
           },
         },
       },
@@ -442,7 +442,7 @@ describe('Project-local customization - 15 core cases', () => {
             },
           },
           orchestrator: {
-            librarian: { inheritModelFrom: 'orchestrator' },
+            oracle: { inheritModelFrom: 'orchestrator' },
           },
         },
       },
@@ -459,7 +459,7 @@ describe('Project-local customization - 15 core cases', () => {
       },
     });
     expect(resolvePreset('orchestrator', merged.presets ?? {})).toEqual({
-      librarian: { inheritModelFrom: 'orchestrator' },
+      oracle: { inheritModelFrom: 'orchestrator' },
     });
   });
 

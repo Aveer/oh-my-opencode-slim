@@ -27,7 +27,6 @@ import { createCouncillorAgent } from './councillor';
 import { createDesignerAgent } from './designer';
 import { createExplorerAgent } from './explorer';
 import { createFixerAgent } from './fixer';
-import { createLibrarianAgent } from './librarian';
 import { createObserverAgent } from './observer';
 import { createOracleAgent } from './oracle';
 import {
@@ -746,7 +745,6 @@ export function isSubagent(name: string): name is SubagentName {
 
 const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
   explorer: createExplorerAgent,
-  librarian: createLibrarianAgent,
   oracle: createOracleAgent,
   designer: createDesignerAgent,
   fixer: createFixerAgent,
@@ -801,8 +799,9 @@ export function createAgents(
   const configuredOrchestratorModel =
     getPrimaryModelFromOverride(orchestratorOverride);
 
-  // Preserve the historical fixer → librarian fallback unless an explicit
-  // inheritance policy opts the fixer into a different source.
+  // Preserve the historical fixer → research-agent fallback (now explorer)
+  // unless an explicit inheritance policy opts the fixer into a different
+  // source.
   const getModelForAgent = (name: SubagentName): string => {
     const override = getOverrideFromAgents(mergedAgents, name);
     if (override?.model === undefined) {
@@ -815,19 +814,19 @@ export function createAgents(
     }
 
     if (name === 'fixer' && override?.model === undefined) {
-      const librarianOverride = getOverrideFromAgents(
+      const explorerOverride = getOverrideFromAgents(
         mergedAgents,
-        'librarian',
+        'explorer',
       )?.model;
-      let librarianModel: string | undefined;
-      if (Array.isArray(librarianOverride)) {
-        const first = librarianOverride[0];
-        librarianModel = typeof first === 'string' ? first : first?.id;
+      let explorerModel: string | undefined;
+      if (Array.isArray(explorerOverride)) {
+        const first = explorerOverride[0];
+        explorerModel = typeof first === 'string' ? first : first?.id;
       } else {
-        librarianModel = librarianOverride;
+        explorerModel = explorerOverride;
       }
       return (
-        librarianModel ?? primaryModel ?? (DEFAULT_MODELS.librarian as string)
+        explorerModel ?? primaryModel ?? (DEFAULT_MODELS.explorer as string)
       );
     }
     return primaryModel ?? (DEFAULT_MODELS[name] as string);

@@ -40,10 +40,9 @@ If you define an MCP server with the same name in `opencode.json` / `opencode.js
 | Agent | Default MCPs |
 |-------|-------------|
 | `orchestrator` | `*`, `!context7` |
-| `librarian` | `context7`, `gh_grep` |
+| `explorer` | `context7`, `gh_grep` |
 | `designer` | none |
 | `oracle` | none |
-| `explorer` | none |
 | `fixer` | none |
  | `councillor` | none |
 
@@ -75,7 +74,7 @@ Control which MCPs each agent can use via the `mcps` array in your preset config
       "orchestrator": {
         "mcps": ["*", "!context7"]
       },
-      "librarian": {
+      "explorer": {
         "mcps": ["context7", "gh_grep"]
       },
       "oracle": {

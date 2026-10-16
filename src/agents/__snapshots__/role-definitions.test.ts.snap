@@ -3,14 +3,9 @@
 exports[`specialist role definitions matches golden factory prompts and descriptions 1`] = `
 [
   {
-    "description": "Fast codebase search and pattern matching.",
+    "description": "Fast codebase search and external docs/web research.",
     "name": "explorer",
-    "promptSha256": "657724c5b0702192c525270046ea67fe6e7ba9627186a0f155661aba04820788",
-  },
-  {
-    "description": "External documentation and library research.",
-    "name": "librarian",
-    "promptSha256": "3f91bd61566c33dcfac8bd3a60c8aa3d19badf8ad0815f2d49a072f97faecaa5",
+    "promptSha256": "51787bd6c38ad7db1cd09716e12f272c65d20e26ed53783f608dcbbb2ff9de2b",
   },
   {
     "description": "Strategic technical advisor.",

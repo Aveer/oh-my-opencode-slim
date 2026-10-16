@@ -522,7 +522,7 @@ function runningBoard(): BackgroundJobBoard {
   board.registerLaunch({
     taskID: CHILD,
     parentSessionID: SESSION,
-    agent: 'librarian',
+    agent: 'explorer',
     description: 'research the scheduler',
   });
   return board;

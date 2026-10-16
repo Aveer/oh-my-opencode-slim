@@ -67,14 +67,14 @@ describe('RuntimeConfig', () => {
     const runtime = RuntimeConfig.init(DIRECTORY, {
       agents: {
         explorer: { inheritModelFrom: 'session' },
-        librarian: { inheritModelFrom: 'orchestrator' },
+        oracle: { inheritModelFrom: 'orchestrator' },
       },
     });
     runtime.captureHostConfig({
       agent: {
         explorer: { model: 'host/explorer', temperature: 0.3 },
-        librarian: {
-          model: 'host/librarian',
+        oracle: {
+          model: 'host/oracle',
           options: { reasoningEffort: 'high' },
         },
       },
@@ -84,7 +84,7 @@ describe('RuntimeConfig', () => {
       inheritModelFrom: 'session',
       temperature: 0.3,
     });
-    expect(runtime.agent('librarian')).toEqual({
+    expect(runtime.agent('oracle')).toEqual({
       inheritModelFrom: 'orchestrator',
       options: { reasoningEffort: 'high' },
     });
@@ -499,7 +499,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
           model: ['chain/primary', 'chain/backup'],
           inheritModelFrom: 'session',
         },
-        librarian: {
+        oracle: {
           model: [{ id: 'chain/primary' }],
           inheritModelFrom: 'orchestrator',
         },
@@ -507,7 +507,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
     } as PluginConfig);
 
     expect(runtime.combinedModelInheritanceSource('fixer')).toBe('session');
-    expect(runtime.combinedModelInheritanceSource('librarian')).toBe(
+    expect(runtime.combinedModelInheritanceSource('oracle')).toBe(
       'orchestrator',
     );
   });
@@ -533,7 +533,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
         // Empty array: no usable chain.
         fixer: { model: [], inheritModelFrom: 'session' },
         // Array without an inheritance directive: fully static.
-        librarian: { model: ['chain/primary'] },
+        oracle: { model: ['chain/primary'] },
         // Scalar model plus inheritance: explicit model wins.
         explorer: { model: 'explorer-model', inheritModelFrom: 'session' },
         // Inheritance without a chain: plain inherit, not combined.
@@ -542,7 +542,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
     } as PluginConfig);
 
     expect(runtime.combinedModelInheritanceSource('fixer')).toBeUndefined();
-    expect(runtime.combinedModelInheritanceSource('librarian')).toBeUndefined();
+    expect(runtime.combinedModelInheritanceSource('oracle')).toBeUndefined();
     expect(runtime.combinedModelInheritanceSource('explorer')).toBeUndefined();
     expect(runtime.combinedModelInheritanceSource('observer')).toBeUndefined();
     expect(

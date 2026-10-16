@@ -242,11 +242,11 @@ describe('custom-agent creation', () => {
   test('falls back to oracle model for ACP wrappers', () => {
     const defaults = {
       fixer: DEFAULT_MODELS.fixer,
-      librarian: DEFAULT_MODELS.librarian,
+      oracle: DEFAULT_MODELS.oracle,
       orchestrator: DEFAULT_MODELS.orchestrator,
     };
     DEFAULT_MODELS.fixer = undefined;
-    DEFAULT_MODELS.librarian = undefined;
+    DEFAULT_MODELS.oracle = undefined;
     DEFAULT_MODELS.orchestrator = undefined;
 
     try {
@@ -268,7 +268,7 @@ describe('custom-agent creation', () => {
       expect(wrapper?.config.model).toBe(DEFAULT_MODELS.oracle);
     } finally {
       DEFAULT_MODELS.fixer = defaults.fixer;
-      DEFAULT_MODELS.librarian = defaults.librarian;
+      DEFAULT_MODELS.oracle = defaults.oracle;
       DEFAULT_MODELS.orchestrator = defaults.orchestrator;
     }
   });
