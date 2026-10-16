@@ -576,8 +576,9 @@ function boundGrantByHost(
   // Host denies replay as written: they only tighten. Host allows must lie
   // within the grant. Host asks must not reach outside the grant either,
   // where they would override a declared deny: an ask that only overlaps
-  // the grant is narrowed to the grant's own pattern (stricter inside the
-  // grant, unchanged outside it); one that misses the grant is dropped.
+  // the grant is widened to the grant's own pattern with earlier denies
+  // re-asserted (stricter inside the grant, unchanged outside it); one that
+  // misses the grant is dropped.
   const tail: V2PermissionRule[] = [];
   for (const rule of later) {
     if (rule.effect === 'deny') {
@@ -603,11 +604,18 @@ function boundGrantByHost(
         effect: rule.effect,
       });
     } else if (resourcePatternsOverlap(rule.resource, grant.resource)) {
-      tail.push({
-        action: grant.action,
-        resource: grant.resource,
-        effect: 'ask',
-      });
+      // The overlap cannot be expressed as a pattern, so the whole grant
+      // drops to ask (deny under a deny cover), and every earlier deny is
+      // re-asserted so the widened ask cannot reopen a host-denied path.
+      const priorDenies = tail.filter((prior) => prior.effect === 'deny');
+      tail.push(
+        {
+          action: grant.action,
+          resource: grant.resource,
+          effect: stricterEffect('ask', effect),
+        },
+        ...priorDenies.map((prior) => ({ ...prior })),
+      );
     }
   }
   // A denied grant only matters for the host's allow exceptions inside it.

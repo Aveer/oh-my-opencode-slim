@@ -2680,12 +2680,20 @@ describe('child permission payload stance tail', () => {
         { action: 'edit', resource: 'lib/*', effect: 'ask' },
         { action: 'edit', resource: '*.ts', effect: 'ask' },
       ],
+      [
+        { action: 'edit', resource: '*', effect: 'allow' },
+        { action: 'edit', resource: 'src/private/*', effect: 'deny' },
+        { action: 'edit', resource: '*.ts', effect: 'ask' },
+      ],
     ] satisfies V2PermissionRule[][]) {
       const payload = [...native, ...hostRules];
       const compiled = registry.compileChildPermissions('explorer', payload);
       const decide = decideOf(compiled);
       expect(decide('edit', 'lib/private.ts')).toBe('deny');
       expect(decide('edit', 'other/a.ts')).toBe('deny');
+      // Never looser than the host inside the grant either.
+      if (decideOf(payload)('edit', 'src/private/secret.key') === 'deny')
+        expect(decide('edit', 'src/private/secret.key')).toBe('deny');
       expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
         compiled,
       );
