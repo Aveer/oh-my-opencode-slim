@@ -1226,6 +1226,49 @@ describe('PluginConfigSchema backgroundJobs', () => {
       expect(result.data.backgroundJobs?.childInputWake).toBe(false);
     }
   });
+
+  it('defaults childInputWakeKinds to permission-off, question-on', () => {
+    const result = PluginConfigSchema.safeParse({ backgroundJobs: {} });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+        permission: false,
+        question: true,
+      });
+    }
+  });
+
+  it('defaults a missing childInputWakeKinds field', () => {
+    const result = PluginConfigSchema.safeParse({
+      backgroundJobs: { childInputWakeKinds: { question: false } },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+        permission: false,
+        question: false,
+      });
+    }
+  });
+
+  // Unlike sibling keys, .catch() swallows invalid input without the
+  // backgroundJobs diagnostic — accepted per review.
+  it('falls back to defaults for invalid childInputWakeKinds', () => {
+    for (const childInputWakeKinds of [{ permission: 'yes' }, 'question']) {
+      const result = PluginConfigSchema.safeParse({
+        backgroundJobs: { childInputWakeKinds },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+          permission: false,
+          question: true,
+        });
+      }
+    }
+  });
 });
 
 describe('PluginConfigSchema removed legacy keys', () => {
