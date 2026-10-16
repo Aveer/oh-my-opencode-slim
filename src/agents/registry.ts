@@ -516,9 +516,10 @@ function stricterEffect(
  * findLast verdict is `cover` or a rule after it (default `ask` when there
  * is no cover). The grant is emitted at meet(grant, cover), followed, in
  * host order and narrowed to the grant's action, by every host rule after
- * `cover` that is either a deny/ask for the action or an allow whose
- * pattern lies within the grant's pattern (the host's own exceptions to
- * its restrictions inside the grant).
+ * `cover` that is a deny for the action, an ask clipped to the grant (kept
+ * if within it, narrowed to the grant's pattern if it only overlaps), or an
+ * allow whose pattern lies within the grant's pattern (the host's own
+ * exceptions to its restrictions inside the grant).
  *
  * Never looser than the host: if the grant is a resource's final match, no
  * host deny/ask after `cover` matches it, so the host verdict is `cover` or
@@ -564,29 +565,55 @@ function boundGrantByHost(
   // Within, not merely overlapping: an allow reaching outside the grant
   // would loosen the declared ceiling. The string match below implies set
   // inclusion only when the grant's pattern uses `*` alone as a wildcard.
-  const withinGrant = (rule: V2PermissionRule) =>
+  const resourceWithinGrant = (resource: string) =>
     !grant.resource.includes('?') &&
-    resourcePatternCovers(rule.action, grant.action) &&
     // Every matcher variant of the rule (a trailing ` *` also matches the
     // bare prefix) must fall inside the grant.
-    (rule.resource.endsWith(' *') && !rule.resource.endsWith(' **')
-      ? [rule.resource.slice(0, -2), rule.resource]
-      : [rule.resource]
+    (resource.endsWith(' *') && !resource.endsWith(' **')
+      ? [resource.slice(0, -2), resource]
+      : [resource]
     ).every((variant) => resourcePatternCovers(grant.resource, variant));
-  const tail = later.filter(
-    (rule) => rule.effect !== 'allow' || withinGrant(rule),
-  );
+  // Host denies replay as written: they only tighten. Host allows must lie
+  // within the grant. Host asks must not reach outside the grant either,
+  // where they would override a declared deny: an ask that only overlaps
+  // the grant is narrowed to the grant's own pattern (stricter inside the
+  // grant, unchanged outside it); one that misses the grant is dropped.
+  const tail: V2PermissionRule[] = [];
+  for (const rule of later) {
+    if (rule.effect === 'deny') {
+      tail.push({
+        action: grant.action,
+        resource: rule.resource,
+        effect: rule.effect,
+      });
+    } else if (rule.effect === 'allow') {
+      if (
+        resourcePatternCovers(rule.action, grant.action) &&
+        resourceWithinGrant(rule.resource)
+      )
+        tail.push({
+          action: grant.action,
+          resource: rule.resource,
+          effect: rule.effect,
+        });
+    } else if (resourceWithinGrant(rule.resource)) {
+      tail.push({
+        action: grant.action,
+        resource: rule.resource,
+        effect: rule.effect,
+      });
+    } else if (resourcePatternsOverlap(rule.resource, grant.resource)) {
+      tail.push({
+        action: grant.action,
+        resource: grant.resource,
+        effect: 'ask',
+      });
+    }
+  }
   // A denied grant only matters for the host's allow exceptions inside it.
   if (effect === 'deny' && !tail.some((rule) => rule.effect === 'allow'))
     return [];
-  return [
-    { ...grant, effect },
-    ...tail.map((rule) => ({
-      action: grant.action,
-      resource: rule.resource,
-      effect: rule.effect,
-    })),
-  ];
+  return [{ ...grant, effect }, ...tail];
 }
 
 /**

@@ -2660,6 +2660,38 @@ describe('child permission payload stance tail', () => {
     );
   });
 
+  test('a later host ask outside the grant does not override the declared deny', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: { permission: { edit: { '*': 'deny', 'src/*': 'allow' } } },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const native = registry.nativePolicies.explorer?.rules ?? [];
+    for (const hostRules of [
+      [
+        { action: 'edit', resource: '*', effect: 'deny' },
+        { action: 'edit', resource: 'src/?', effect: 'allow' },
+        { action: 'edit', resource: 'lib/*', effect: 'ask' },
+      ],
+      [
+        { action: 'edit', resource: '*', effect: 'allow' },
+        { action: 'edit', resource: 'lib/*', effect: 'ask' },
+        { action: 'edit', resource: '*.ts', effect: 'ask' },
+      ],
+    ] satisfies V2PermissionRule[][]) {
+      const payload = [...native, ...hostRules];
+      const compiled = registry.compileChildPermissions('explorer', payload);
+      const decide = decideOf(compiled);
+      expect(decide('edit', 'lib/private.ts')).toBe('deny');
+      expect(decide('edit', 'other/a.ts')).toBe('deny');
+      expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
+        compiled,
+      );
+    }
+  });
+
   test('a deny gated by a declared ask is not replayed over the ask', () => {
     const runtime = runtimeFor({
       disabled_agents: [],
