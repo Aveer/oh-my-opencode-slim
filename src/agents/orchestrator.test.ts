@@ -124,7 +124,7 @@ describe('orchestrator prompt: cache safety', () => {
     const scoped1 = v2(opts);
     const scoped2 = v2(opts);
     expect(scoped1).not.toContain('@explorer');
-    expect(scoped1).toContain('@librarian');
+    expect(scoped1).toContain('@oracle');
     expect(scoped1).toBe(scoped2);
   });
 

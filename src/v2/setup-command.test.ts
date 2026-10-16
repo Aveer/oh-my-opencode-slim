@@ -929,7 +929,7 @@ describe('context bridge: transcript identity enrichment', () => {
     pipeline.board.registerLaunch({
       taskID: 'ses_child',
       parentSessionID: SESSION_ID,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'running job',
       background: true,
     });
@@ -982,7 +982,7 @@ describe('context bridge: transcript identity enrichment', () => {
     pipeline.board.registerLaunch({
       taskID: 'ses_child',
       parentSessionID: SESSION_ID,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'running job',
       background: true,
     });

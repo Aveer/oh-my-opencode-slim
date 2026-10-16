@@ -671,7 +671,7 @@ describe('PluginConfigSchema backgroundJobs', () => {
       backgroundJobs: { maxSessionsPerAgent: 16 },
       presets: { review: { explorer: { model: 'valid/model' } } },
       agents: { oracle: { model: 'valid/model' } },
-      disabled_agents: ['librarian'],
+      disabled_agents: ['designer'],
       disabled_tools: ['ast_grep_search'],
     });
 
@@ -680,7 +680,7 @@ describe('PluginConfigSchema backgroundJobs', () => {
       expect(result.data.backgroundJobs?.maxSessionsPerAgent).toBe(2);
       expect(result.data.presets?.review?.explorer?.model).toBe('valid/model');
       expect(result.data.agents?.oracle?.model).toBe('valid/model');
-      expect(result.data.disabled_agents).toEqual(['librarian']);
+      expect(result.data.disabled_agents).toEqual(['designer']);
       expect(result.data.disabled_tools).toEqual(['ast_grep_search']);
     }
     expect(warnSpy).toHaveBeenCalledTimes(1);

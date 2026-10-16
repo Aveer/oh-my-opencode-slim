@@ -728,7 +728,7 @@ describe('task-session-manager hook', () => {
       {
         args: {
           background: true,
-          subagent_type: 'librarian',
+          subagent_type: 'explorer',
           description: 'nested task',
         },
       },

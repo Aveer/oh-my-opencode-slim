@@ -28,6 +28,7 @@ import {
   sanitizeMultiplexerConfig,
   WebfetchConfigSchema,
 } from './schema';
+import { legacyAliasesFor } from './utils';
 
 export {
   deepMerge,
@@ -87,6 +88,18 @@ export interface LoadPluginConfigOptions {
 }
 
 const PROMPTS_DIR_NAME = 'oh-my-opencode-slim';
+
+/** Once-per-process guard for pre-rename prompt-file notices. */
+const warnedLegacyPromptFiles = new Set<string>();
+
+function warnLegacyPromptFile(agentName: string, fileName: string): void {
+  const key = `${agentName}:${fileName}`;
+  if (warnedLegacyPromptFiles.has(key)) return;
+  warnedLegacyPromptFiles.add(key);
+  console.warn(
+    `[oh-my-opencode-slim] Agent '${agentName}': prompt file '${fileName}' uses a pre-rename name and still applies. Rename it to '${agentName}.md' (or '${agentName}_append.md').`,
+  );
+}
 const INTERVIEW_CONFIG_KEYS = [
   'maxQuestions',
   'outputFolder',
@@ -1033,17 +1046,34 @@ export function loadAgentPrompt(
 
   const result: { prompt?: string; appendPrompt?: string } = {};
 
+  // Rename continuity: fall back to pre-rename file names (e.g. a
+  // `librarian.md` override keeps applying to the merged `explorer`). Warn
+  // once per process so users learn to rename.
+  const nameCandidates = [agentName, ...legacyAliasesFor(agentName)];
+
   // Check for replacement prompt
-  result.prompt = readFirstPrompt(
-    `${agentName}.md`,
-    'Error reading prompt file',
-  );
+  for (const candidate of nameCandidates) {
+    const fileName = `${candidate}.md`;
+    const found = readFirstPrompt(fileName, 'Error reading prompt file');
+    if (found === undefined) continue;
+    if (candidate !== agentName) {
+      warnLegacyPromptFile(agentName, fileName);
+    }
+    result.prompt = found;
+    break;
+  }
 
   // Check for append prompt
-  result.appendPrompt = readFirstPrompt(
-    `${agentName}_append.md`,
-    'Error reading append prompt file',
-  );
+  for (const candidate of nameCandidates) {
+    const fileName = `${candidate}_append.md`;
+    const found = readFirstPrompt(fileName, 'Error reading append prompt file');
+    if (found === undefined) continue;
+    if (candidate !== agentName) {
+      warnLegacyPromptFile(agentName, fileName);
+    }
+    result.appendPrompt = found;
+    break;
+  }
 
   return result;
 }

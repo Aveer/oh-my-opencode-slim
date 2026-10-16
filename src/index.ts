@@ -874,7 +874,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       imageRouting: () => runtime.imageRouting,
       webfetchModels,
       explorerModel: pickAgentModelRef(runtime.agent('explorer')?.model),
-      librarianModel: pickAgentModelRef(runtime.agent('librarian')?.model),
       smallModelRef: () => runtime.smallModel(),
     });
     backgroundJobBoard = new BackgroundJobBoard({

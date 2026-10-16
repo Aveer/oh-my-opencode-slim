@@ -67,14 +67,14 @@ describe('RuntimeConfig', () => {
     const runtime = RuntimeConfig.init(DIRECTORY, {
       agents: {
         explorer: { inheritModelFrom: 'session' },
-        librarian: { inheritModelFrom: 'orchestrator' },
+        oracle: { inheritModelFrom: 'orchestrator' },
       },
     });
     runtime.captureHostConfig({
       agent: {
         explorer: { model: 'host/explorer', temperature: 0.3 },
-        librarian: {
-          model: 'host/librarian',
+        oracle: {
+          model: 'host/oracle',
           options: { reasoningEffort: 'high' },
         },
       },
@@ -84,7 +84,7 @@ describe('RuntimeConfig', () => {
       inheritModelFrom: 'session',
       temperature: 0.3,
     });
-    expect(runtime.agent('librarian')).toEqual({
+    expect(runtime.agent('oracle')).toEqual({
       inheritModelFrom: 'orchestrator',
       options: { reasoningEffort: 'high' },
     });
@@ -109,6 +109,43 @@ describe('RuntimeConfig', () => {
     expect(runtime.host()?.default_agent).toBe('build');
     expect(runtime.hostAgent('explorer')?.model).toBe('before');
     expect(runtime.smallModel()).toBe('small/before');
+  });
+
+  test('host agent entries under pre-rename names feed the merged agent', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    runtime.captureHostConfig({
+      agent: { librarian: { model: 'host/legacy-librarian' } },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/legacy-librarian');
+    // Host-native namespaces never map onto plugin agents.
+    runtime.captureHostConfig({
+      agent: {
+        librarian: { model: 'host/legacy-librarian' },
+        explore: { model: 'host/native' },
+      },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/legacy-librarian');
+  });
+
+  test('canonical host agent entries win over pre-rename ones', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    runtime.captureHostConfig({
+      agent: {
+        explorer: { model: 'host/canonical' },
+        librarian: { model: 'host/legacy' },
+      },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/canonical');
+  });
+
+  test('disabled_agents canonicalizes legacy alias names', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      disabled_agents: ['librarian'],
+    });
+    expect(runtime.disabledAgents).toEqual(new Set(['explorer']));
   });
 
   test('registry reset clears the instance state', () => {
@@ -357,6 +394,32 @@ describe('RuntimeConfig', () => {
     expect(runtime.agent('explorer')?.model).toBe('alias-model');
   });
 
+  test("agent() returns the merged view of a legacy 'librarian' record", () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      agents: { librarian: { model: 'x/legacy-model', temperature: 0.4 } },
+    });
+    expect(runtime.agent('explorer')).toEqual({
+      model: 'x/legacy-model',
+      temperature: 0.4,
+    });
+    expect(runtime.customAgentNames).toEqual([]);
+  });
+
+  test("agent() keeps canonical fields over merged 'librarian' fields", () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      agents: {
+        explorer: { model: 'x/canonical' },
+        librarian: { model: 'x/legacy-model', temperature: 0.4 },
+      },
+    });
+    expect(runtime.agent('explorer')).toEqual({
+      model: 'x/canonical',
+      temperature: 0.4,
+    });
+  });
+
   test('customAgentNames lists unknown agents keys only', () => {
     resetRegistry();
     const runtime = RuntimeConfig.init(DIRECTORY, {
@@ -499,7 +562,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
           model: ['chain/primary', 'chain/backup'],
           inheritModelFrom: 'session',
         },
-        librarian: {
+        oracle: {
           model: [{ id: 'chain/primary' }],
           inheritModelFrom: 'orchestrator',
         },
@@ -507,7 +570,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
     } as PluginConfig);
 
     expect(runtime.combinedModelInheritanceSource('fixer')).toBe('session');
-    expect(runtime.combinedModelInheritanceSource('librarian')).toBe(
+    expect(runtime.combinedModelInheritanceSource('oracle')).toBe(
       'orchestrator',
     );
   });
@@ -533,7 +596,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
         // Empty array: no usable chain.
         fixer: { model: [], inheritModelFrom: 'session' },
         // Array without an inheritance directive: fully static.
-        librarian: { model: ['chain/primary'] },
+        oracle: { model: ['chain/primary'] },
         // Scalar model plus inheritance: explicit model wins.
         explorer: { model: 'explorer-model', inheritModelFrom: 'session' },
         // Inheritance without a chain: plain inherit, not combined.
@@ -542,7 +605,7 @@ describe('RuntimeConfig combinedModelInheritanceSource', () => {
     } as PluginConfig);
 
     expect(runtime.combinedModelInheritanceSource('fixer')).toBeUndefined();
-    expect(runtime.combinedModelInheritanceSource('librarian')).toBeUndefined();
+    expect(runtime.combinedModelInheritanceSource('oracle')).toBeUndefined();
     expect(runtime.combinedModelInheritanceSource('explorer')).toBeUndefined();
     expect(runtime.combinedModelInheritanceSource('observer')).toBeUndefined();
     expect(

@@ -2654,16 +2654,16 @@ describe('plugin TUI agent activity', () => {
       {} as never,
     );
     await hooks?.['chat.message']?.(
-      { sessionID: 'lib-child', agent: 'librarian' } as never,
+      { sessionID: 'research-child', agent: 'explorer' } as never,
       {} as never,
     );
 
     expect(readTuiSnapshot(projectDir).activeSessions).toEqual({});
 
-    await busy('lib-child');
+    await busy('research-child');
 
     expect(readTuiSnapshot(projectDir).activeSessions).toEqual({
-      'lib-child': 'librarian',
+      'research-child': 'explorer',
     });
   });
 
@@ -3687,7 +3687,7 @@ describe('plugin config model inheritance', () => {
   test('session inheritance removes a stale host model in the final config', async () => {
     const hooks = await loadConfiguredPlugin({
       agents: {
-        librarian: { model: 'local/librarian' },
+        explorer: { model: 'local/explorer' },
         fixer: { inheritModelFrom: 'session' },
       },
     });
@@ -3744,13 +3744,13 @@ describe('plugin config model inheritance', () => {
   test('orchestrator inheritance leaves the child model-less for live parent selection', async () => {
     const hooks = await loadConfiguredPlugin({
       agents: {
-        librarian: { inheritModelFrom: 'orchestrator' },
+        oracle: { inheritModelFrom: 'orchestrator' },
       },
     });
     const hostConfig: Record<string, unknown> = {
       agent: {
         orchestrator: { model: 'host/orchestrator' },
-        librarian: { model: 'host/stale-librarian' },
+        oracle: { model: 'host/stale-oracle' },
       },
     };
 
@@ -3761,7 +3761,7 @@ describe('plugin config model inheritance', () => {
         string,
         Record<string, unknown>
       >;
-      expect(agents.librarian?.model).toBeUndefined();
+      expect(agents.oracle?.model).toBeUndefined();
     } finally {
       await hooks.dispose?.();
     }
