@@ -582,17 +582,24 @@ on v2, set the keys explicitly:
 ```
 
 Child-input wakes wait 250 ms before notifying the parent, on both host
-versions. Requests answered during that window by the host, a UI auto-replier,
-or another caller are discarded. Requests still open are checked again before
-delivery. Duplicate events enrich the queued notice without restarting the
-deadline. Stopped-job recovery and terminal-publication wakes are not delayed.
-An ask arriving during a host read or model-selection lookup defers a
-child-input-only wake until settling completes, without sending a stopped-job
-notice in its place. Overflowed request IDs are also revalidated: resolved
-requests cannot keep an overflow-only wake alive. Remaining overflow notices
-carry task IDs for `task_status`, and delivery retires only the overflow IDs
-actually sent, preserving requests added while a send is in flight. Entries
-beyond the retained-ID cap stay counted because their state cannot be checked.
+versions. Per-kind policy applies: by default only question asks wake the
+parent; permission asks do not (#1504). Requests answered during that window by
+the host, a UI auto-replier, or another caller are discarded. Requests still
+open are checked again before delivery. Duplicate events enrich the queued
+notice without restarting the deadline. Stopped-job recovery and
+terminal-publication wakes are not delayed. An ask arriving during a host read
+or model-selection lookup defers a child-input-only wake until settling
+completes, without sending a stopped-job notice in its place. Overflowed
+request IDs are also revalidated: resolved requests cannot keep an overflow-only
+wake alive. Remaining overflow notices carry task IDs for `task_status`, and
+delivery retires only the overflow IDs actually sent, preserving requests added
+while a send is in flight. Entries beyond the retained-ID cap stay counted
+because their state cannot be checked. Delivery still uses the existing
+`delivery:'queue'` behavior. In headless setups with no UI or external
+responder, a parked permission ask no longer produces a parent wake; the child
+stays parked (visible via `task_status` as `waiting_input`), so either set
+`backgroundJobs.childInputWakeKinds.permission = true` or rely on
+`wallClockTimeoutMs`.
 
 Wake and `task_status` share compact request details and reply guidance.
 V1 questions and permission requests use `task_reply`; v2 forms require the

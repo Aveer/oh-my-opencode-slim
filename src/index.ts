@@ -674,6 +674,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         detail: formatChildInputWaitDetail(wait, hostFlavor),
       }),
       `${record.taskID}:${wait.requestID}`,
+      wait.kind,
     );
   }
 
@@ -1229,6 +1230,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     orchestratorWakeScheduler = createOrchestratorWakeScheduler(ctx, {
       config: runtime.backgroundJobs.orchestratorWake,
       boardInjectionEnabled: runtime.backgroundJobs.boardInjection,
+      childInputWakeKinds: runtime.backgroundJobs.childInputWakeKinds,
       shouldManageSession: (sessionID) =>
         sessionMetadata.getAgent(sessionID) === 'orchestrator',
       hasInputWait: (sessionID) =>

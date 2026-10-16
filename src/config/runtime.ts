@@ -101,6 +101,7 @@ const DEFAULT_BACKGROUND_JOBS: BackgroundJobsConfig = {
   sameProviderPolicy: {},
   waitForUserGuard: true,
   childInputWake: true,
+  childInputWakeKinds: { permission: false, question: true },
   boardInjection: true,
   pruneEvictedSessions: false,
 };

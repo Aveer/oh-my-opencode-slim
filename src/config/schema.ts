@@ -619,6 +619,15 @@ export const BackgroundJobsConfigStrictSchema = z.object({
     .describe(
       'When true, a background child ask wakes its parent with the ask content. Default enabled.',
     ),
+  childInputWakeKinds: z
+    .object({
+      permission: z.boolean().default(false).catch(false),
+      question: z.boolean().default(true).catch(true),
+    })
+    .catch({ permission: false, question: true })
+    .describe(
+      'Which background child ask kinds may wake the parent. Permission asks default off (#1504): their replies carry no host wake and are resolved by the UI or an external responder, so a parent turn is wasted. Question asks default on.',
+    ),
   pruneEvictedSessions: z
     .boolean()
     .default(false)
