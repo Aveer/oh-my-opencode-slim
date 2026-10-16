@@ -83,56 +83,25 @@ describe('delegationVocabulary', () => {
 
 describe('buildOrchestratorPrompt delegation vocabulary', () => {
   test('v2 hostFlavor emits subagent( wording with agent param', () => {
-    const prompt = buildOrchestratorPrompt(
-      undefined,
-      undefined,
-      true,
-      true,
-      'v2',
-    );
+    const prompt = buildOrchestratorPrompt({ hostFlavor: 'v2' });
 
     expect(prompt).toContain('`subagent(agent, sessionID, prompt)`');
-    // Background-default flip: the Prefer-background line is gone — the
-    // flipped subagent description owns the default; the slim prompt keeps
-    // only the post-dispatch discipline.
     expect(prompt).not.toContain('Prefer `subagent(..., background: true)`');
     expect(prompt).toContain('After dispatching, do non-overlapping work');
-    expect(prompt).toContain('multiple `subagent` calls in one message');
+    expect(prompt).toContain('`subagent` calls in one message');
     expect(prompt).not.toContain('subagent_type');
     expect(prompt).not.toContain('task(');
     expect(prompt).not.toContain('task_id');
   });
 
-  test('v1 (no hostFlavor) keeps the exact v1 delegation sentences', () => {
+  test('v1 (no hostFlavor) emits task / task_revive wording', () => {
     const prompt = buildOrchestratorPrompt();
 
-    expect(prompt).toContain(
-      'Never use `task(..., task_id: ...)` to fetch output',
-    );
-    expect(prompt).toContain('any resume starts new model work');
-    // The blanket prefer-background line is replaced by the two-channel rule;
-    // launch/poll mechanics stay with the host's tool description.
-    expect(prompt).toContain(
-      'Two-channel delegation: short work whose result feeds the next step → foreground',
-    );
+    expect(prompt).toContain('`task` calls in one message');
+    expect(prompt).toContain('`task_revive(task_id, prompt)`');
+    expect(prompt).not.toContain('subagent(');
     expect(prompt).not.toContain('Prefer `task(..., background: true)`');
-    expect(prompt).toContain('cannot receive another `task` call');
-    expect(prompt).toContain(
-      '`task_revive(task_id: "<task-id>", prompt: "...")`',
-    );
-    expect(prompt).toContain(
-      'even when that session is not listed under Reusable Sessions',
-    );
     expect(prompt).not.toContain('optional `model` argument');
-  });
-
-  test('explicit v1/unknown hostFlavor is byte-identical to no hostFlavor', () => {
-    expect(
-      buildOrchestratorPrompt(undefined, undefined, true, true, 'v1'),
-    ).toBe(buildOrchestratorPrompt());
-    expect(
-      buildOrchestratorPrompt(undefined, undefined, true, true, 'v3-ish'),
-    ).toBe(buildOrchestratorPrompt());
   });
 });
 
@@ -141,10 +110,10 @@ describe('buildOrchestratorPrompt delegation vocabulary', () => {
  * subagent tool supports the optional `model` parameter. */
 const MODEL_PARAM_SENTENCE = ` The subagent tool also accepts an optional \`model\` argument ("providerID/modelID"). Only set it when the user explicitly asks for a specific model or variant; never guess the ID — look it up with the models tool first, filtering to your own provider.`;
 
-/** Slim v2 model-param guidance (buildOrchestratorPromptV2): the optional
+/** Slim v2 model-param guidance (buildOrchestratorPrompt on v2): the optional
  * `model` parameter note compressed to one routing line. */
 const SLIM_MODEL_PARAM_SENTENCE =
-  'Set `model` only when the user asks; look up IDs with the models tool first.';
+  'Set `model` only when the user asks; look up IDs with the models tool';
 
 describe('createAgents council seat pointer vocabulary', () => {
   test('v2 hostFlavor emits a roster-only seat pointer, not the full procedure', () => {
@@ -209,11 +178,14 @@ describe('createAgents council seat pointer vocabulary', () => {
     const v2 = orchestratorPromptFor('v2');
 
     expect(v2).toContain(
-      '`task_status` inspects; with `result: true` it reads a finished result; neither launches, resumes, or instructs a child.',
+      '`task_status` is read-only inspection; with `result: true` it reads a',
     );
+    expect(v2).toContain('Neither launches, resumes, or instructs a child.');
+    expect(v2).not.toContain('task_result');
     expect(v2).toContain(
-      'Continue a completed session with `subagent(agent, sessionID, prompt)` by exact id even when unlisted; cancelled/errored/stopped sessions use `task_revive`.',
+      'Continue a completed session with `subagent(agent, sessionID, prompt)` by',
     );
+    expect(v2).toContain('cancelled/errored/stopped sessions use');
     expect(v2).not.toContain(
       'Only sessions listed under Reusable Sessions may be resumed with `subagent()`.',
     );

@@ -671,7 +671,7 @@ describe('PluginConfigSchema backgroundJobs', () => {
       backgroundJobs: { maxSessionsPerAgent: 16 },
       presets: { review: { explorer: { model: 'valid/model' } } },
       agents: { oracle: { model: 'valid/model' } },
-      disabled_agents: ['librarian'],
+      disabled_agents: ['designer'],
       disabled_tools: ['ast_grep_search'],
     });
 
@@ -680,7 +680,7 @@ describe('PluginConfigSchema backgroundJobs', () => {
       expect(result.data.backgroundJobs?.maxSessionsPerAgent).toBe(2);
       expect(result.data.presets?.review?.explorer?.model).toBe('valid/model');
       expect(result.data.agents?.oracle?.model).toBe('valid/model');
-      expect(result.data.disabled_agents).toEqual(['librarian']);
+      expect(result.data.disabled_agents).toEqual(['designer']);
       expect(result.data.disabled_tools).toEqual(['ast_grep_search']);
     }
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1188,6 +1188,49 @@ describe('PluginConfigSchema backgroundJobs', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.backgroundJobs?.childInputWake).toBe(false);
+    }
+  });
+
+  it('defaults childInputWakeKinds to permission-off, question-on', () => {
+    const result = PluginConfigSchema.safeParse({ backgroundJobs: {} });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+        permission: false,
+        question: true,
+      });
+    }
+  });
+
+  it('defaults a missing childInputWakeKinds field', () => {
+    const result = PluginConfigSchema.safeParse({
+      backgroundJobs: { childInputWakeKinds: { question: false } },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+        permission: false,
+        question: false,
+      });
+    }
+  });
+
+  // Unlike sibling keys, .catch() swallows invalid input without the
+  // backgroundJobs diagnostic — accepted per review.
+  it('falls back to defaults for invalid childInputWakeKinds', () => {
+    for (const childInputWakeKinds of [{ permission: 'yes' }, 'question']) {
+      const result = PluginConfigSchema.safeParse({
+        backgroundJobs: { childInputWakeKinds },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.backgroundJobs?.childInputWakeKinds).toEqual({
+          permission: false,
+          question: true,
+        });
+      }
     }
   });
 });

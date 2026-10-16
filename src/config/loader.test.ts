@@ -2056,7 +2056,7 @@ describe('preset resolution', () => {
         presets: {
           base: {
             oracle: { model: 'base/oracle' },
-            librarian: { model: 'base/librarian' },
+            designer: { model: 'base/designer' },
           },
           mixed: {
             extends: 'base',
@@ -2082,7 +2082,7 @@ describe('preset resolution', () => {
 
     expect(config.agents).toEqual({
       oracle: { model: 'user/oracle', temperature: 0.8 },
-      librarian: { model: 'base/librarian' },
+      designer: { model: 'base/designer' },
       options: { model: 'project/options' },
     });
   });
@@ -2588,7 +2588,7 @@ describe('JSONC config support', () => {
       path.join(userOpencodeDir, 'oh-my-opencode-slim.jsonc'),
       `{
         // User config with comments
-        "agents": { "librarian": { "model": "user-librarian" } }
+        "agents": { "designer": { "model": "user-designer" } }
       }`,
     );
 
@@ -2596,7 +2596,7 @@ describe('JSONC config support', () => {
     fs.mkdirSync(projectDir, { recursive: true });
 
     const config = loadPluginConfig(projectDir);
-    expect(config.agents?.librarian?.model).toBe('user-librarian');
+    expect(config.agents?.designer?.model).toBe('user-designer');
   });
 
   test('merges user .jsonc with project .jsonc', () => {

@@ -201,7 +201,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'child-1',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'research',
     });
     const hook = createHook(board);
@@ -256,7 +256,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'child-1',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'research',
     });
     const hook = createHook(board);
@@ -294,7 +294,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'child-1',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'research',
     });
     const hook = createHook(board);
@@ -346,7 +346,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'ses_child',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'grok research',
     });
     const hook = createHook(board);
@@ -397,7 +397,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'child-1',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'research',
     });
     const hook = createHook(board);
@@ -438,7 +438,7 @@ describe('background job board cache breakpoint stability', () => {
     board.registerLaunch({
       taskID: 'ses_child',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'grok research',
     });
     const hook = createHook(board);

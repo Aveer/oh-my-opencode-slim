@@ -307,7 +307,6 @@ const AGENT_PREFIX: Record<string, string> = {
   designer: 'des',
   explorer: 'exp',
   fixer: 'fix',
-  librarian: 'lib',
   observer: 'obs',
   oracle: 'ora',
 };

@@ -672,6 +672,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         detail: formatChildInputWaitDetail(wait, hostFlavor),
       }),
       `${record.taskID}:${wait.requestID}`,
+      wait.kind,
     );
   }
 
@@ -872,7 +873,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       imageRouting: () => runtime.imageRouting,
       webfetchModels,
       explorerModel: pickAgentModelRef(runtime.agent('explorer')?.model),
-      librarianModel: pickAgentModelRef(runtime.agent('librarian')?.model),
       smallModelRef: () => runtime.smallModel(),
     });
     backgroundJobBoard = new BackgroundJobBoard({
@@ -1200,7 +1200,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       coordinator: sessionLifecycle,
       revivedRunTracker,
       onChildInputWait: (notification) => {
-        if (runtime.backgroundJobs.childInputWake === false) return;
         const record = backgroundJobCoordinator.get(notification.taskID);
         if (record?.state !== 'running') {
           return;
@@ -1235,6 +1234,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       // RuntimeConfig forces it false on v2 (structural boardless, see
       // injectBackgroundJobBoard).
       boardInjectionEnabled: runtime.backgroundJobs.boardInjection,
+      childInputWakeKinds: runtime.backgroundJobs.childInputWakeKinds,
       shouldManageSession: (sessionID) =>
         sessionMetadata.getAgent(sessionID) === 'orchestrator',
       hasInputWait: (sessionID) =>
@@ -3104,16 +3104,14 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
             ? finalizedOrchestrator.prompt
             : typeof orchestratorDef?.config?.prompt === 'string'
               ? orchestratorDef.config.prompt
-              : buildOrchestratorPrompt(
-                  runtime.disabledAgents,
-                  undefined,
-                  true,
-                  true,
+              : buildOrchestratorPrompt({
+                  disabledAgents: runtime.disabledAgents,
+                  waitForUser: !runtime.disabledTools.includes('wait_for_user'),
+                  wakeScheduler:
+                    runtime.backgroundJobs.orchestratorWake.enabled,
                   hostFlavor,
-                  // Honoured switch — consistent with createAgents
-                  // (RuntimeConfig forces false on v2).
-                  runtime.backgroundJobs.boardInjection,
-                );
+                  routingBlock: runtime.routingBlock,
+                });
         // Dedup by the EFFECTIVE prompt, not by default-prompt markers:
         // a custom replacement without `<Role>` previously slipped past
         // the marker check and was appended twice (P + host + P).

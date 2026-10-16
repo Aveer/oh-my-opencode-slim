@@ -853,10 +853,15 @@ describe('finalized existing-agent registry', () => {
       ['team/extended'],
       marketplaceStore({ 'team/extended': extension }),
     );
+    // The explorer role prompt now inherits context7/gh_grep requirements.
+    const availableMcps = {
+      context7: { type: 'remote' },
+      gh_grep: { type: 'remote' },
+    };
     const inherited = (model: string) =>
       build(
         runtimeFor({}),
-        { agent: { explorer: { model }, mcp: {} } },
+        { agent: { explorer: { model } }, mcp: availableMcps },
         extensionOptions,
       ).marketplacePackages[0];
     const inheritedA = inherited('provider/explorer-a');
@@ -868,7 +873,8 @@ describe('finalized existing-agent registry', () => {
       build(
         runtimeFor({}),
         {
-          agent: { explorer: { model: 'provider/explorer-a' }, mcp: {} },
+          agent: { explorer: { model: 'provider/explorer-a' } },
+          mcp: availableMcps,
         },
         extensionOptions,
       ).finalAgentConfig['market-agent'],
@@ -889,8 +895,8 @@ describe('finalized existing-agent registry', () => {
           agent: {
             explorer: { model: 'provider/explorer-a' },
             'market-agent': { prompt },
-            mcp: {},
           },
+          mcp: availableMcps,
         },
         extensionOptions,
       ).marketplacePackages[0];
@@ -1180,21 +1186,21 @@ describe('finalized existing-agent registry', () => {
         },
       },
       marketplaceOptions(
-        ['team/librarian-extension'],
+        ['team/explorer-extension'],
         marketplaceStore({
-          'team/librarian-extension': marketplacePackage(
-            'team/librarian-extension',
+          'team/explorer-extension': marketplacePackage(
+            'team/explorer-extension',
             {
-              agentName: 'package-librarian',
+              agentName: 'package-explorer',
               skills: [],
               mcps: [],
-              extends: { builtin: 'librarian', promptMode: 'append' },
+              extends: { builtin: 'explorer', promptMode: 'append' },
             },
           ),
         }),
       ),
     );
-    const agent = registry.getSdkAgentProjection()['package-librarian'] as {
+    const agent = registry.getSdkAgentProjection()['package-explorer'] as {
       mcps?: string[];
       permission?: Record<string, unknown>;
     };
@@ -1965,7 +1971,7 @@ describe('nested-dispatch permission stance', () => {
   test('advisory roles keep observer-only dispatch end to end', () => {
     const runtime = runtimeFor({ disabled_agents: [] });
     const registry = build(runtime, {}, { hostFlavor: 'v2' });
-    for (const name of ['explorer', 'librarian', 'oracle', 'designer']) {
+    for (const name of ['explorer', 'oracle', 'designer']) {
       const permission = (
         registry.finalAgentConfig[name] as {
           permission: Record<string, Record<string, string>>;
@@ -2045,7 +2051,7 @@ describe('child permission payload stance tail', () => {
       .slice(payload.length)
       .filter((rule) => rule.action === 'subagent');
     expect(evaluateLast(compiled, 'subagent', 'explorer')).toBe('deny');
-    expect(evaluateLast(compiled, 'subagent', 'librarian')).toBe('deny');
+    expect(evaluateLast(compiled, 'subagent', 'oracle')).toBe('deny');
     expect(subagentTail).toEqual([
       { action: 'subagent', resource: '*', effect: 'deny' },
     ]);
@@ -2068,7 +2074,7 @@ describe('child permission payload stance tail', () => {
       .filter((rule) => rule.action === 'subagent');
     expect(evaluateLast(compiled, 'subagent', 'observer')).toBe('allow');
     expect(evaluateLast(compiled, 'subagent', 'explorer')).toBe('deny');
-    expect(evaluateLast(compiled, 'subagent', 'librarian')).toBe('deny');
+    expect(evaluateLast(compiled, 'subagent', 'oracle')).toBe('deny');
     // Deny first, observer allow last — findLast terminates on the allow for
     // observer targets and on the deny for everything else. The deny-ceiling
     // tail carries other declared denies too, so only the subagent rules of
@@ -3100,6 +3106,7 @@ describe('marketplace agent customization', () => {
         const registry = configured(
           {},
           {
+            mcps: ['host-mcp', 'context7', 'gh_grep'],
             packageOverrides: {
               extends: { builtin: 'explorer', promptMode: 'append' },
               model: { source: 'builtin' },
@@ -3131,7 +3138,7 @@ describe('marketplace agent customization', () => {
         },
       },
       {
-        mcps: ['host-mcp', 'extra-mcp'],
+        mcps: ['host-mcp', 'extra-mcp', 'context7', 'gh_grep'],
         packageOverrides: {
           extends: { builtin: 'explorer', promptMode: 'append' },
           model: { source: 'builtin' },

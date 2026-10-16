@@ -1,6 +1,6 @@
 /**
- * @deprecated as a prompt-rendering source. Neither orchestrator builder
- * reads this anymore (v1 and v2 both render `ROLE_ROUTING_SLIM_LINES`);
+ * @deprecated as a prompt-rendering source. The orchestrator prompt
+ * renders `ROLE_ROUTING_SLIM_LINES` instead;
  * `roleHasWriteCapability` now reads a hand-written table, not this
  * object's prose. The sole remaining consumer is marketplace inheritance
  * (`src/marketplace/routing.ts`), which copies a `routingBlock` string
@@ -13,20 +13,12 @@
 export const ROLE_ROUTING_BLOCKS: Readonly<Record<string, string>> =
   Object.freeze({
     explorer: `@explorer
-- Lane: Fast codebase recon that returns compressed context
+- Lane: Fast codebase recon returning compressed context, plus external docs/library/web research
 - Permissions: read_files
 - Stats: 2x faster codebase search than orchestrator, 1/2 cost of orchestrator
-- Capabilities: Glob, grep, AST queries to locate files, symbols, patterns
-- **Delegate when:** Need to discover what exists before planning • Parallel searches speed discovery • Need summarized map vs full contents • Broad/uncertain scope
-- **Don't delegate when:** Know the path and need actual content • Need full file anyway • Single specific lookup • About to edit the file`,
-
-    librarian: `@librarian
-- Lane: External knowledge and library research, fast web research
-- Role: Authoritative source for current library docs, API references, examples, bug investigations, and web retrieval
-- Stats: 2x faster web research than orchestrator, 1/2 cost of orchestrator
-- **Delegate when:** Libraries with frequent API changes (React, Next.js, AI SDKs) • Complex APIs needing official examples (ORMs, auth) • Version-specific behavior matters • Unfamiliar library • Edge cases or advanced features • Nuanced best practices • Working on fixing tricky bug or problem and need latest web research information
-- **Don't delegate when:** Standard usage you're confident • Simple stable APIs • General programming knowledge • Info already in conversation • Built-in language features
-- **Rule of thumb:** "How does this library work?" → @librarian. "How does programming work?" → answer directly. "How do others solve or workaround this tricky issue?" → @librarian.`,
+- Capabilities: Glob, grep, AST queries to locate files, symbols, patterns; context7 docs lookup; gh_grep GitHub examples
+- **Delegate when:** Need to discover what exists before planning • Parallel searches speed discovery • Need summarized map vs full contents • Broad/uncertain scope • Changing APIs, version-specific behavior, official examples, tricky bugs needing latest web research
+- **Don't delegate when:** Know the path and need actual content • Need full file anyway • Single specific lookup • About to edit the file • Standard usage you're confident or facts already in conversation`,
 
     oracle: `@oracle
 - Lane: Architecture, risk, debugging strategy, and review
@@ -98,21 +90,29 @@ export function renderRoleRoutingBlock(
 }
 
 /**
- * v2 slim one-line routing verdicts (council-final §1), keyed by the same
- * agent ids as ROLE_ROUTING_BLOCKS: the slim <Agents> block keeps the
- * routing criteria, while the agents' `description` fields (consumed by
- * the native dynamic subagent list) stay non-duplicating one-liners. Not a
- * new name list — keys mirror the routing data, and the renderer iterates
- * ROLE_ROUTING_BLOCKS so a role added there is filtered identically and
- * only skipped from the slim block until its line lands here.
+ * One-line routing verdicts for the orchestrator's <Agents> block, keyed by
+ * the same agent ids as ROLE_ROUTING_BLOCKS. The agents' `description`
+ * fields (shown in the host's subagent list) stay short and don't repeat
+ * these criteria.
  */
 export const ROLE_ROUTING_SLIM_LINES: Readonly<Record<string, string>> =
   Object.freeze({
-    explorer: `@explorer — read-only codebase recon (glob/grep/AST). Delegate: discovery, parallel searches, summarized maps. Don't: known path / need full contents / about to edit.`,
-    librarian: `@librarian — external docs & web research. Delegate: changing APIs, version-specific behavior, official examples, tricky bugs. Don't: stable standard usage or facts already in context.`,
+    explorer: `@explorer — read-only codebase recon (glob/grep/AST) and external docs/web research (context7, gh_grep). Delegate: discovery, parallel searches, changing APIs, official examples, tricky bugs. Don't: known path / need full contents / stable facts already in context / library trivia you already know.`,
     oracle: `@oracle — architecture, risk, debugging strategy, review; an escalation, not a default verification step. Delegate: major long-term decisions, problems persisting after 2+ fix attempts, high-risk trade-offs, simplification. Don't: routine or time-sensitive calls.`,
     designer: `@designer — owns all UI/UX: layout, hierarchy, spacing, motion, responsive feel. Never do UI/design work yourself. Weak at copy: review and fix user-facing copy afterward without altering visuals; purely mechanical follow-ups go to @fixer.`,
     fixer: `@fixer — bounded, well-defined implementation. Delegate: multi-file or mechanical changes, parallel per-area lanes. Don't: discovery/decisions, one small (<20-line) change, anything needing design judgment.`,
     council: `@council — multi-model consensus for high-stakes decisions. Send the full question plus context; preserve its structured report. Don't: routine work or single-specialist tasks; @council is never the only lane on a task.`,
     observer: `@observer — analyzes images/PDFs/diagrams, keeping media bytes out of your context. Always pass the full file path. Don't: plain-text files.`,
   });
+
+/** Routing lines for every agent not disabled or excluded, blank-line separated. */
+export function renderRoutingLines(
+  disabledAgents?: ReadonlySet<string>,
+  excludeDescriptions?: readonly string[],
+): string {
+  return Object.entries(ROLE_ROUTING_SLIM_LINES)
+    .filter(([name]) => !disabledAgents?.has(name))
+    .filter(([name]) => !excludeDescriptions?.includes(name))
+    .map(([, line]) => line)
+    .join('\n\n');
+}

@@ -12,8 +12,9 @@ import {
 } from '../config';
 import { getAgentMcpList } from '../config/agent-mcps';
 import type { HostAgentConfig, RuntimeConfig } from '../config/runtime';
+import { hostLegacyAgent } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
-import { legacyAliasFor } from '../config/utils';
+import { mergeWithAliases } from '../config/utils';
 import { escapeRegExp, normalizeAgentName } from '../utils/agent-variant';
 import { delegationVocabulary, parseModelRef } from '../v2/adapters';
 
@@ -27,7 +28,6 @@ import { createCouncillorAgent } from './councillor';
 import { createDesignerAgent } from './designer';
 import { createExplorerAgent } from './explorer';
 import { createFixerAgent } from './fixer';
-import { createLibrarianAgent } from './librarian';
 import { createObserverAgent } from './observer';
 import { createOracleAgent } from './oracle';
 import {
@@ -86,14 +86,15 @@ function getPrimaryModelFromOverride(
 
 /**
  * Alias-aware override lookup inside a merged (preset-aware) agents record.
- * Mirrors getAgentOverride semantics without the host layer, which the
- * config hook applies separately at merge time.
+ * Mirrors getAgentOverride semantics (field-level merge, canonical wins)
+ * without the host layer, which the config hook applies separately at merge
+ * time.
  */
 function getOverrideFromAgents(
   agents: Record<string, AgentOverrideConfig>,
   name: string,
 ): AgentOverrideConfig | undefined {
-  return agents[name] ?? agents[legacyAliasFor(name) ?? ''];
+  return mergeWithAliases(agents, name);
 }
 
 function buildAcpAgentDefinition(
@@ -352,7 +353,7 @@ export function mergeHostAgentConfigs(
 ): Record<string, Record<string, unknown>> {
   const merged: Record<string, Record<string, unknown>> = {};
   for (const [name, pluginAgent] of Object.entries(agents)) {
-    const existing = hostAgents?.[name];
+    const existing = hostAgents?.[name] ?? hostLegacyAgent(hostAgents, name);
     if (existing && typeof existing.model === 'string') {
       onUserModelSwitch?.(name, existing.model);
     }
@@ -745,7 +746,6 @@ export function isSubagent(name: string): name is SubagentName {
 
 const SUBAGENT_FACTORIES: Record<SubagentName, AgentFactory> = {
   explorer: createExplorerAgent,
-  librarian: createLibrarianAgent,
   oracle: createOracleAgent,
   designer: createDesignerAgent,
   fixer: createFixerAgent,
@@ -800,8 +800,9 @@ export function createAgents(
   const configuredOrchestratorModel =
     getPrimaryModelFromOverride(orchestratorOverride);
 
-  // Preserve the historical fixer → librarian fallback unless an explicit
-  // inheritance policy opts the fixer into a different source.
+  // Preserve the historical fixer → research-agent fallback (now explorer)
+  // unless an explicit inheritance policy opts the fixer into a different
+  // source.
   const getModelForAgent = (name: SubagentName): string => {
     const override = getOverrideFromAgents(mergedAgents, name);
     if (override?.model === undefined) {
@@ -814,19 +815,19 @@ export function createAgents(
     }
 
     if (name === 'fixer' && override?.model === undefined) {
-      const librarianOverride = getOverrideFromAgents(
+      const explorerOverride = getOverrideFromAgents(
         mergedAgents,
-        'librarian',
+        'explorer',
       )?.model;
-      let librarianModel: string | undefined;
-      if (Array.isArray(librarianOverride)) {
-        const first = librarianOverride[0];
-        librarianModel = typeof first === 'string' ? first : first?.id;
+      let explorerModel: string | undefined;
+      if (Array.isArray(explorerOverride)) {
+        const first = explorerOverride[0];
+        explorerModel = typeof first === 'string' ? first : first?.id;
       } else {
-        librarianModel = librarianOverride;
+        explorerModel = explorerOverride;
       }
       return (
-        librarianModel ?? primaryModel ?? (DEFAULT_MODELS.librarian as string)
+        explorerModel ?? primaryModel ?? (DEFAULT_MODELS.explorer as string)
       );
     }
     return primaryModel ?? (DEFAULT_MODELS[name] as string);
@@ -1065,15 +1066,15 @@ export function createAgents(
     orchestratorModel,
     undefined,
     undefined,
-    disabled,
-    councillorAgents.length > 0 ? ['council'] : undefined,
-    !runtime.disabledTools.includes('wait_for_user'),
-    runtime.backgroundJobs.orchestratorWake.enabled,
-    options?.hostFlavor,
-    // Honoured switch: the board renders on v1 unless boardInjection is
-    // false; RuntimeConfig forces it false on v2 (structural boardless).
-    runtime.backgroundJobs.boardInjection,
-    runtime.routingBlock,
+    {
+      disabledAgents: disabled,
+      excludeDescriptions:
+        councillorAgents.length > 0 ? ['council'] : undefined,
+      waitForUser: !runtime.disabledTools.includes('wait_for_user'),
+      wakeScheduler: runtime.backgroundJobs.orchestratorWake.enabled,
+      hostFlavor: options?.hostFlavor,
+      routingBlock: runtime.routingBlock,
+    },
   );
 
   const inlineOrchestratorPrompt = orchestratorOverride?.prompt;

@@ -138,7 +138,7 @@ them via `agents.<name>.description`). When writing a custom
 your agent section — identity lines duplicate the native roster and go stale
 when agents are disabled (`disabled_agents` removes them from the roster
 automatically, but not from your file). `routingBlock: false` applies the
-same trim to the built-in v2 prompt by removing the stock `<Agents>` block
+same trim to the built-in prompt by removing the stock `<Agents>` block
 entirely, which also removes stock routing claims that drift against
 `agents.<name>.prompt` customizations (see the option reference).
 
@@ -194,7 +194,7 @@ All config files support **JSONC** (JSON with Comments):
 | `preset` | string | - | Active preset name (e.g. `"openai"`, `"best"`) |
 | `setDefaultAgent` | boolean | `true` | When `true`, sets OpenCode's `default_agent` to the orchestrator if unset or pointing at a subagent; `false` leaves it untouched |
 | `stripOrchestratorModel` | boolean | `false` | Preserve a runtime `/model` selection for the orchestrator after subagent dispatch by omitting its configured model from the SDK config. A selected preset's explicit `orchestrator.model` is retained. Without a runtime selection, this opt-in delegates the initial orchestrator choice to OpenCode's session default. |
-| `routingBlock` | boolean | `true` | When false, removes the `<Agents>` routing block from the v2 orchestrator prompt. The host's native delegation-tool roster still lists every enabled agent with its one-line description, but it carries no Delegate/Don't routing criteria — the block's routing guidance (~300 tokens) has no roster equivalent, so `false` trades routing quality for tokens, or drops stock routing claims that drift against custom agent prompts (`agents.<name>.prompt`). v2 hosts only: on v1 the flag is ignored with a warning (the v1 orchestrator prompt renders the same slim routing lines as v2 (frozen wording elsewhere in the template) — use an orchestrator.md override to change routing there). No effect when an orchestrator.md override already replaces the whole prompt. |
+| `routingBlock` | boolean | `true` | When false, removes the `<Agents>` routing block from the built-in orchestrator prompt. The host's native delegation-tool roster still lists every enabled agent with its one-line description, but it carries no Delegate/Don't routing criteria — the block's routing guidance (~300 tokens) has no roster equivalent, so `false` trades routing quality for tokens, or drops stock routing claims that drift against custom agent prompts (`agents.<name>.prompt`). Applies on v1 and v2 hosts. No effect when an orchestrator.md override already replaces the whole prompt. |
 | `presets` | object | - | Named preset configurations. New preset names are limited to letters, digits, `-`, and `_`; `__omo_*` and JavaScript reserved property names (`__proto__`, `constructor`, `prototype`) are rejected for new presets (pre-existing entries with other names stay visible and applicable) |
 | `presets.<name>.extends` | string | - | Optional single parent preset. The parent is resolved before the child; multiple parents are not supported |
 | `presets.<name>.<agent>.model` | string \| array | - | Model ID in `provider/model` format, or a non-empty ordered fallback chain (array of IDs or `{ id, variant }`) |
@@ -252,7 +252,8 @@ All config files support **JSONC** (JSON with Comments):
 | `backgroundJobs.concurrency.providerConcurrency` | object | `{}` | Per-provider caps keyed by provider ID. Each value must be `0`–`1000`, where `0` means unlimited for that provider. The most specific configured cap wins: model > provider > default See [Background Job Management](#background-job-management). |
 | `backgroundJobs.concurrency.modelConcurrency` | object | `{}` | Per-model caps keyed by `provider/model` ID. Each value must be `0`–`1000`, where `0` means unlimited for that model. The most specific configured cap wins: model > provider > default See [Background Job Management](#background-job-management). |
 | `backgroundJobs.sameProviderPolicy` | object | `{}` | Opt-in per-provider policy keyed by provider ID; the only value is `"foreground"`. When the parent session's current model and the child agent's resolved model both resolve to a configured provider, an explicit background call (`task(..., background: true)` on v1, `subagent(..., background: true)` on v2) is converted to the existing foreground execution path. On v2 hosts, when the background-default flip is active, calls that omit `background` are first defaulted to background, so they are converted too. Unconfigured, different, or undeterminable providers keep background behavior. See [Background Job Management](#background-job-management). |
-| `backgroundJobs.childInputWake` | boolean | `true` | When true, a background child's question or permission request wakes its parent with the ask content. See [Background Job Management](#background-job-management). |
+| `backgroundJobs.childInputWake` | boolean | `true` | Master switch for child-input wakes: when true, each ask kind wakes its parent only if enabled in `backgroundJobs.childInputWakeKinds` (default: questions wake, permissions do not). When false, no child ask wakes the parent. |
+| `backgroundJobs.childInputWakeKinds` | object | `{ permission: false, question: true }` | Which child ask kinds may wake the parent. Permission asks default off (#1504) because their replies carry no host wake and are resolved by the UI or an external responder. Invalid or partial values fall back to per-field defaults silently. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.waitForUserGuard` | boolean | `true` | v1 only (`wait_for_user` is not registered on v2). When true, intercepts `wait_for_user` calls while background tasks are still running and the orchestrator wake scheduler is enabled, returning guidance to end the turn instead of blocking on manual input. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.boardInjection` | boolean | `true` | When false, the Background Job Board reminder is never injected into prompts. Background task tracking, wake, and task_status all keep working; the orchestrator simply no longer passively sees the board. v1 hosts only: on v2 the key is ignored with a warning because the native background notifier and inbox delivery replace the passive board entirely. See [Background Job Management](#background-job-management). |
 | `backgroundJobs.pruneEvictedSessions` | boolean | `false` | When true, removes the host child session when a retention trim (per-agent count cap or context budget, reusable or retained-stopped) evicts its terminal or retained-stopped background job record. Only background children this plugin launched itself through a tracked `task(..., background: true)` call are eligible: foreground task children, unattributed placeholder sessions, and adopted, restored, or rehydrated sessions are never deleted. Bounded host reads must also confirm the session's `parentID` still matches the record's parent and that the session is idle; a session the board tracks again (revived, re-registered, or leased) or with a parked child-input wait is never removed, and the delete itself has a deadline; parent deletion (`session.deleted`) and explicit drops never remove host sessions. v1 hosts only for now: v2 has no live session-status map, so every prune is skipped there. See [Background Job Management](#background-job-management). |
@@ -583,10 +584,8 @@ injection, the `<Agents>` block is not duplicated by a native channel: the
 roster carries agent identity only (~20 tokens of the block overlap with it),
 while the block's Delegate/Don't routing criteria have no native equivalent.
 A derived `false` would be a silent routing downgrade dressed up as
-deduplication, so the trade-off stays behind an explicit opt-in. As of this
-prompt refresh, v1 and v2 render identical `<Agents>` routing lines; the
-switch itself still only takes effect on v2 — v1's non-`<Agents>` wording
-remains the frozen template.
+deduplication, so the trade-off stays behind an explicit opt-in. v1 and v2
+share one orchestrator prompt template, so the switch applies on both.
 
 Board-off behavioral notes: the consumption bookkeeping that retires
 completed/error/cancelled jobs registers on orchestrator turns driven by a
@@ -709,6 +708,11 @@ OpenCode's provider retry policy. A value of `0` allows no host retry events
 before foreground failover; it does not prevent OpenCode from retrying a
 provider request in a child session.
 
+With a configured chain, a host-announced retry wait longer than 30 minutes
+bypasses this budget and starts fallback. Waits up to 30 minutes, or retries
+without timing metadata, still use the configured retry count. The configured
+fallback delays still apply; sessions without a chain keep their existing behavior.
+
 Both fallback paths scan the chain from its head, skipping models already tried
 and providers abandoned by this session or its parent. Starting on a later entry
 does not skip the untried entries before it. A provider is excluded only after a
@@ -793,16 +797,33 @@ Notes:
 - Display names must be unique
 - Display names cannot conflict with internal agent names like `oracle` or `explorer`
 
+> **Rename continuity:** `librarian` was merged into `explorer`. Existing
+> `agents.librarian` config (model, variant, mcps, skills, prompt,
+> `inheritModelFrom`) keeps working: it is applied to `explorer`, the merged
+> research agent. An explicit `agents.explorer` field wins over the legacy
+> `librarian` field. `disabled_agents: ['librarian']` now disables `explorer`.
+> A `librarian.md` / `librarian_append.md` prompt override still applies —
+> rename it to `explorer.md` when convenient (a one-time notice reminds you).
+> Marketplace packages extending `builtin: 'librarian'` now extend
+> `builtin: 'explorer'` (same one-time notice). `librarian` remains a reserved
+> legacy name: it cannot be reused as a custom, ACP, or display name. New
+> configs should use `explorer` directly.
+>
+> Still true: an explicit `explorer.mcps` list (including `[]`) overrides the
+> runtime defaults — old generated presets pinned `mcps: []`; remove that
+> override or set it to `["context7", "gh_grep"]`. Newly generated configs
+> omit `mcps` so defaults always apply.
+
 ### Independent agent model inheritance
 
-By default, the `fixer` agent inherits the `librarian` model when no fixer
+By default, the `fixer` agent inherits the `explorer` model when no fixer
 model is configured. To decouple agents, set `inheritModelFrom` on the agent
 that should follow the current session or the configured orchestrator model:
 
 ```jsonc
 {
   "agents": {
-    "librarian": {
+    "explorer": {
       "model": "ollama/qwen3.8:27B"
     },
     "fixer": {
@@ -868,8 +889,8 @@ Model selection follows these rules:
   agent follows the session/orchestrator model, and the array serves as the
   fallback chain tried when that model fails. See
   [Following the session model with a fallback chain](#following-the-session-model-with-a-fallback-chain).
-- If neither field is present, the existing model precedence and the historical
-  fixer-to-librarian fallback remain unchanged.
+- If neither field is present, the existing model precedence and the
+  fixer-to-explorer fallback remain unchanged.
 
 The setting works in both root `agents` overrides and preset agent overrides.
 
@@ -938,7 +959,7 @@ the configured `council` color unless `agents.councillor.color` overrides it.
 ### Per-preset agent configuration
 
 To get per-preset behavior for any agent, built-in (`council`, `oracle`,
-`explorer`, `librarian`, `fixer`, `designer`, `observer`) or custom, define
+`explorer`, `fixer`, `designer`, `observer`) or custom, define
 the agent override inside each preset block, not in root `agents`.
 
 ```jsonc
@@ -1154,7 +1175,7 @@ Disable built-in hooks via `disabled_hooks`:
 
 Available hooks:
 
-- **Prompt injection**: `phase-reminder` (per-turn scheduler-workflow reminder on orchestrator messages), `deepwork-goal` (post-compaction goal pointer), `council-inject` (keyword-triggered Council Mode procedure, injected once per session at the first trigger).
+- **Prompt injection**: `phase-reminder` (per-turn scheduler-workflow reminder on orchestrator messages), `deepwork-goal` (post-compaction goal pointer, delivered once per compaction epoch), `council-inject` (keyword-triggered Council Mode procedure, injected once per session at the first trigger).
 - **Council**: `council-assembly` — switches the injected Council Mode block to paste mode: the orchestrator pastes each seat response itself (pre-assembly behavior) and the harness attaches nothing. A mid-session toggle does not rewrite blocks already injected; in that window the council may receive bare seat IDs — paste the seat responses (or start a new conversation).
 - **Model failover**: `foreground-fallback` — same effect as `fallback.enabled = false`.
 - **Tool guards**: `json-error-recovery`, `tool-loop-guard`, `search-path-guard`, `absolute-path-rescue`, `apply-patch` — each stops intercepting tool calls entirely, so malformed output, repeated identical calls, and invalid or guessed paths surface raw to the model.

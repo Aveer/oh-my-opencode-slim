@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { SessionLifecycle } from '../../hooks/session-lifecycle';
 import { createTaskReviveTool } from '../../tools/task-revive';
 import {
@@ -726,7 +727,7 @@ describe('task-session-manager hook', () => {
       {
         args: {
           background: true,
-          subagent_type: 'librarian',
+          subagent_type: 'explorer',
           description: 'nested task',
         },
       },
@@ -3415,7 +3416,7 @@ describe('task-session-manager hook', () => {
       ),
     ).rejects.toThrow('awaiting acknowledgment');
 
-    // task_result retrieval marks the job used after completion (#1070 escape hatch).
+    // A task_status result read marks the job used after completion (#1070 escape hatch).
     board.markUsed('parent-1', 'child-1', 300);
     await hook['tool.execute.before'](
       { tool: 'task', sessionID: 'parent-1', callID: 'retry-1' },
@@ -7167,7 +7168,16 @@ describe('task-session-manager hook', () => {
   });
 
   test('reads before and after launch attach, path-only, recency-capped', async () => {
-    const { hook } = createHook();
+    const { hook } = createHook({ idleReconcileDelayMs: 0 });
+    // Context entries are disk-validated before board commit: create the
+    // files the simulated reads claim to inspect.
+    mkdirSync('/tmp/src', { recursive: true });
+    for (const name of ['small.ts', 'large.ts', 'medium.ts']) {
+      writeFileSync(
+        `/tmp/src/${name}`,
+        Array.from({ length: 20 }, (_, index) => `line ${index}`).join('\n'),
+      );
+    }
     await hook.event({
       event: {
         type: 'session.created',

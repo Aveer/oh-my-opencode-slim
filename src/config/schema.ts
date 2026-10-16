@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { MarketplacePackageIdSchema } from '../marketplace/schemas';
-import { AGENT_THEME_COLORS, STRING_ONLY_PERMISSION_KEYS } from './constants';
+import {
+  AGENT_THEME_COLORS,
+  DEFAULT_CHILD_INPUT_WAKE_KINDS,
+  STRING_ONLY_PERMISSION_KEYS,
+} from './constants';
 import { CouncilConfigSchema } from './council-schema';
 import { ProviderModelIdSchema } from './model-id-schema';
 
@@ -423,7 +427,7 @@ export type PresetInput = z.infer<typeof PresetSchema>;
 export const McpNameSchema = z.enum(['context7', 'gh_grep']);
 export type McpName = z.infer<typeof McpNameSchema>;
 
-const InterviewOutputFolderSchema = z
+export const InterviewOutputFolderSchema = z
   .string()
   .trim()
   .min(1)
@@ -626,6 +630,15 @@ export const BackgroundJobsConfigStrictSchema = z.object({
     .default(true)
     .describe(
       'When true, a background child ask wakes its parent with the ask content. Default enabled.',
+    ),
+  childInputWakeKinds: z
+    .object({
+      permission: z.boolean().default(false).catch(false),
+      question: z.boolean().default(true).catch(true),
+    })
+    .catch({ ...DEFAULT_CHILD_INPUT_WAKE_KINDS })
+    .describe(
+      'Which background child ask kinds may wake the parent. Permission asks default off (#1504): their replies carry no host wake and are resolved by the UI or an external responder, so a parent turn is wasted. Question asks default on.',
     ),
   pruneEvictedSessions: z
     .boolean()
@@ -860,7 +873,7 @@ export const WebfetchConfigSchema = z
     model: AgentOverrideConfigSchema.shape.model.describe(
       'Dedicated model(s) for smartfetch secondary-model summarization. ' +
         'Same shape as agent model config (string, array of strings/objects with id+variant). ' +
-        'Takes priority over small_model, agents.explorer.model, and agents.librarian.model.',
+        'Takes priority over small_model and agents.explorer.model.',
     ),
   })
   .strict();
@@ -962,7 +975,7 @@ export const RawPluginConfigSchema = z
       .boolean()
       .optional()
       .describe(
-        "When false, removes the <Agents> routing block from the v2 orchestrator prompt. The host's native subagent roster (appended to the subagent tool description) still lists every enabled agent, but it carries no Delegate/Don't routing criteria — set false only to drop stock routing claims that drift against custom agent prompts, or to trim tokens. Ignored with a warning on v1 hosts, where the orchestrator prompt is a frozen template; use an orchestrator.md override there. No effect when an orchestrator.md override already replaces the whole prompt. Defaults to true.",
+        "When false, removes the <Agents> routing block from the built-in orchestrator prompt. The host's native subagent roster (appended to the subagent tool description) still lists every enabled agent, but it carries no Delegate/Don't routing criteria — set false only to drop stock routing claims that drift against custom agent prompts, or to trim tokens. No effect when an orchestrator.md override already replaces the whole prompt. Defaults to true.",
       ),
     autoUpdate: z
       .boolean()

@@ -17,7 +17,7 @@
       "type": "boolean"
     },
     "routingBlock": {
-      "description": "When false, removes the <Agents> routing block from the v2 orchestrator prompt. The host's native subagent roster (appended to the subagent tool description) still lists every enabled agent, but it carries no Delegate/Don't routing criteria — set false only to drop stock routing claims that drift against custom agent prompts, or to trim tokens. Ignored with a warning on v1 hosts, where the orchestrator prompt is a frozen template; use an orchestrator.md override there. No effect when an orchestrator.md override already replaces the whole prompt. Defaults to true.",
+      "description": "When false, removes the <Agents> routing block from the built-in orchestrator prompt. The host's native subagent roster (appended to the subagent tool description) still lists every enabled agent, but it carries no Delegate/Don't routing criteria — set false only to drop stock routing claims that drift against custom agent prompts, or to trim tokens. No effect when an orchestrator.md override already replaces the whole prompt. Defaults to true.",
       "type": "boolean"
     },
     "autoUpdate": {
@@ -1546,6 +1546,24 @@
           "description": "When true, a background child ask wakes its parent with the ask content. Default enabled.",
           "type": "boolean"
         },
+        "childInputWakeKinds": {
+          "default": {
+            "permission": false,
+            "question": true
+          },
+          "description": "Which background child ask kinds may wake the parent. Permission asks default off (#1504): their replies carry no host wake and are resolved by the UI or an external responder, so a parent turn is wasted. Question asks default on.",
+          "type": "object",
+          "properties": {
+            "permission": {
+              "default": false,
+              "type": "boolean"
+            },
+            "question": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        },
         "pruneEvictedSessions": {
           "default": false,
           "description": "When true, removes the host child session when a retention trim evicts its terminal or retained-stopped record, only for background children this plugin launched itself (never foreground, unattributed placeholder, adopted, or restored sessions) and only after a host read confirms the session still belongs to the record parent. Never fires for parent deletion or explicit drops. v1 hosts only for now (v2 has no live session-status map, so every prune is skipped). Default disabled.",
@@ -1712,7 +1730,7 @@
           "type": "boolean"
         },
         "model": {
-          "description": "Dedicated model(s) for smartfetch secondary-model summarization. Same shape as agent model config (string, array of strings/objects with id+variant). Takes priority over small_model, agents.explorer.model, and agents.librarian.model.",
+          "description": "Dedicated model(s) for smartfetch secondary-model summarization. Same shape as agent model config (string, array of strings/objects with id+variant). Takes priority over small_model and agents.explorer.model.",
           "anyOf": [
             {
               "type": "string"

@@ -20,6 +20,7 @@
  */
 import type { PluginInput } from '@opencode-ai/plugin';
 import type { OpencodeClient } from '@opencode-ai/sdk';
+import { DEFAULT_CHILD_INPUT_WAKE_KINDS } from '../../config/constants';
 import {
   createInternalAgentTextPart,
   isInternalInitiatorPart,
@@ -29,6 +30,7 @@ import { isRecord as isObjectRecord } from '../../utils/guards';
 import { log } from '../../utils/logger';
 import type { SessionSelection } from '../../utils/session-selection';
 import type { SessionLifecycle } from '../session-lifecycle';
+import type { ChildInputWaitKind } from '../task-session-manager/child-input-wait';
 import {
   type ContinuationModelSelection,
   parseContinuationModelSelection,
@@ -216,7 +218,10 @@ export const CHILD_INPUT_QUEUE_CAP = 32;
 /** Max child-input deltas appended to one wake. */
 export const CHILD_INPUT_WAKE_CHUNK = 4;
 
-/** Give host/UI auto-repliers time to settle an ask before waking the parent. */
+/** Batching/dedup hysteresis for fresh asks, not a safety mechanism
+ * (#1504): correctness comes from the ask revalidation predicate, the
+ * post-read/post-selection pruning, and the admission gate in evaluate().
+ * Gives host/UI auto-repliers a moment to answer before waking the parent. */
 export const CHILD_INPUT_WAKE_SETTLE_MS = 250;
 
 /** Asks that overflow the bounded child-input queue still produce a
@@ -456,6 +461,10 @@ export type OrchestratorWakeOptions = {
    * unknown agents fail safe to writer (the verification sentence is
    * attached rather than omitted). Only consulted on v2 hosts. */
   isWriterLaneTask?: (taskID: string) => boolean;
+  /** Which child ask kinds may wake the parent (config
+   * `backgroundJobs.childInputWakeKinds`). Absent means the shipped
+   * default: permission asks off, question asks on (#1504). */
+  childInputWakeKinds?: { permission: boolean; question: boolean };
 };
 
 /**
@@ -929,6 +938,9 @@ export function createOrchestratorWakeScheduler(
   const publicationWakeMinIntervalMs =
     options.config.publicationWakeMinIntervalMs ??
     DEFAULT_PUBLICATION_WAKE_MIN_INTERVAL_MS;
+  // #1504: permission wakes ship off, question wakes ship on.
+  const childInputWakeKinds =
+    options.childInputWakeKinds ?? DEFAULT_CHILD_INPUT_WAKE_KINDS;
   const directory = ctx.directory;
   const sessionSdk = (ctx.client as OpencodeClient).session;
 
@@ -2004,6 +2016,24 @@ export function createOrchestratorWakeScheduler(
         return false;
       }
 
+      // #1504 admission gate: the recheck verdict is the last scheduled
+      // check, and an activation can land between it and this point. The
+      // settle window is batching hysteresis only, not a safety mechanism —
+      // this re-read of the event-tracked race guard closes the gap before
+      // any body is assembled or a wake reserved. Same parent-active abort
+      // as the classification verdict: the queued batch stays for the
+      // parent-idle retrigger.
+      if (latest.kind === 'children' && isParentActiveByEvents(sessionID)) {
+        log('[orchestrator-wake] evaluate aborted', {
+          sessionID,
+          trigger: reason,
+          checkpoint: 'admission',
+          reason: 'parent-active',
+        });
+        endIdleSpell(sessionID, true);
+        return false;
+      }
+
       // Reserve before promptAsync so a failed call cannot storm retries and
       // concurrent hook instances cannot double-wake.
       if (!commitWakeReservation(sessionID, owner, latestFingerprint)) {
@@ -2545,9 +2575,16 @@ export function createOrchestratorWakeScheduler(
    * a question or permission request. Separate from the periodic TODO wake
    * for the same reason as the stopped-job recovery: a parked child needs
    * an answer even when its parent has no todo. The wake carries the ask
-   * inline with request-specific reply guidance. A short settling window
-   * drops asks already answered by host/UI auto-repliers. Delivered with
-   * delivery:'queue' when the parent is busy, like every other wake.
+   * inline with request-specific reply guidance. The settling window is
+   * batching/dedup hysteresis only — correctness comes from the ask
+   * revalidation predicate, the post-read/post-selection pruning, and the
+   * admission gate in evaluate (#1504). Delivered with delivery:'queue'
+   * on v2 hosts when the parent is busy, like every other wake.
+   *
+   * Per-kind ingestion gate: a fresh occurrence of a disabled kind is
+   * dropped here, before any timer or batch entry exists. A call with no
+   * kind re-drives an already-admitted batch (the idle retrigger) and is
+   * never gated.
    *
    * Ported onto the post-2.2.22 wake: the ask wake enters evaluation with
    * reason 'recovery' (externally evidenced work whose wake condition is
@@ -2558,7 +2595,15 @@ export function createOrchestratorWakeScheduler(
     sessionID: string,
     delta?: string,
     dedupeKey?: string,
+    kind?: ChildInputWaitKind,
   ): void {
+    if (kind !== undefined && childInputWakeKinds[kind] === false) {
+      log('[orchestrator-wake] child-input wake suppressed by kind policy', {
+        sessionID,
+        kind,
+      });
+      return;
+    }
     triggerDeltaWake(
       childInputQueue,
       sessionID,

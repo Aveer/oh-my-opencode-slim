@@ -4,8 +4,9 @@ import { AGENT_ALIASES, loadAgentPrompt } from '../config';
 import { parseList } from '../config/agent-mcps';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
+import { hostLegacyAgent } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
-import { legacyAliasFor } from '../config/utils';
+import { lookupWithAliases } from '../config/utils';
 import type { MarketplaceActivationStore } from '../marketplace/activation';
 import {
   ambiguousMcpNamespaces,
@@ -724,8 +725,7 @@ function presetForAgent(
   name: string,
 ) {
   if (!preset) return undefined;
-  const alias = legacyAliasFor(name);
-  return preset[name] ?? (alias ? preset[alias] : undefined);
+  return lookupWithAliases(preset, name);
 }
 
 /** Finalize existing agents from the actual, pre-mutation host config. */
@@ -958,13 +958,8 @@ export function buildResolvedAgentRegistry(
   const configuredAgents = runtime.agents(marketplaceSkillDefaults);
   const preset = resolvedPreset(runtime);
   const runtimeAgentOverrides = runtime.agents();
-  const overrideFor = (name: string) => {
-    const legacy = legacyAliasFor(name);
-    return (
-      runtimeAgentOverrides[name] ??
-      (legacy ? runtimeAgentOverrides[legacy] : undefined)
-    );
-  };
+  const overrideFor = (name: string) =>
+    lookupWithAliases(runtimeAgentOverrides, name);
   const hostEntries = host.agent ?? {};
   const finalAgentConfig: Record<string, unknown> = clone(hostEntries);
 
@@ -973,12 +968,17 @@ export function buildResolvedAgentRegistry(
     const displayName = definition.displayName
       ? normalizeAgentName(definition.displayName)
       : name;
-    // Host-config boundary: resolve host overrides by canonical name and
-    // explicit displayName only. Legacy aliases (e.g. host `explore`) belong
-    // to the host's native agent namespace and must never map onto the
-    // plugin agent (e.g. `explorer`). Plugin-own alias support (runtime
-    // overrides, presets, identity mirroring) is handled separately.
-    const hostEntry = hostEntries[name] ?? hostEntries[displayName];
+    // Host-config boundary: resolve host overrides by canonical name,
+    // explicit displayName, then pre-rename plugin names (e.g. host
+    // `agent.librarian` feeds the merged `explorer`). Host-native alias
+    // namespaces (e.g. host `explore`) belong to the host's native agent
+    // namespace and must never map onto the plugin agent. Plugin-own alias
+    // support (runtime overrides, presets, identity mirroring) is handled
+    // separately.
+    const hostEntry =
+      hostEntries[name] ??
+      hostEntries[displayName] ??
+      hostLegacyAgent(hostEntries, name);
     const entry = sdk[name] as
       | (SDKAgentConfig & Record<string, unknown>)
       | undefined;

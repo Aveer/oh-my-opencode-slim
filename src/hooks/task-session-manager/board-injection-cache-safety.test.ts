@@ -301,7 +301,7 @@ describe('change-only board cache safety', () => {
         board.registerLaunch({
           taskID: 'child-3',
           parentSessionID: SESSION,
-          agent: 'librarian',
+          agent: 'explorer',
           description: 'find docs',
         }),
       () =>
@@ -537,7 +537,7 @@ describe('change-only board cache safety', () => {
     board.registerLaunch({
       taskID: 'child-3',
       parentSessionID: SESSION,
-      agent: 'librarian',
+      agent: 'explorer',
       description: 'look up docs',
     });
     const before = await runTurn(hook, history);

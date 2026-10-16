@@ -307,7 +307,6 @@ describe('built-in agent permission-rule derivation matrix', () => {
     for (const name of [
       'orchestrator',
       'explorer',
-      'librarian',
       'oracle',
       'designer',
       'fixer',
@@ -321,7 +320,6 @@ describe('built-in agent permission-rule derivation matrix', () => {
   test.each([
     'orchestrator',
     'explorer',
-    'librarian',
     'oracle',
     'designer',
     'fixer',
