@@ -2636,6 +2636,30 @@ describe('child permission payload stance tail', () => {
     }
   });
 
+  test('a host `?` allow does not count as covering a replayed `*` grant', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: { permission: { edit: { '*': 'deny', 'src/*': 'allow' } } },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const hostRules: V2PermissionRule[] = [
+      { action: 'edit', resource: '*', effect: 'deny' },
+      { action: 'edit', resource: 'src/?', effect: 'allow' },
+    ];
+    const native = registry.nativePolicies.explorer?.rules ?? [];
+    const payload = [...native, ...hostRules];
+    expect(decideOf(payload)('edit', 'src/private.ts')).toBe('deny');
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    const decide = decideOf(compiled);
+    expect(decide('edit', 'src/private.ts')).toBe('deny');
+    expect(decide('edit', 'src/a')).toBe('allow');
+    expect(registry.compileChildPermissions('explorer', compiled)).toEqual(
+      compiled,
+    );
+  });
+
   test('a deny gated by a declared ask is not replayed over the ask', () => {
     const runtime = runtimeFor({
       disabled_agents: [],

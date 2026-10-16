@@ -427,14 +427,36 @@ function resourcePatternCovers(cover: string, target: string): boolean {
     return [pattern.slice(0, -2), pattern];
   };
   return variants(normalizedTarget).some((targetVariant) =>
-    variants(normalizedCover).some((coverVariant) => {
-      const expression = coverVariant
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.');
-      return new RegExp(`^${expression}$`, 's').test(targetVariant);
-    }),
+    variants(normalizedCover).some((coverVariant) =>
+      globContains(coverVariant, targetVariant),
+    ),
   );
+}
+
+/**
+ * Whether every value matched by glob `target` is matched by glob `cover`
+ * (`*` and `?` wildcards). A cover `?` absorbs one target literal or `?`,
+ * never a target `*` (which may span zero or many characters). Sound but
+ * conservative: an unprovable containment reports false.
+ */
+function globContains(cover: string, target: string): boolean {
+  const memo = new Map<number, boolean>();
+  const covers = (i: number, j: number): boolean => {
+    const key = i * (target.length + 1) + j;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
+    let result: boolean;
+    if (i === cover.length) result = j === target.length;
+    else if (cover[i] === '*')
+      result = covers(i + 1, j) || (j < target.length && covers(i, j + 1));
+    else if (j === target.length) result = false;
+    else if (cover[i] === '?')
+      result = target[j] !== '*' && covers(i + 1, j + 1);
+    else result = target[j] === cover[i] && covers(i + 1, j + 1);
+    memo.set(key, result);
+    return result;
+  };
+  return covers(0, 0);
 }
 
 /**
@@ -539,7 +561,6 @@ function boundGrantByHost(
     }
     return effect === 'deny' ? [] : [{ ...grant, effect }];
   }
-  if (effect === 'deny') return [];
   // Within, not merely overlapping: an allow reaching outside the grant
   // would loosen the declared ceiling. The string match below implies set
   // inclusion only when the grant's pattern uses `*` alone as a wildcard.
@@ -552,15 +573,19 @@ function boundGrantByHost(
       ? [rule.resource.slice(0, -2), rule.resource]
       : [rule.resource]
     ).every((variant) => resourcePatternCovers(grant.resource, variant));
+  const tail = later.filter(
+    (rule) => rule.effect !== 'allow' || withinGrant(rule),
+  );
+  // A denied grant only matters for the host's allow exceptions inside it.
+  if (effect === 'deny' && !tail.some((rule) => rule.effect === 'allow'))
+    return [];
   return [
     { ...grant, effect },
-    ...later
-      .filter((rule) => rule.effect !== 'allow' || withinGrant(rule))
-      .map((rule) => ({
-        action: grant.action,
-        resource: rule.resource,
-        effect: rule.effect,
-      })),
+    ...tail.map((rule) => ({
+      action: grant.action,
+      resource: rule.resource,
+      effect: rule.effect,
+    })),
   ];
 }
 
