@@ -74,16 +74,14 @@ export function v1ArgsToSubagent(
  * source: v2 → `subagent` / `agent` / `sessionID`; v1 and any unknown
  * flavor → `task` / `subagent_type` / `task_id`. The control tools (`task_*`)
  * share the same identifier param (`controlParamName`). The host's model
- * param rides along for construction-time consumers: only the Council Mode
- * block's never-set clause names it, and only when the host has one (v2). */
-export type DelegationWording = DelegationVocabulary;
+ * param is vocabulary-internal and never reaches model-visible guidance. */
+export type DelegationWording = Omit<DelegationVocabulary, 'modelParam'>;
 
 export function delegationWording(
   hostFlavor: string | undefined,
 ): DelegationWording {
-  const { tool, agentParam, resumeParam, modelParam } =
-    delegationVocabulary(hostFlavor);
-  return { tool, agentParam, resumeParam, modelParam };
+  const { tool, agentParam, resumeParam } = delegationVocabulary(hostFlavor);
+  return { tool, agentParam, resumeParam };
 }
 
 /** Rewritten native `subagent` description for the background-default flip

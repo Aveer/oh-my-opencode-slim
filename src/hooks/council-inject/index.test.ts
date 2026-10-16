@@ -99,7 +99,6 @@ describe('buildCouncilModeBlock', () => {
         tool: 'subagent',
         agentParam: 'agent',
         resumeParam: 'sessionID',
-        modelParam: 'model',
       },
       'harness',
     );
@@ -111,16 +110,15 @@ describe('buildCouncilModeBlock', () => {
       'When the conversation calls for multi-model consensus',
     );
     expect(block).not.toContain('INSTEAD of delegating');
-    // Dispatch authority: the v2 subagent tool roster filters the seat
-    // agents out, so its agent-param guidance steers unlisted names to the
-    // model param. The block must outrank that: dispatch by the roster's
-    // exact names, never substitute, never set model.
+    // Positive-only dispatch (user directive): the parameter positively
+    // names the roster name — the substitution prohibition is redundant —
+    // and the preset-models fact removes the model-override motive without
+    // naming any parameter, on either flavor.
     expect(block).toContain(
-      'Dispatch the question to every seat in the ## Council roster in parallel via subagent() — one call per seat',
+      'Dispatch the question to every seat in the ## Council roster in parallel — one subagent() call per seat, agent=<exact roster name>; seats run their own preset models.',
     );
-    expect(block).toContain(
-      'never substitute another agent or set model (seats carry preset models)',
-    );
+    expect(block).toContain('agent=<exact roster name>');
+    expect(block).toContain('preset models');
     // The synthesis call must show the prompt= parameter (the old static
     // block omitted it, teaching the model a bad example).
     expect(block).toMatch(
@@ -148,14 +146,12 @@ describe('buildCouncilModeBlock', () => {
       'harness',
     );
 
-    // The same dispatch authority in v1 vocabulary — but no model clause:
-    // v1's `task` has no model param (naming a schema-absent parameter
-    // would prime hallucination), and v1's roster does not omit the seats.
+    // The same flavor-neutral template in v1 vocabulary; the roster-gap
+    // language is v2-host guidance and must not leak here.
     expect(block).toContain(
-      'Dispatch the question to every seat in the ## Council roster in parallel via task() — one call per seat, by exact name even though the tool roster omits them',
+      'Dispatch the question to every seat in the ## Council roster in parallel — one task() call per seat, subagent_type=<exact roster name>; seats run their own preset models.',
     );
-    expect(block).toContain('never substitute another agent.');
-    expect(block).not.toContain('set model');
+    expect(block).toContain('subagent_type=<exact roster name>');
     expect(block).not.toContain('hidden');
     expect(block).toMatch(/task\(subagent_type='council', description=/);
     expect(block).not.toContain('subagent(');
@@ -178,21 +174,22 @@ describe('buildCouncilModeBlock', () => {
     }
   });
 
-  // Budget re-based to the block's new size: step 2's dispatch-authority
-  // clause is the only growth (+144 v2 / +103 v1 chars, one-time cost on
-  // the first council trigger only).
-  test('rendered block stays within the 743-character budget for both flavors', () => {
+  // Budget re-based to the block's new size: step 2's positive-only dispatch
+  // clause is the only growth (+75 v2 / +83 v1 chars, one-time cost on the
+  // first council trigger only). v1 is the longer flavor now — its
+  // `subagent_type=` parameter name exceeds v2's `agent=` — so the cap is
+  // v1's exact size.
+  test('rendered block stays within the 680-character budget for both flavors', () => {
     expect(
       buildCouncilModeBlock(
         {
           tool: 'subagent',
           agentParam: 'agent',
           resumeParam: 'sessionID',
-          modelParam: 'model',
         },
         'harness',
       ).length,
-    ).toBeLessThanOrEqual(743);
+    ).toBeLessThanOrEqual(680);
     expect(
       buildCouncilModeBlock(
         {
@@ -202,7 +199,7 @@ describe('buildCouncilModeBlock', () => {
         },
         'harness',
       ).length,
-    ).toBeLessThanOrEqual(743);
+    ).toBeLessThanOrEqual(680);
   });
 
   test('paste mode (assembly disabled) restores the paste instruction, with zero harness vocabulary', () => {
@@ -211,7 +208,6 @@ describe('buildCouncilModeBlock', () => {
         tool: 'subagent',
         agentParam: 'agent',
         resumeParam: 'sessionID',
-        modelParam: 'model',
       },
       'paste',
     );
@@ -236,16 +232,11 @@ describe('buildCouncilModeBlock', () => {
     // design rejected compression (Fusion's judge reads full originals, and
     // compression still pays the output tokens).
     expect(v2).toContain('do not summarize them');
-    // Step 2 is mode-independent and carries the same dispatch authority;
-    // the model clause stays flavor-true (v2 only).
-    expect(v2).toContain(
-      'every seat in the ## Council roster in parallel via subagent()',
-    );
-    expect(v2).toContain('or set model (seats carry preset models)');
-    expect(v1).toContain(
-      'every seat in the ## Council roster in parallel via task()',
-    );
-    expect(v1).not.toContain('set model');
+    // Step 2 is mode-independent and flavor-neutral: both flavors name the
+    // roster-name parameter and the preset-models fact.
+    expect(v2).toContain('agent=<exact roster name>');
+    expect(v2).toContain('preset models');
+    expect(v1).toContain('subagent_type=<exact roster name>');
     expect(v1).not.toContain('hidden');
     for (const block of [v1, v2]) {
       expect(block).not.toMatch(/harness|attach/i);
@@ -255,8 +246,8 @@ describe('buildCouncilModeBlock', () => {
       expect(block).toContain('seats receive only their prompt');
       expect(block).toContain('retry an empty seat once');
     }
-    expect(v2.length).toBeLessThanOrEqual(743);
-    expect(v1.length).toBeLessThanOrEqual(743);
+    expect(v2.length).toBeLessThanOrEqual(680);
+    expect(v1.length).toBeLessThanOrEqual(680);
   });
 
   test('block bytes are pure and stable across repeated renders and transforms (cache safety)', async () => {
@@ -265,7 +256,6 @@ describe('buildCouncilModeBlock', () => {
         tool: 'subagent',
         agentParam: 'agent',
         resumeParam: 'sessionID',
-        modelParam: 'model',
       },
       { tool: 'task', agentParam: 'subagent_type', resumeParam: 'task_id' },
     ];

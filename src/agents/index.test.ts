@@ -1309,10 +1309,10 @@ test('pointer stays roster-only — the block dispatch clause never leaks into t
   const agents = createAgents(runtimeFor({ council: councilConfig() }));
   const prompt = agents.find((a) => a.name === 'orchestrator')?.config
     .prompt as string;
-  // The dispatch-authority clause is injected with the block (first-hit) and
-  // must never be mirrored into the static pointer, which is read every turn.
-  expect(prompt).not.toContain('never substitute another agent');
-  expect(prompt).not.toContain('tool roster omits');
+  // The dispatch clause is injected with the block (first-hit) and must never
+  // be mirrored into the static pointer, which is read every turn.
+  expect(prompt).not.toContain('exact roster name');
+  expect(prompt).not.toContain('preset models');
 });
 
 test('routingBlock: false strips <Agents> from the v2 orchestrator prompt', () => {

@@ -49,18 +49,15 @@ function orchestratorPromptFor(hostFlavor?: string): string {
 }
 
 describe('delegationVocabulary', () => {
-  test("v2 → { tool: 'subagent', agentParam: 'agent', resumeParam: 'sessionID', modelParam: 'model' }", () => {
+  test("v2 → { tool: 'subagent', agentParam: 'agent', resumeParam: 'sessionID' }", () => {
     expect(delegationVocabulary('v2')).toEqual({
       tool: 'subagent',
       agentParam: 'agent',
       resumeParam: 'sessionID',
-      modelParam: 'model',
     });
   });
 
   test("v1/default → { tool: 'task', agentParam: 'subagent_type', resumeParam: 'task_id' }", () => {
-    // No modelParam on v1: `task` has no model parameter, and naming a
-    // schema-absent parameter would prime hallucination.
     expect(delegationVocabulary(undefined)).toEqual({
       tool: 'task',
       agentParam: 'subagent_type',
