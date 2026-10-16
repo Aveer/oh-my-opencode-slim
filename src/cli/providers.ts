@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_MCPS } from '../config/agent-mcps';
 import { CUSTOM_SKILLS } from './custom-skills';
 import type { InstallConfig } from './types';
 
@@ -103,8 +102,6 @@ export function generateLiteConfig(
       model: modelInfo.model,
       variant: modelInfo.variant,
       skills,
-      mcps:
-        DEFAULT_AGENT_MCPS[agentName as keyof typeof DEFAULT_AGENT_MCPS] ?? [],
     };
   };
 

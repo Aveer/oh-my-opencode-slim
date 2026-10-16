@@ -74,8 +74,7 @@ setting the top-level `preset` field:
       },
       "explorer": {
         "model": "opencode-go/deepseek-v4-flash",
-        "variant": "high",
-        "mcps": ["context7", "gh_grep"]
+        "variant": "high"
       },
       "designer": {
         "model": "opencode-go/kimi-k2.7-code"

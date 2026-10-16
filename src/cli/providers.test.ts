@@ -75,7 +75,6 @@ describe('providers', () => {
       explorer: {
         model: 'opencode-go/deepseek-v4-flash',
         variant: 'high',
-        mcps: ['context7', 'gh_grep'],
       },
       designer: { model: 'opencode-go/kimi-k2.7-code' },
       fixer: { model: 'opencode-go/deepseek-v4-flash', variant: 'high' },
@@ -170,29 +169,15 @@ describe('providers', () => {
     expect(agents.fixer.skills).toEqual([]);
   });
 
-  test('generateLiteConfig includes mcps field', () => {
+  test('generateLiteConfig omits mcps (runtime defaults apply)', () => {
     const config = generateLiteConfig({
       backgroundSubagents: 'no',
       reset: false,
     });
 
     const agents = (config.presets as any).openai;
-    expect(agents.orchestrator.mcps).toBeDefined();
-    expect(Array.isArray(agents.orchestrator.mcps)).toBe(true);
-    expect(agents.explorer.mcps).toBeDefined();
-    expect(Array.isArray(agents.explorer.mcps)).toBe(true);
-  });
-
-  test('generateLiteConfig openai includes correct mcps', () => {
-    const config = generateLiteConfig({
-      backgroundSubagents: 'no',
-      reset: false,
-    });
-
-    const agents = (config.presets as any).openai;
-    expect(agents.orchestrator.mcps).toEqual(['*', '!context7']);
-    expect(agents.explorer.mcps).toContain('context7');
-    expect(agents.explorer.mcps).toContain('gh_grep');
-    expect(agents.designer.mcps).toEqual([]);
+    expect(agents.orchestrator.mcps).toBeUndefined();
+    expect(agents.explorer.mcps).toBeUndefined();
+    expect(agents.designer.mcps).toBeUndefined();
   });
 });

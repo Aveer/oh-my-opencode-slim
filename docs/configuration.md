@@ -776,6 +776,10 @@ Notes:
 > skipped with a warning unless it defines a `model` (or `inheritModelFrom`).
 > Marketplace packages extending `builtin: 'librarian'` fail validation —
 > switch to `builtin: 'explorer'` (it inherits `context7` and `gh_grep`).
+> Configs that set an explicit `explorer.mcps` list (generated presets used to
+> write `mcps: []`) keep that value and will not gain explorer's new defaults —
+> remove the override or set it to `["context7", "gh_grep"]`. Newly generated
+> configs omit `mcps` so runtime defaults always apply.
 
 ### Independent agent model inheritance
 

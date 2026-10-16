@@ -50,37 +50,36 @@ setting the top-level `preset` field:
       "orchestrator": {
         "model": "openai/gpt-6-sol",
         "variant": "high",
-        "skills": ["*"],
-        "mcps": ["*", "!context7"]
+        "skills": ["*"]
       },
       "oracle": {
         "model": "openai/gpt-6-astra",
         "variant": "high",
-        "skills": ["simplify"],
-        "mcps": []
+        "skills": ["simplify"]
       },
       "explorer": {
         "model": "openai/gpt-6-luna",
         "variant": "low",
-        "skills": [],
-        "mcps": ["context7", "gh_grep"]
+        "skills": []
       },
       "designer": {
         "model": "openai/gpt-6-luna",
         "variant": "medium",
-        "skills": [],
-        "mcps": []
+        "skills": []
       },
       "fixer": {
         "model": "openai/gpt-6-luna",
         "variant": "high",
-        "skills": [],
-        "mcps": []
+        "skills": []
       }
     }
   }
 }
 ```
+
+Per-agent MCP defaults (e.g. `explorer` gets `context7` and `gh_grep`) are
+applied at runtime; generated configs omit them so they never pin stale
+values.
 
 ## Skill Reference
 
