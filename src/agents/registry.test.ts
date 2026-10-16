@@ -2700,6 +2700,33 @@ describe('child permission payload stance tail', () => {
     }
   });
 
+  test('repeated overlapping host asks re-assert each deny once (no blow-up)', () => {
+    const runtime = runtimeFor({
+      disabled_agents: [],
+      agents: {
+        explorer: { permission: { edit: { '*': 'deny', 'src/*': 'allow' } } },
+      },
+    });
+    const registry = build(runtime, {}, { hostFlavor: 'v2' });
+    const asks = Array.from({ length: 24 }, (_, index) => ({
+      action: 'edit',
+      resource: `*.ext${index}`,
+      effect: 'ask' as const,
+    }));
+    const payload = [
+      ...(registry.nativePolicies.explorer?.rules ?? []),
+      { action: 'edit', resource: '*', effect: 'allow' as const },
+      { action: 'edit', resource: 'src/private/*', effect: 'deny' as const },
+      ...asks,
+    ];
+    const compiled = registry.compileChildPermissions('explorer', payload);
+    expect(compiled.length).toBeLessThan(payload.length * 3);
+    const decide = decideOf(compiled);
+    expect(decide('edit', 'src/private/secret.key')).toBe('deny');
+    expect(decide('edit', 'src/a.ext3')).toBe('ask');
+    expect(decide('edit', 'lib/a.ext3')).toBe('deny');
+  });
+
   test('a deny gated by a declared ask is not replayed over the ask', () => {
     const runtime = runtimeFor({
       disabled_agents: [],

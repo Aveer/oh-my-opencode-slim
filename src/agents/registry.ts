@@ -580,8 +580,10 @@ function boundGrantByHost(
   // re-asserted (stricter inside the grant, unchanged outside it); one that
   // misses the grant is dropped.
   const tail: V2PermissionRule[] = [];
+  const hostDenies: string[] = [];
   for (const rule of later) {
     if (rule.effect === 'deny') {
+      if (!hostDenies.includes(rule.resource)) hostDenies.push(rule.resource);
       tail.push({
         action: grant.action,
         resource: rule.resource,
@@ -604,17 +606,26 @@ function boundGrantByHost(
         effect: rule.effect,
       });
     } else if (resourcePatternsOverlap(rule.resource, grant.resource)) {
-      // The overlap cannot be expressed as a pattern, so the whole grant
-      // drops to ask (deny under a deny cover), and every earlier deny is
-      // re-asserted so the widened ask cannot reopen a host-denied path.
-      const priorDenies = tail.filter((prior) => prior.effect === 'deny');
+      // The overlap is not always expressible as one pattern, so the whole
+      // grant drops to ask (deny under a deny cover), and each earlier host
+      // deny is re-asserted once so the widened ask cannot reopen a
+      // host-denied path. A deny lying wholly inside the ask needs no
+      // re-assertion: the host asks for all of it too. Paths in both a
+      // re-asserted deny and the ask resolve to deny — stricter than the
+      // host's ask, never looser.
       tail.push(
         {
           action: grant.action,
           resource: grant.resource,
           effect: stricterEffect('ask', effect),
         },
-        ...priorDenies.map((prior) => ({ ...prior })),
+        ...hostDenies
+          .filter((resource) => !globContains(rule.resource, resource))
+          .map((resource) => ({
+            action: grant.action,
+            resource,
+            effect: 'deny' as const,
+          })),
       );
     }
   }
