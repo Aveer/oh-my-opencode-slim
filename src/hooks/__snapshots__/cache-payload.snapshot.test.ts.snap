@@ -18,9 +18,7 @@ don't stall on decisions you can make and revisit.
 </Role>
 
 <Agents>
-@explorer — read-only codebase recon (glob/grep/AST). Delegate: discovery, parallel searches, summarized maps. Don't: known path / need full contents / about to edit.
-
-@librarian — external docs & web research. Delegate: changing APIs, version-specific behavior, official examples, tricky bugs. Don't: stable standard usage or facts already in context.
+@explorer — read-only codebase recon (glob/grep/AST) and external docs/web research (context7, gh_grep). Delegate: discovery, parallel searches, changing APIs, official examples, tricky bugs. Don't: known path / need full contents / stable facts already in context / library trivia you already know.
 
 @oracle — architecture, risk, debugging strategy, review; an escalation, not a default verification step. Delegate: major long-term decisions, problems persisting after 2+ fix attempts, high-risk trade-offs, simplification. Don't: routine or time-sensitive calls.
 

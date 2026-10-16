@@ -23,21 +23,21 @@ Suggest config changes only for recurring behavior, not one-offs.
 - User config: `~/.config/opencode/oh-my-opencode-slim.jsonc` (preferred) or `.json`; project override: `<project>/.opencode/oh-my-opencode-slim.json`.
 - Prompt tuning: `~/.config/opencode/oh-my-opencode-slim/{agent}[_append].md` (prefer `_append.md`; preset variant under `{preset}/`).
 - Skill shadow: `~/.config/opencode/skills/<skill-name>/SKILL.md` shadows the bundled skill.
-- Agent names: `orchestrator|oracle|librarian|explorer|designer|fixer|observer|council`.
+- Agent names: `orchestrator|oracle|explorer|designer|fixer|observer|council`.
 
 Lookup: with an active preset, check `{preset}/` first, then the base dir.
 `{agent}.md` replaces the built-in prompt; `{agent}_append.md` appends to it. Each works alone; neither present → unchanged built-in prompt.
 
 Common customizations:
 
-- Presets/models: switch preset; cheaper models for `explorer`/`librarian`/`fixer`, stronger ones for `orchestrator`/`oracle`/`designer`.
+- Presets/models: switch preset; cheaper models for `explorer`/`fixer`, stronger ones for `orchestrator`/`oracle`/`designer`.
 - Permissions: per-agent `skills`/`mcps` (`['*']`, names, or `['*', '!x']`); enable optional agents by removing them from `disabled_agents`.
 - Custom agents under `agents.<name>` with `prompt` plus `orchestratorPrompt` (trigger and non-use).
 - Prompt tuning via `{agent}_append.md` for recurring behavior or house style.
 
 Important schema boundary:
 
-- Built-in agents (`orchestrator`, `oracle`, `librarian`, `explorer`,
+- Built-in agents (`orchestrator`, `oracle`, `explorer`,
   `designer`, `fixer`, `observer`, `council`) can set models, variants, skills,
   MCPs, options, and display names in config.
 - Built-in agent `prompt` and `orchestratorPrompt` fields are **not** supported
@@ -113,8 +113,7 @@ Good custom agents have:
 
 Avoid custom agents that duplicate existing specialists:
 
-- codebase scouting → `explorer`
-- external docs/research → `librarian`
+- codebase scouting and external docs/research → `explorer`
 - architecture/debugging/review → `oracle`
 - UI/UX polish → `designer`
 - scoped mechanical implementation → `fixer`

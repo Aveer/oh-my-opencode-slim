@@ -16,7 +16,9 @@
  * prompt-injecting consumer must go through src/hooks/cache-safe-injection.ts.
  */
 import {
+  AGENT_ALIASES,
   ALL_AGENT_NAMES,
+  DEFAULT_CHILD_INPUT_WAKE_KINDS,
   DEFAULT_DISABLED_AGENTS,
   DEFAULT_MAX_CONTEXT_LINES,
   DEFAULT_MAX_RETAINED_SNAPSHOTS,
@@ -48,7 +50,11 @@ import {
   type ResolvedPluginConfig,
   type WebfetchConfig,
 } from './schema';
-import { getCustomAgentNames, legacyAliasFor } from './utils';
+import {
+  getCustomAgentNames,
+  legacyAliasesFor,
+  lookupWithAliases,
+} from './utils';
 
 /** A single agent entry from the host opencode.json config. */
 export interface HostAgentConfig {
@@ -101,6 +107,7 @@ const DEFAULT_BACKGROUND_JOBS: BackgroundJobsConfig = {
   sameProviderPolicy: {},
   waitForUserGuard: true,
   childInputWake: true,
+  childInputWakeKinds: { ...DEFAULT_CHILD_INPUT_WAKE_KINDS },
   boardInjection: true,
   pruneEvictedSessions: false,
 };
@@ -301,7 +308,7 @@ export class RuntimeConfig {
    */
   agent(name: string): AgentOverrideConfig | undefined {
     const merged = this.aliasAwareOverride(this.agents(), name);
-    const hostLayer = this.hostAgent(name);
+    const hostLayer = this.hostAgent(name) ?? this.hostLegacyAgent(name);
     if (!hostLayer) {
       return merged;
     }
@@ -317,7 +324,8 @@ export class RuntimeConfig {
     ) as AgentOverrideConfig | undefined;
   }
 
-  /** Disabled agent names, minus protected agents. */
+  /** Disabled agent names, minus protected agents. Legacy alias names
+   * (e.g. `librarian`) canonicalize onto their merged agent. */
   get disabledAgents(): ReadonlySet<string> {
     const userDisabled = this.pluginConfig?.disabled_agents;
     const disabledSource = Array.isArray(userDisabled)
@@ -325,8 +333,9 @@ export class RuntimeConfig {
       : DEFAULT_DISABLED_AGENTS;
     const disabled = new Set<string>();
     for (const name of disabledSource) {
-      if (!PROTECTED_AGENTS.has(name)) {
-        disabled.add(name);
+      const canonical = AGENT_ALIASES[name] ?? name;
+      if (!PROTECTED_AGENTS.has(canonical)) {
+        disabled.add(canonical);
       }
     }
     return disabled;
@@ -376,7 +385,18 @@ export class RuntimeConfig {
   }
 
   get backgroundJobs(): BackgroundJobsConfig {
-    return this.pluginConfig?.backgroundJobs ?? DEFAULT_BACKGROUND_JOBS;
+    const backgroundJobs = this.pluginConfig?.backgroundJobs;
+    if (!backgroundJobs) return DEFAULT_BACKGROUND_JOBS;
+    if (backgroundJobs.childInputWake !== false) return backgroundJobs;
+    // #1504: master switch off silences every kind. The scheduler's per-kind
+    // gate stays the only runtime gate; the stored config stays raw.
+    return {
+      ...backgroundJobs,
+      childInputWakeKinds: {
+        permission: false,
+        question: false,
+      },
+    };
   }
 
   get fallback(): FailoverConfig {
@@ -540,6 +560,10 @@ export class RuntimeConfig {
     return this.hostSnapshot?.agent?.[name];
   }
 
+  private hostLegacyAgent(name: string): HostAgentConfig | undefined {
+    return hostLegacyAgent(this.hostSnapshot?.agent, name);
+  }
+
   /** The host's top-level small_model, when configured. */
   smallModel(): string | undefined {
     const value = this.hostSnapshot?.small_model;
@@ -649,6 +673,25 @@ export class RuntimeConfig {
     agents: Record<string, AgentOverrideConfig>,
     name: string,
   ): AgentOverrideConfig | undefined {
-    return agents[name] ?? agents[legacyAliasFor(name) ?? ''];
+    return lookupWithAliases(agents, name);
   }
+}
+
+/**
+ * Host agent entry under a pre-rename plugin agent name (e.g. host
+ * `agent.librarian` keeps feeding the merged `explorer`). Host-native
+ * alias namespaces (v2 `explore`) are excluded: those entries describe
+ * the host's own agent, never the plugin's.
+ */
+export function hostLegacyAgent(
+  hostAgents: Record<string, HostAgentConfig> | undefined,
+  name: string,
+): HostAgentConfig | undefined {
+  if (!hostAgents) return undefined;
+  for (const legacyName of legacyAliasesFor(name)) {
+    if (legacyName === 'explore') continue;
+    const entry = hostAgents[legacyName];
+    if (entry) return entry;
+  }
+  return undefined;
 }
