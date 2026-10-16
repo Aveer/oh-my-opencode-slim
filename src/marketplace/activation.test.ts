@@ -343,6 +343,23 @@ describe('marketplace activation planning', () => {
     expect(result.agents[0]?.requiredMcps).toEqual(['context7', 'gh_grep']);
   });
 
+  test("treats a legacy 'librarian' extension as an explorer extension", () => {
+    const { result } = fixture(
+      ['team/librarian-extension'],
+      [
+        stored('team/librarian-extension', 'research-agent', {
+          extends: { builtin: 'librarian', promptMode: 'append' },
+        }),
+      ],
+      new Map(),
+      { mcps: ['context7', 'gh_grep'] },
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.agents[0]?.manifest.extends?.builtin).toBe('explorer');
+    expect(result.agents[0]?.requiredMcps).toEqual(['context7', 'gh_grep']);
+  });
+
   test('rejects overlapping available implicit extension MCP namespaces', () => {
     const { result } = fixture(
       ['team/explorer-extension'],

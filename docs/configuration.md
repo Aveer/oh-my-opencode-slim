@@ -771,15 +771,22 @@ Notes:
 - Display names must be unique
 - Display names cannot conflict with internal agent names like `oracle` or `explorer`
 
-> **Breaking:** `librarian` is no longer a built-in agent. An existing
-> `agents.librarian` entry is treated as an unknown custom agent and is
-> skipped with a warning unless it defines a `model` (or `inheritModelFrom`).
-> Marketplace packages extending `builtin: 'librarian'` fail validation —
-> switch to `builtin: 'explorer'` (it inherits `context7` and `gh_grep`).
-> Configs that set an explicit `explorer.mcps` list (generated presets used to
-> write `mcps: []`) keep that value and will not gain explorer's new defaults —
-> remove the override or set it to `["context7", "gh_grep"]`. Newly generated
-> configs omit `mcps` so runtime defaults always apply.
+> **Rename continuity:** `librarian` was merged into `explorer`. Existing
+> `agents.librarian` config (model, variant, mcps, skills, prompt,
+> `inheritModelFrom`) keeps working: it is applied to `explorer`, the merged
+> research agent. An explicit `agents.explorer` field wins over the legacy
+> `librarian` field. `disabled_agents: ['librarian']` now disables `explorer`.
+> A `librarian.md` / `librarian_append.md` prompt override still applies —
+> rename it to `explorer.md` when convenient (a one-time notice reminds you).
+> Marketplace packages extending `builtin: 'librarian'` now extend
+> `builtin: 'explorer'` (same one-time notice). `librarian` remains a reserved
+> legacy name: it cannot be reused as a custom, ACP, or display name. New
+> configs should use `explorer` directly.
+>
+> Still true: an explicit `explorer.mcps` list (including `[]`) overrides the
+> runtime defaults — old generated presets pinned `mcps: []`; remove that
+> override or set it to `["context7", "gh_grep"]`. Newly generated configs
+> omit `mcps` so defaults always apply.
 
 ### Independent agent model inheritance
 

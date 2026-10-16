@@ -312,6 +312,24 @@ describe('custom-agent creation', () => {
     );
   });
 
+  test('rejects acpAgents named after a merged legacy alias (librarian)', () => {
+    const config: PluginConfig = {
+      acpAgents: {
+        librarian: {
+          command: 'librarian-acp',
+          args: [],
+          env: {},
+          timeoutMs: 0,
+          permissionMode: 'ask',
+        },
+      },
+    };
+
+    expect(() => createAgents(runtimeFor(config))).toThrow(
+      "ACP agent 'librarian' conflicts with a built-in agent name or alias",
+    );
+  });
+
   test('appends ACP routing prompts separately without heading, and preserves rewriting', () => {
     const config: PluginConfig = {
       agents: {

@@ -111,6 +111,43 @@ describe('RuntimeConfig', () => {
     expect(runtime.smallModel()).toBe('small/before');
   });
 
+  test('host agent entries under pre-rename names feed the merged agent', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    runtime.captureHostConfig({
+      agent: { librarian: { model: 'host/legacy-librarian' } },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/legacy-librarian');
+    // Host-native namespaces never map onto plugin agents.
+    runtime.captureHostConfig({
+      agent: {
+        librarian: { model: 'host/legacy-librarian' },
+        explore: { model: 'host/native' },
+      },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/legacy-librarian');
+  });
+
+  test('canonical host agent entries win over pre-rename ones', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    runtime.captureHostConfig({
+      agent: {
+        explorer: { model: 'host/canonical' },
+        librarian: { model: 'host/legacy' },
+      },
+    });
+    expect(runtime.agent('explorer')?.model).toBe('host/canonical');
+  });
+
+  test('disabled_agents canonicalizes legacy alias names', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      disabled_agents: ['librarian'],
+    });
+    expect(runtime.disabledAgents).toEqual(new Set(['explorer']));
+  });
+
   test('registry reset clears the instance state', () => {
     resetRegistry();
     const runtime = RuntimeConfig.init(DIRECTORY, {
@@ -355,6 +392,32 @@ describe('RuntimeConfig', () => {
       agents: { explore: { model: 'alias-model' } },
     });
     expect(runtime.agent('explorer')?.model).toBe('alias-model');
+  });
+
+  test("agent() returns the merged view of a legacy 'librarian' record", () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      agents: { librarian: { model: 'x/legacy-model', temperature: 0.4 } },
+    });
+    expect(runtime.agent('explorer')).toEqual({
+      model: 'x/legacy-model',
+      temperature: 0.4,
+    });
+    expect(runtime.customAgentNames).toEqual([]);
+  });
+
+  test("agent() keeps canonical fields over merged 'librarian' fields", () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      agents: {
+        explorer: { model: 'x/canonical' },
+        librarian: { model: 'x/legacy-model', temperature: 0.4 },
+      },
+    });
+    expect(runtime.agent('explorer')).toEqual({
+      model: 'x/canonical',
+      temperature: 0.4,
+    });
   });
 
   test('customAgentNames lists unknown agents keys only', () => {

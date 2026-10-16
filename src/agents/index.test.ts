@@ -36,6 +36,23 @@ function councilConfig() {
 }
 
 describe('hot-refreshed runtime profiles', () => {
+  test('host merge layer picks up pre-rename agent entries', () => {
+    const merged = mergeHostAgentConfigs(
+      { explorer: { prompt: 'base' } },
+      { librarian: { model: 'host/legacy-librarian' } },
+    );
+    expect(merged.explorer).toEqual({
+      prompt: 'base',
+      model: 'host/legacy-librarian',
+    });
+    // Host-native namespaces stay excluded.
+    const nativeOnly = mergeHostAgentConfigs(
+      { explorer: { prompt: 'base' } },
+      { explore: { model: 'host/native' } },
+    );
+    expect(nativeOnly.explorer).toEqual({ prompt: 'base' });
+  });
+
   test('applies display-name host model overrides to canonical agent profiles', () => {
     const runtime = runtimeFor({
       agents: {
@@ -163,6 +180,37 @@ describe('agent alias backward compatibility', () => {
     const agents = createAgents(runtimeFor(config));
     const explorer = agents.find((a) => a.name === 'explorer');
     expect(explorer?.config.model).toBe('new-model');
+  });
+
+  test("applies 'librarian' config to the merged 'explorer' agent", () => {
+    const config: PluginConfig = {
+      agents: {
+        librarian: { model: 'x/legacy-model' },
+      },
+    };
+    const runtime = runtimeFor(config);
+    const agents = createAgents(runtime);
+    const explorer = agents.find((a) => a.name === 'explorer');
+
+    expect(explorer?.config.model).toBe('x/legacy-model');
+    // The legacy key is an alias, never a custom agent of its own.
+    expect(runtime.customAgentNames).toEqual([]);
+    expect(agents.some((a) => a.name === 'librarian')).toBe(false);
+  });
+
+  test("canonical 'explorer' fields win over a merged 'librarian' record", () => {
+    const config: PluginConfig = {
+      agents: {
+        explorer: { model: 'x/canonical' },
+        librarian: { model: 'x/legacy-model', temperature: 0.7 },
+      },
+    };
+    const agents = createAgents(runtimeFor(config));
+    const explorer = agents.find((a) => a.name === 'explorer');
+
+    expect(explorer?.config.model).toBe('x/canonical');
+    expect(explorer?.config.temperature).toBe(0.7);
+    expect(agents.some((a) => a.name === 'librarian')).toBe(false);
   });
 
   test('new agent names work directly', () => {

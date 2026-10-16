@@ -1,6 +1,8 @@
 // Agent names
 export const AGENT_ALIASES: Record<string, string> = {
   explore: 'explorer',
+  // librarian merged into explorer; legacy config keys/prompts keep working.
+  librarian: 'explorer',
   'frontend-ui-ux-engineer': 'designer',
 };
 

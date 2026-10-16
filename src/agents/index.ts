@@ -12,8 +12,9 @@ import {
 } from '../config';
 import { getAgentMcpList } from '../config/agent-mcps';
 import type { HostAgentConfig, RuntimeConfig } from '../config/runtime';
+import { hostLegacyAgent } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
-import { legacyAliasFor } from '../config/utils';
+import { mergeWithAliases } from '../config/utils';
 import { escapeRegExp, normalizeAgentName } from '../utils/agent-variant';
 import { delegationVocabulary, parseModelRef } from '../v2/adapters';
 
@@ -86,14 +87,15 @@ function getPrimaryModelFromOverride(
 
 /**
  * Alias-aware override lookup inside a merged (preset-aware) agents record.
- * Mirrors getAgentOverride semantics without the host layer, which the
- * config hook applies separately at merge time.
+ * Mirrors getAgentOverride semantics (field-level merge, canonical wins)
+ * without the host layer, which the config hook applies separately at merge
+ * time.
  */
 function getOverrideFromAgents(
   agents: Record<string, AgentOverrideConfig>,
   name: string,
 ): AgentOverrideConfig | undefined {
-  return agents[name] ?? agents[legacyAliasFor(name) ?? ''];
+  return mergeWithAliases(agents, name);
 }
 
 function buildAcpAgentDefinition(
@@ -352,7 +354,7 @@ export function mergeHostAgentConfigs(
 ): Record<string, Record<string, unknown>> {
   const merged: Record<string, Record<string, unknown>> = {};
   for (const [name, pluginAgent] of Object.entries(agents)) {
-    const existing = hostAgents?.[name];
+    const existing = hostAgents?.[name] ?? hostLegacyAgent(hostAgents, name);
     if (existing && typeof existing.model === 'string') {
       onUserModelSwitch?.(name, existing.model);
     }
