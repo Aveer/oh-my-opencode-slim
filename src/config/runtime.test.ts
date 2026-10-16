@@ -205,7 +205,8 @@ describe('RuntimeConfig', () => {
       main_pane_size: 60,
     });
     expect(runtime.backgroundJobs.maxSessionsPerAgent).toBe(2);
-    expect(runtime.backgroundJobs.strategy).toBe('latest');
+    // boardInjection is a v1-honoured switch, default true (see the
+    // flavour test below and injectBackgroundJobBoard's dispatch).
     expect(runtime.backgroundJobs.boardInjection).toBe(true);
     expect(runtime.backgroundJobs.pruneEvictedSessions).toBe(false);
     expect(runtime.backgroundJobs.orchestratorWake.periodicWakeEnabled).toBe(
@@ -242,6 +243,32 @@ describe('RuntimeConfig', () => {
     expect(runtime.hostMcp()).toBeUndefined();
     expect(runtime.getRuntimePreset()).toBeNull();
     expect(runtime.hasModelSwitched('explorer')).toBe(false);
+  });
+
+  test('boardInjection: v1 honours the switch, v2 forces it false', () => {
+    resetRegistry();
+    // v1 default: board renders.
+    expect(
+      RuntimeConfig.init(DIRECTORY, {}).backgroundJobs.boardInjection,
+    ).toBe(true);
+    // v1 explicit false: honoured (boardless profile — prompt-shape
+    // retirement keeps working).
+    resetRegistry();
+    expect(
+      RuntimeConfig.init(DIRECTORY, {
+        backgroundJobs: { boardInjection: false },
+      }).backgroundJobs.boardInjection,
+    ).toBe(false);
+    // v2: forced false even when a layer explicitly configured true (the
+    // loader warned about the explicit true at load time).
+    resetRegistry();
+    expect(
+      RuntimeConfig.init(
+        DIRECTORY,
+        { backgroundJobs: { boardInjection: true } },
+        'v2',
+      ).backgroundJobs.boardInjection,
+    ).toBe(false);
   });
 
   test('explicit config values override defaults', () => {

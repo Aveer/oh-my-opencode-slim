@@ -33,7 +33,7 @@ describe('createCouncilAgent', () => {
 
   // Policy-source drift guard: any future allow-entry addition at the
   // createSynthesisOnlyPermission() factory trips here before it can reach the
-  // request level. task tools (task_result etc.) are denied by the '*' wildcard
+  // request level. task tools (task_status etc.) are denied by the '*' wildcard
   // at factory level; the per-tool control denies are injected centrally by
   // applyDefaultPermissions at assembled-agent level (pinned in
   // src/agents/index.test.ts), so we deliberately do NOT add a redundant

@@ -400,7 +400,7 @@ export function createSessionContextHandler(
     // injection does), so rebuild event.messages from the transformed
     // v1messages rather than index-based content copy-back.
     if (deps.messagesTransform && Array.isArray(event.messages)) {
-      // Transcript identity enrichment (v2-only): checkpoint board replay
+      // Transcript identity enrichment (v2-only): frozen board replay
       // reads info.sessionID from the real-message tail, which may be an
       // assistant or tool result. Stamp missing session IDs on every role;
       // agent identity and internal-wake handling remain user-only.

@@ -108,7 +108,6 @@ import {
   createMarketplaceTools,
   createTaskMessageTool,
   createTaskReplyTool,
-  createTaskResultTool,
   createTaskReviveTool,
   createTaskStatusTool,
   createWaitForUserTool,
@@ -620,7 +619,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
   let taskCancelTools: ReturnType<typeof createCancelTaskTool>;
   let taskMessageTools: ReturnType<typeof createTaskMessageTool>;
   let taskReplyTools: ReturnType<typeof createTaskReplyTool>;
-  let taskResultTools: ReturnType<typeof createTaskResultTool>;
   let taskReviveTools: ReturnType<typeof createTaskReviveTool>;
   let revivedRunTracker: ReturnType<typeof createRevivedRunTracker>;
   let terminalGate: BackgroundJobTerminalGate | undefined;
@@ -879,9 +877,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     });
     backgroundJobBoard = new BackgroundJobBoard({
       maxReusablePerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
-      maxContextLines: runtime.backgroundJobs.maxContextLines,
-      readContextMinLines: runtime.backgroundJobs.readContextMinLines,
-      readContextMaxFiles: runtime.backgroundJobs.readContextMaxFiles,
       delegationTool: delegation.tool,
       deferNumberedAliases: true,
       // Terminal-session GC (#1387 P2): when a retention trim evicts a
@@ -1158,12 +1153,10 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       terminalGate,
       // Flip mechanism half reads the per-instance box declared above.
       isBackgroundDefaultFlipArmed: backgroundDefaultFlip.isArmed,
-      strategy: runtime.backgroundJobs.strategy,
-      maxSessionsPerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
-      maxRetainedSnapshots: runtime.backgroundJobs.maxRetainedSnapshots,
-      readContextMinLines: runtime.backgroundJobs.readContextMinLines,
-      readContextMaxFiles: runtime.backgroundJobs.readContextMaxFiles,
+      hostFlavor,
+      // v1-only honoured switch (forced false on v2 at RuntimeConfig).
       boardInjection: runtime.backgroundJobs.boardInjection,
+      maxSessionsPerAgent: runtime.backgroundJobs.maxSessionsPerAgent,
       disabledHooks: [...runtime.disabledHooks],
       backgroundJobBoard: backgroundJobCoordinator,
       backgroundJobSupervisor,
@@ -1188,7 +1181,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       },
       sameProviderPolicy: runtime.backgroundJobs.sameProviderPolicy,
       getSessionModel: liveSessionModel,
-      hostFlavor,
       recoverRetainedSession,
       resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
       isDisposed: () => instanceDisposed,
@@ -1226,7 +1218,21 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     pruneRevivedContext = taskSessionManagerHook.pruneTaskContext;
 
     orchestratorWakeScheduler = createOrchestratorWakeScheduler(ctx, {
-      config: runtime.backgroundJobs.orchestratorWake,
+      // v2 hosts deliver each run's first terminal publication natively, so
+      // the periodic idle evaluation is structurally off there; event-driven
+      // wakes keep their own keys. v1 honors the configured key.
+      config: {
+        ...runtime.backgroundJobs.orchestratorWake,
+        periodicWakeEnabled:
+          hostFlavor === 'v2'
+            ? false
+            : (runtime.backgroundJobs.orchestratorWake.periodicWakeEnabled ??
+              true),
+      },
+      // Honoured switch: wake annotations follow the board the parent
+      // actually sees — rendered on v1 unless boardInjection is false;
+      // RuntimeConfig forces it false on v2 (structural boardless, see
+      // injectBackgroundJobBoard).
       boardInjectionEnabled: runtime.backgroundJobs.boardInjection,
       childInputWakeKinds: runtime.backgroundJobs.childInputWakeKinds,
       shouldManageSession: (sessionID) =>
@@ -1331,10 +1337,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       }
       orchestratorWakeScheduler?.triggerStoppedJobRecovery(
         record.parentSessionID,
-        // Self-contained stop facts: the recovery wake is an
-        // internal-initiator message, so under `checkpoint-compatible` it
-        // cannot create a board snapshot and any retained snapshot predates
-        // this stop (issue #1051).
+        // Self-contained stop facts (issue #1051): the recovery wake is an
+        // internal-initiator turn, and internal-initiator turns place no
+        // board, so the wake must carry the stop facts itself.
         formatStoppedJobDelta({
           alias: record.alias,
           taskID: record.taskID,
@@ -1388,7 +1393,7 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       // background call). Edge: if a native delivery is ever lost
       // host-side, the job falls back to the passive display channel on
       // the parent's next activity — board injection when enabled, or
-      // nothing until the next task_status/task_result pull otherwise.
+      // nothing until the next task_status pull otherwise.
       if (record.terminalRevision === 1) {
         log('[orchestrator-wake] terminal publication wake skipped', {
           sessionID: record.parentSessionID,
@@ -1538,9 +1543,10 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
       isDisposed: () => instanceDisposed,
     });
-    taskResultTools = createTaskResultTool({
+    taskStatusTools = createTaskStatusTool({
       input: ctx,
       backgroundJobBoard: backgroundJobCoordinator,
+      activityTracker: taskActivityTracker,
       terminalGate,
       resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
       isDisposed: () => instanceDisposed,
@@ -1559,13 +1565,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       recoverRetainedSession,
       isDisposed: () => instanceDisposed,
       resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
-    });
-    taskStatusTools = createTaskStatusTool({
-      input: ctx,
-      backgroundJobBoard: backgroundJobCoordinator,
-      activityTracker: taskActivityTracker,
-      resolveCanonicalTaskRef: aliasAuthority.resolveCanonical,
-      isDisposed: () => instanceDisposed,
     });
     waitForUserTools = createWaitForUserTool({
       shouldManageSession: (sessionID) =>
@@ -1602,7 +1601,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       ...taskCancelTools,
       ...taskMessageTools,
       ...taskReplyTools,
-      ...taskResultTools,
       ...taskReviveTools,
       ...taskStatusTools,
       ...(shouldRegisterWaitForUser ? waitForUserTools : {}),

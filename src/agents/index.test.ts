@@ -738,7 +738,6 @@ describe('orchestrator agent', () => {
       'task_message',
       'task_revive',
       'task_status',
-      'task_result',
     ]) {
       expect(permission[toolName]).toBe('allow');
     }
@@ -1180,7 +1179,6 @@ describe('tool permissions', () => {
       'task_message',
       'task_revive',
       'task_status',
-      'task_result',
     ]) {
       expect(permission[toolName]).toBe('deny');
     }
@@ -1238,7 +1236,7 @@ describe('tool permissions', () => {
     expect(permission.ast_grep_replace).toBe('deny');
     expect(permission.task).toBe('deny');
     expect(permission.question).toBe('deny');
-    expect(permission.task_result).toBe('deny');
+    expect(permission.task_status).toBe('deny');
     // Drift guard: the source map has no allow entries at all.
     expect(Object.values(permission)).not.toContain('allow');
   });
@@ -2090,8 +2088,7 @@ describe('PluginConfigSchema custom-agent-only prompt fields', () => {
     const result = PluginConfigSchema.safeParse({
       backgroundJobs: {
         maxSessionsPerAgent: 2,
-        readContextMinLines: 10,
-        readContextMaxFiles: 8,
+        boardInjection: true,
       },
     });
 

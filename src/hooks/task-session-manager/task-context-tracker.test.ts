@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { filterStaleContextFiles } from './task-context-tracker';
 
 describe('filterStaleContextFiles', () => {
-  test('keeps a file with enough lines on disk', () => {
+  test('keeps a file that still exists on disk', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ctx-keep-'));
     writeFileSync(path.join(dir, 'a.ts'), '1\n2\n3\n4\n5');
     const kept = filterStaleContextFiles(dir, [
-      { path: 'a.ts', lineCount: 3, lastReadAt: 1 },
+      { path: 'a.ts', lastReadAt: 1 },
     ]);
     expect(kept).toHaveLength(1);
   });
@@ -17,27 +17,27 @@ describe('filterStaleContextFiles', () => {
   test('drops a missing file', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ctx-missing-'));
     const kept = filterStaleContextFiles(dir, [
-      { path: 'gone.ts', lineCount: 2, lastReadAt: 1 },
+      { path: 'gone.ts', lastReadAt: 1 },
     ]);
     expect(kept).toHaveLength(0);
   });
 
-  test('drops a truncated file', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'ctx-trunc-'));
-    writeFileSync(path.join(dir, 'b.ts'), '1\n2');
+  test('drops a path that is no longer a regular file', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ctx-dir-'));
+    mkdirSync(path.join(dir, 'now-a-dir'));
     const kept = filterStaleContextFiles(dir, [
-      { path: 'b.ts', lineCount: 10, lastReadAt: 1 },
+      { path: 'now-a-dir', lastReadAt: 1 },
     ]);
     expect(kept).toHaveLength(0);
   });
 
-  test('drops an oversized file without reading it', () => {
+  test('keeps a large file without reading it', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ctx-big-'));
     writeFileSync(path.join(dir, 'big.log'), `x\n`.repeat(600 * 1024));
     const kept = filterStaleContextFiles(dir, [
-      { path: 'big.log', lineCount: 2, lastReadAt: 1 },
+      { path: 'big.log', lastReadAt: 1 },
     ]);
-    expect(kept).toHaveLength(0);
+    expect(kept).toHaveLength(1);
   });
 
   test('drops a stored entry that went stale after the first commit', () => {
@@ -46,10 +46,10 @@ describe('filterStaleContextFiles', () => {
     // Continuation scenario: stored board context re-validated alongside
     // fresh context; the deleted stored file must leave the result.
     const stored = [
-      { path: 'deleted.ts', lineCount: 5, lastReadAt: 1 },
-      { path: 'live.ts', lineCount: 5, lastReadAt: 2 },
+      { path: 'deleted.ts', lastReadAt: 1 },
+      { path: 'live.ts', lastReadAt: 2 },
     ];
-    const fresh = [{ path: 'live.ts', lineCount: 5, lastReadAt: 3 }];
+    const fresh = [{ path: 'live.ts', lastReadAt: 3 }];
     const kept = filterStaleContextFiles(dir, [...stored, ...fresh]);
     expect(kept.some((file) => file.path === 'deleted.ts')).toBe(false);
     expect(kept.every((file) => file.path === 'live.ts')).toBe(true);

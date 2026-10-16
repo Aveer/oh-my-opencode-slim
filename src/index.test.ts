@@ -207,7 +207,6 @@ describe('plugin tool registration', () => {
     } as never);
 
     expect(hooks.tool?.task_status).toBeDefined();
-    expect(hooks.tool?.task_result).toBeDefined();
     expect(hooks.tool?.task_message).toBeDefined();
     expect(hooks.tool?.task_cancel).toBeDefined();
     expect(hooks.tool?.task_revive).toBeDefined();
@@ -1901,6 +1900,31 @@ describe('plugin reload generation cleanup', () => {
       resetOrchestratorWakeGateForTests();
     }
   });
+
+  test.each([
+    { hostFlavor: 'v2', periodic: false },
+    { hostFlavor: 'v1', periodic: true },
+  ] as const)(
+    '$hostFlavor wake scheduler periodic gate is structural (periodic=$periodic)',
+    async ({ hostFlavor, periodic }) => {
+      const createScheduler = wakeHooks.createOrchestratorWakeScheduler;
+      const scheduler = spyOn(
+        wakeHooks,
+        'createOrchestratorWakeScheduler',
+      ).mockImplementation((...args: Parameters<typeof createScheduler>) =>
+        createScheduler(...args),
+      );
+      try {
+        await createHooks({ hostFlavor });
+        const options = scheduler.mock.calls[0]?.[1] as {
+          config: { periodicWakeEnabled?: boolean };
+        };
+        expect(options.config.periodicWakeEnabled).toBe(periodic);
+      } finally {
+        scheduler.mockRestore();
+      }
+    },
+  );
 
   test.each(['provisional', 'promoted', 'preserveRun', 'attributed'])(
     'stopped recovery listener respects explicit provenance: %s',
