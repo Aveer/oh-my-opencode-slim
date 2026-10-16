@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MarketplacePackageIdSchema } from '../marketplace/schemas';
 import {
   AGENT_THEME_COLORS,
+  DEFAULT_CHILD_INPUT_WAKE_KINDS,
   DEFAULT_MAX_RETAINED_SNAPSHOTS,
   STRING_ONLY_PERMISSION_KEYS,
 } from './constants';
@@ -624,7 +625,7 @@ export const BackgroundJobsConfigStrictSchema = z.object({
       permission: z.boolean().default(false).catch(false),
       question: z.boolean().default(true).catch(true),
     })
-    .catch({ permission: false, question: true })
+    .catch({ ...DEFAULT_CHILD_INPUT_WAKE_KINDS })
     .describe(
       'Which background child ask kinds may wake the parent. Permission asks default off (#1504): their replies carry no host wake and are resolved by the UI or an external responder, so a parent turn is wasted. Question asks default on.',
     ),

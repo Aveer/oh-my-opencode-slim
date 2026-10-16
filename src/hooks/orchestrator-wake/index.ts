@@ -20,6 +20,7 @@
  */
 import type { PluginInput } from '@opencode-ai/plugin';
 import type { OpencodeClient } from '@opencode-ai/sdk';
+import { DEFAULT_CHILD_INPUT_WAKE_KINDS } from '../../config/constants';
 import {
   createInternalAgentTextPart,
   isInternalInitiatorPart,
@@ -939,10 +940,8 @@ export function createOrchestratorWakeScheduler(
     options.config.publicationWakeMinIntervalMs ??
     DEFAULT_PUBLICATION_WAKE_MIN_INTERVAL_MS;
   // #1504: permission wakes ship off, question wakes ship on.
-  const childInputWakeKinds = options.childInputWakeKinds ?? {
-    permission: false,
-    question: true,
-  };
+  const childInputWakeKinds =
+    options.childInputWakeKinds ?? DEFAULT_CHILD_INPUT_WAKE_KINDS;
   const directory = ctx.directory;
   const sessionSdk = (ctx.client as OpencodeClient).session;
 

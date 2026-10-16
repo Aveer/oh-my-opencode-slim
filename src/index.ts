@@ -1209,7 +1209,6 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
       coordinator: sessionLifecycle,
       revivedRunTracker,
       onChildInputWait: (notification) => {
-        if (runtime.backgroundJobs.childInputWake === false) return;
         const record = backgroundJobCoordinator.get(notification.taskID);
         if (record?.state !== 'running') {
           return;

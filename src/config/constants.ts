@@ -91,6 +91,12 @@ export const DEFAULT_READ_CONTEXT_MIN_LINES = 10;
 export const DEFAULT_READ_CONTEXT_MAX_FILES = 8;
 export const DEFAULT_MAX_RETAINED_SNAPSHOTS = 20;
 
+/** Shipped child-input wake kinds (#1504): permission off, question on. */
+export const DEFAULT_CHILD_INPUT_WAKE_KINDS = {
+  permission: false,
+  question: true,
+} as const;
+
 /**
  * Maximum session metadata entries retained per plugin instance.
  * Prevents unbounded growth when session.deleted events are missed.

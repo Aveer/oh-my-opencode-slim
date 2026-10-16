@@ -17,6 +17,7 @@
  */
 import {
   ALL_AGENT_NAMES,
+  DEFAULT_CHILD_INPUT_WAKE_KINDS,
   DEFAULT_DISABLED_AGENTS,
   DEFAULT_MAX_CONTEXT_LINES,
   DEFAULT_MAX_RETAINED_SNAPSHOTS,
@@ -101,7 +102,7 @@ const DEFAULT_BACKGROUND_JOBS: BackgroundJobsConfig = {
   sameProviderPolicy: {},
   waitForUserGuard: true,
   childInputWake: true,
-  childInputWakeKinds: { permission: false, question: true },
+  childInputWakeKinds: { ...DEFAULT_CHILD_INPUT_WAKE_KINDS },
   boardInjection: true,
   pruneEvictedSessions: false,
 };
@@ -377,7 +378,18 @@ export class RuntimeConfig {
   }
 
   get backgroundJobs(): BackgroundJobsConfig {
-    return this.pluginConfig?.backgroundJobs ?? DEFAULT_BACKGROUND_JOBS;
+    const backgroundJobs = this.pluginConfig?.backgroundJobs;
+    if (!backgroundJobs) return DEFAULT_BACKGROUND_JOBS;
+    if (backgroundJobs.childInputWake !== false) return backgroundJobs;
+    // #1504: master switch off silences every kind. The scheduler's per-kind
+    // gate stays the only runtime gate; the stored config stays raw.
+    return {
+      ...backgroundJobs,
+      childInputWakeKinds: {
+        permission: false,
+        question: false,
+      },
+    };
   }
 
   get fallback(): FailoverConfig {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { DEFAULT_CHILD_INPUT_WAKE_KINDS } from './constants';
 import { RuntimeConfig } from './runtime';
 import type { PluginConfig } from './schema';
 
@@ -246,6 +247,43 @@ describe('RuntimeConfig', () => {
     expect(runtime.acpAgents.myAcp.command).toBe('echo');
     expect(runtime.backgroundJobs.maxSessionsPerAgent).toBe(7);
     expect(runtime.multiplexer.type).toBe('tmux');
+  });
+
+  test('backgroundJobs folds childInputWake off into all-false kinds', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      backgroundJobs: {
+        childInputWake: false,
+        childInputWakeKinds: { question: true },
+      },
+    });
+    expect(runtime.backgroundJobs.childInputWake).toBe(false);
+    expect(runtime.backgroundJobs.childInputWakeKinds).toEqual({
+      permission: false,
+      question: false,
+    });
+  });
+
+  test('backgroundJobs passes childInputWakeKinds through when enabled', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {
+      backgroundJobs: {
+        childInputWake: true,
+        childInputWakeKinds: { permission: true, question: false },
+      },
+    });
+    expect(runtime.backgroundJobs.childInputWakeKinds).toEqual({
+      permission: true,
+      question: false,
+    });
+  });
+
+  test('backgroundJobs ships the default child-input wake kinds', () => {
+    resetRegistry();
+    const runtime = RuntimeConfig.init(DIRECTORY, {});
+    expect(runtime.backgroundJobs.childInputWakeKinds).toEqual(
+      DEFAULT_CHILD_INPUT_WAKE_KINDS,
+    );
   });
 
   test('runtimeChains derives from array models, alias-aware', () => {
