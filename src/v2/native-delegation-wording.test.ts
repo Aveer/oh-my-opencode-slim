@@ -181,11 +181,9 @@ describe('createAgents council seat pointer vocabulary', () => {
   test('v2 keeps native resume guidance and does not adopt the v1 task_revive-first rule', () => {
     const v2 = orchestratorPromptFor('v2');
 
-    expect(v2).toContain(
     expect(v2).not.toContain('task_result');
     expect(v2).toContain(
       'Continue a completed session with `subagent` by exact id',
-    );
     );
     expect(v2).toContain('cancelled/errored/stopped sessions use');
     expect(v2).not.toContain(

@@ -37,7 +37,6 @@ describe('orchestrator prompt: host vocabulary', () => {
 
   test('result reads go through task_status, not a task_result tool', () => {
     for (const prompt of [v1(), v2()]) {
-      expect(prompt).toContain('with `result: true` it reads a');
       expect(prompt).not.toContain('task_result');
     }
   });

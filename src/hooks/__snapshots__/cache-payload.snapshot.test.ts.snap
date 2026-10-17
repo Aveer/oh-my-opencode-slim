@@ -378,7 +378,7 @@ SENTINEL: background-job-board-v2
 Completed or reconciled sessions are reusable by alias for the same specialist/context.
 Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.
 Cancelled or errored sessions are not reusable.
-Continue an existing session with task_revive even when it is not listed here. task_result only reads a result and is not required before task_revive.
+Continue an existing session with task_revive even when it is not listed here. A result read is not required before task_revive.
 
 #### Active / Unreconciled
 - exp-1 / task-snapshot / explorer / running
