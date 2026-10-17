@@ -32,6 +32,7 @@ import {
 import { ensureCompanionVersion } from './companion/updater';
 import { deepMerge, loadPluginConfig, type Preset } from './config';
 import {
+  BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE,
   DEFAULT_MAX_SESSION_METADATA_ENTRIES,
   SMARTFETCH_SECONDARY_SESSION_TITLE,
   TOAST_DURATION_MS,
@@ -2192,6 +2193,22 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
         ...currentAgentConfig,
         ...structuredClone(registry.managedAgentConfig),
       };
+      // #1582: disable OpenCode's built-in subagents at runtime so slim's
+      // agents are the only delegation targets, even without the installer.
+      // A user-declared entry owns its key and is left untouched; an entry
+      // that is exactly our injected shape is re-asserted, so a host that
+      // hands the mutated object back can't out-stare a later user edit
+      // (same class as the injectedMcps filter below).
+      const mergedAgentConfig = opencodeConfig.agent as Record<string, unknown>;
+      for (const name of BUILTIN_OPENCODE_SUBAGENTS_TO_DISABLE) {
+        const existing = mergedAgentConfig[name];
+        if (
+          existing !== undefined &&
+          !Bun.deepEquals(existing, { disable: true })
+        )
+          continue;
+        mergedAgentConfig[name] = { disable: true };
+      }
       const currentMcpConfig =
         opencodeConfig.mcp && typeof opencodeConfig.mcp === 'object'
           ? (opencodeConfig.mcp as Record<string, unknown>)
