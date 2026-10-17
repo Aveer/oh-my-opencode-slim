@@ -1357,6 +1357,9 @@ export const OhMyOpenCodeLite: Plugin = async (ctx) => {
     // delivered the first completion, so a queued wake would
     // double-notify.
     backgroundJobCoordinator.addTerminalOutcomeListener((record) => {
+      // Unattributed child sessions are not delegated work, just as in
+      // stopped-job recovery; their owner controls parent notifications.
+      if (record.provisional === true) return;
       if (record.state !== 'completed' && record.state !== 'error') return;
       // Revived-run ownership: when the tracker will deliver this run's
       // <task> result itself (notifyParent), a publication wake beside
