@@ -363,7 +363,7 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
 
 When the conversation calls for multi-model consensus, run this procedure:
 1. Embed a brief summary of needed context into each seat prompt (seats receive only their prompt).
-2. Dispatch the question to every council seat in parallel via task() — one call per seat.
+2. Dispatch the question to every seat in the ## Council roster in parallel — one task() call per seat, subagent_type=<exact roster name>; seats run their own preset models.
 3. Collect all responses; retry an empty seat once; mark failed seats; do not wait on stragglers.
 4. Call task(subagent_type='council', description='Council synthesis', prompt=<question + final 'Seats: <id, id>' line listing each seat's returned task_id>) — the harness attaches their responses; do not paste them.
 </system-reminder>"
