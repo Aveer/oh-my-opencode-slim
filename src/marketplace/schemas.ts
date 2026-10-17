@@ -54,18 +54,28 @@ const MARKETPLACE_BUILTIN_RENAMES: Record<string, string> = {
   librarian: 'explorer',
 };
 
+/**
+ * Pure legacy→merged builtin resolver. Store manifests are byte-faithful
+ * (they may still carry old names), so every consumer that maps a builtin to
+ * runtime behavior — activation parsing and manifest rendering alike — must
+ * resolve before looking up. Only the activation schema warns.
+ */
+export function resolveMarketplaceBuiltin(value: string): string {
+  return MARKETPLACE_BUILTIN_RENAMES[value] ?? value;
+}
+
 const warnedMarketplaceBuiltinRenames = new Set<string>();
 
 export const ActivatedMarketplaceBuiltinSchema = z.preprocess((value) => {
   if (typeof value === 'string') {
-    const renamed = MARKETPLACE_BUILTIN_RENAMES[value];
-    if (renamed && !warnedMarketplaceBuiltinRenames.has(value)) {
+    const renamed = resolveMarketplaceBuiltin(value);
+    if (renamed !== value && !warnedMarketplaceBuiltinRenames.has(value)) {
       warnedMarketplaceBuiltinRenames.add(value);
       console.warn(
         `[oh-my-opencode-slim] Marketplace builtin '${value}' was merged into '${renamed}'; the package now extends '${renamed}'. Update the manifest when convenient.`,
       );
     }
-    return renamed ?? value;
+    return renamed;
   }
   return value;
 }, z.enum(SUPPORTED_SPECIALIST_ROLES));
