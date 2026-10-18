@@ -619,6 +619,7 @@ export const BackgroundJobsConfigStrictSchema = z.object({
     .describe(
       'When true, intercept wait_for_user calls made while background tasks are still running and the orchestrator wake scheduler is enabled, returning guidance to end the turn instead of blocking on manual input. Default enabled.',
     ),
+  // Preserved for V1 compatibility. Structurally ignored in V2.
   boardInjection: z
     .boolean()
     .default(true)
