@@ -548,7 +548,7 @@ orchestrator wake interval. Board placement itself is not configurable: it is
 change-only — one frozen board per state change, replayed byte-identically on
 later turns, nothing injected on unchanged turns. For glossary definitions of
 background-job terms, see
-[CONTEXT.md — Background Jobs](../CONTEXT.md#background-jobs).
+[GLOSSARY.md — Background Jobs](../GLOSSARY.md#background-jobs).
 
 **What gates reusability.** A completed child session enters the reusable pool
 when it reached a canonical terminal state, has been reconciled, and its status
