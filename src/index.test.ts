@@ -1866,7 +1866,7 @@ describe('plugin reload generation cleanup', () => {
         synthetic: true,
       });
       const control = await transform(hooks, fixture);
-      expect(reminderParts(control.messages)).toHaveLength(2);
+      expect(reminderParts(control.messages)).toHaveLength(1);
       expect(boardParts(control.messages)).toHaveLength(1);
 
       await hooks['experimental.session.compacting']?.(
@@ -1902,7 +1902,7 @@ describe('plugin reload generation cleanup', () => {
 
       const nextTurn = await transform(hooks, fixture);
       expect(JSON.stringify(nextTurn)).toBe(JSON.stringify(control));
-      expect(reminderParts(nextTurn.messages)).toHaveLength(2);
+      expect(reminderParts(nextTurn.messages)).toHaveLength(1);
     } finally {
       await hooks.dispose?.();
     }
@@ -1921,7 +1921,7 @@ describe('plugin reload generation cleanup', () => {
       );
 
       const other = await transform(hooks, reminderFixture(otherID));
-      expect(reminderParts(other.messages)).toHaveLength(2);
+      expect(reminderParts(other.messages)).toHaveLength(1);
       const marked = await transform(hooks, reminderFixture(markedID));
       expect(reminderParts(marked.messages)).toHaveLength(0);
     } finally {
@@ -1947,7 +1947,7 @@ describe('plugin reload generation cleanup', () => {
         ],
       });
       const resumed = await transform(hooks, reminderFixture(sessionID));
-      expect(reminderParts(resumed.messages)).toHaveLength(2);
+      expect(reminderParts(resumed.messages)).toHaveLength(1);
     } finally {
       await hooks.dispose?.();
     }
@@ -1969,7 +1969,7 @@ describe('plugin reload generation cleanup', () => {
         {} as never,
       );
       const after = await transform(hooks, reminderFixture(sessionID));
-      expect(reminderParts(after.messages)).toHaveLength(2);
+      expect(reminderParts(after.messages)).toHaveLength(1);
     } finally {
       await hooks.dispose?.();
     }

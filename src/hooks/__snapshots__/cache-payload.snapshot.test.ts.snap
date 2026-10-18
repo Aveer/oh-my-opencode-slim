@@ -163,18 +163,6 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
         "text": "now add tests",
         "type": "text",
       },
-      {
-        "metadata": {
-          "oh-my-opencode-slim.phaseReminder": true,
-        },
-        "synthetic": true,
-        "text": 
-"<system-reminder>
-!IMPORTANT! Scheduler workflow: pick the lightest workflow that fits. Direct work: execute and verify proportionately. Otherwise: plan lanes → dispatch background specialists → track task IDs → await hook-driven completion → reconcile terminal results → verify. !END!
-</system-reminder>"
-,
-        "type": "text",
-      },
     ],
   },
   {
@@ -258,18 +246,6 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
 ,
         "type": "text",
       },
-      {
-        "metadata": {
-          "oh-my-opencode-slim.phaseReminder": true,
-        },
-        "synthetic": true,
-        "text": 
-"<system-reminder>
-!IMPORTANT! Scheduler workflow: pick the lightest workflow that fits. Direct work: execute and verify proportionately. Otherwise: plan lanes → dispatch background specialists → track task IDs → await hook-driven completion → reconcile terminal results → verify. !END!
-</system-reminder>"
-,
-        "type": "text",
-      },
     ],
   },
   {
@@ -310,18 +286,6 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
         "text": "final adjustments please",
         "type": "text",
       },
-      {
-        "metadata": {
-          "oh-my-opencode-slim.phaseReminder": true,
-        },
-        "synthetic": true,
-        "text": 
-"<system-reminder>
-!IMPORTANT! Scheduler workflow: pick the lightest workflow that fits. Direct work: execute and verify proportionately. Otherwise: plan lanes → dispatch background specialists → track task IDs → await hook-driven completion → reconcile terminal results → verify. !END!
-</system-reminder>"
-,
-        "type": "text",
-      },
     ],
   },
   {
@@ -334,18 +298,6 @@ exports[`cache-impact snapshots (update deliberately — see file header) transf
     "parts": [
       {
         "text": "before we ship, run a council on the final design",
-        "type": "text",
-      },
-      {
-        "metadata": {
-          "oh-my-opencode-slim.phaseReminder": true,
-        },
-        "synthetic": true,
-        "text": 
-"<system-reminder>
-!IMPORTANT! Scheduler workflow: pick the lightest workflow that fits. Direct work: execute and verify proportionately. Otherwise: plan lanes → dispatch background specialists → track task IDs → await hook-driven completion → reconcile terminal results → verify. !END!
-</system-reminder>"
-,
         "type": "text",
       },
       {
