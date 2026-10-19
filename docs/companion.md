@@ -33,10 +33,14 @@ Right-click the Companion to open a **separate native control popup**, outside
 the animation's window. The popup uses a compact scrollable layout, with a
 **drag handle across its header** (left-click and drag to move just the popup)
 and an **× close button at the upper-right**. The root animation window remains
-in place. The popup starts hidden until its first UI frame is prepared to
-reduce first-frame window flashing on Windows; showing it then uses a viewport
-command without recreating the child window. It shows full project names/paths,
-a search field, and a directly selectable preset list.
+in place. The popup starts hidden while its UI is prepared. On Windows, it also
+waits for the native window and drawing area to reach their intended position
+and size before appearing. Opening uses the click's physical desktop location
+and the popup's own DPI scale, including UI zoom, so a different scale on the
+primary monitor cannot place the menu on the wrong display. The menu fits within
+the selected monitor's usable area, excluding taskbars. Once visible, it can be
+dragged independently without snapping back to its opening position. It shows
+full project names/paths, a search field, and a directly selectable preset list.
 
 The popup has three project views:
 
@@ -171,9 +175,11 @@ the last dragged position per project and restores it the next time that project
 opens. If no custom position is saved for a project, the configured
 `companion.position` corner is used.
 
-On Windows, saved positions are checked against the actual connected monitor
-rectangles, including negative virtual-desktop origins, before restoring the
-native window. Disconnected/off-screen coordinates fall back to a visible
+On Windows, native dragging preserves signed desktop coordinates for monitors
+to the left of or above the primary display. Saved positions are checked against
+the actual connected monitor rectangles, including negative virtual-desktop
+origins, using the current DPI scale and UI zoom before restoring the native
+window. Disconnected/off-screen coordinates fall back to a visible
 anchor without overwriting the stored preference. Other platforms keep the
 existing position-restoration behavior. Position persistence runs off the native
 UI thread; a busy shared-state lock therefore cannot freeze animation or dragging.
