@@ -30,8 +30,15 @@ notifications are intentionally not emitted because the parent status PR does
 not claim canonical settled terminal evidence.
 
 Right-click the Companion to open a **separate native control popup**, outside
-the animation's window. It shows full project names/paths, a search field, and
-a directly selectable preset list. The popup has three project views:
+the animation's window. The popup uses a compact scrollable layout, with a
+**drag handle across its header** (left-click and drag to move just the popup)
+and an **× close button at the upper-right**. The root animation window remains
+in place. The popup starts hidden until its first UI frame is prepared to
+reduce first-frame window flashing on Windows; showing it then uses a viewport
+command without recreating the child window. It shows full project names/paths,
+a search field, and a directly selectable preset list.
+
+The popup has three project views:
 
 - **Active:** live OpenCode project instances with work underway or waiting for
   input.
